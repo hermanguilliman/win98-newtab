@@ -489,6 +489,26 @@ html, body {
   image-rendering: pixelated;
 }
 
+/* ---------- Weather ---------- */
+#weather {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+#weather.visible {
+  display: flex;
+}
+#weather .weather-icon {
+  font-size: 12px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 0 var(--win98-white));
+}
+#weather .weather-temp {
+  padding-right: 2px;
+}
+
 #clock {
   font-size: 11px;
   white-space: nowrap;

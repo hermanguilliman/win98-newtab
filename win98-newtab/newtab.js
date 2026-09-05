@@ -23,6 +23,7 @@
   const DEFAULT_SETTINGS = {
     clickMode: "double",
     iconSize: 32,
+    weatherCity: "Москва",
     wallpaper: {
       type: "color",
       color: "#008080",
@@ -42,6 +43,7 @@
   const $startBtn = document.getElementById("start-btn");
   const $startMenu = document.getElementById("start-menu");
   const $clock = document.getElementById("clock");
+  const $weather = document.getElementById("weather");
   const $menuAllBookmarks = document.getElementById("menu-all-bookmarks");
 
   /* ============================================================
@@ -204,6 +206,102 @@
     const h = now.getHours().toString().padStart(2, "0");
     const m = now.getMinutes().toString().padStart(2, "0");
     $clock.textContent = `${h}:${m}`;
+  }
+
+  /* ============================================================
+     WEATHER (Open-Meteo, no API key)
+     ============================================================ */
+  const WEATHER_TTL = 30 * 60 * 1000; // refresh cache at most every 30 min
+
+  /** Map WMO weather code → emoji icon */
+  function weatherIcon(code) {
+    if (code === 0) return "☀️";
+    if (code === 1) return "🌤️";
+    if (code === 2) return "⛅";
+    if (code === 3) return "☁️";
+    if (code === 45 || code === 48) return "🌫️";
+    if (code >= 51 && code <= 67) return "🌧️";
+    if (code >= 71 && code <= 77) return "❄️";
+    if (code >= 80 && code <= 82) return "🌦️";
+    if (code === 85 || code === 86) return "🌨️";
+    if (code >= 95) return "⛈️";
+    return "🌡️";
+  }
+
+  function hideWeather() {
+    $weather.classList.remove("visible");
+    $weather.replaceChildren();
+  }
+
+  function renderWeather(temp, code) {
+    const icon = document.createElement("span");
+    icon.className = "weather-icon";
+    icon.textContent = weatherIcon(code);
+    const tempEl = document.createElement("span");
+    tempEl.className = "weather-temp";
+    tempEl.textContent = `${Math.round(temp)}°`;
+    $weather.replaceChildren(icon, tempEl);
+    $weather.classList.add("visible");
+  }
+
+  async function loadWeatherCache() {
+    try {
+      return (await chrome.storage.local.get("weather")) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveWeatherCache(city, temp, code) {
+    const payload = { city, temp, code, ts: Date.now() };
+    return chrome.storage.local.set({ weather: payload }).catch(() => {});
+  }
+
+  async function refreshWeather() {
+    const city = (state.settings && state.settings.weatherCity) || DEFAULT_SETTINGS.weatherCity;
+    try {
+      // Resolve city → coordinates
+      const geoResp = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=ru&format=json`,
+        { mode: "cors" }
+      );
+      const geo = await geoResp.json();
+      const hit = geo && geo.results && geo.results[0];
+      if (!hit) {
+        hideWeather();
+        return;
+      }
+      // Current weather
+      const wxResp = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&current=temperature_2m,weather_code`,
+        { mode: "cors" }
+      );
+      const wx = await wxResp.json();
+      if (!wx || !wx.current) {
+        hideWeather();
+        return;
+      }
+      renderWeather(wx.current.temperature_2m, wx.current.weather_code);
+      saveWeatherCache(city, wx.current.temperature_2m, wx.current.weather_code);
+    } catch {
+      // Offline or blocked — keep showing cached value if any, else nothing
+    }
+  }
+
+  async function updateWeather() {
+    const city = (state.settings && state.settings.weatherCity) || DEFAULT_SETTINGS.weatherCity;
+    const cache = await loadWeatherCache();
+    if (
+      cache &&
+      typeof cache.temp === "number" &&
+      cache.city === city &&
+      Date.now() - cache.ts < WEATHER_TTL
+    ) {
+      renderWeather(cache.temp, cache.code);
+      return;
+    }
+    hideWeather();
+    refreshWeather();
   }
 
   /* ============================================================
@@ -1043,6 +1141,9 @@
     if (ICON_SIZES.includes(partial.iconSize)) {
       base.iconSize = partial.iconSize;
     }
+    if (typeof partial.weatherCity === "string" && partial.weatherCity.trim()) {
+      base.weatherCity = partial.weatherCity.trim();
+    }
     if (partial.wallpaper) {
       const wp = partial.wallpaper;
       if (wp.type === "color" || wp.type === "image") base.wallpaper.type = wp.type;
@@ -1151,6 +1252,7 @@
       state.settings = pending;
       applyIconSize(pending.iconSize);
       saveSettings();
+      updateWeather();
       const id = getWinId();
       if (id) closeWindow(id);
     };
@@ -1322,6 +1424,30 @@
     vg.appendChild(sizeRow);
     form.appendChild(vg);
 
+    /* ---------- Погода group ---------- */
+    const wxg = document.createElement("div");
+    wxg.className = "win98-groupbox";
+    const wxgLegend = document.createElement("div");
+    wxgLegend.className = "win98-groupbox-legend";
+    wxgLegend.textContent = "Погода";
+    wxg.appendChild(wxgLegend);
+
+    const cityLbl = document.createElement("label");
+    cityLbl.className = "win98-radio";
+    const cityInput = document.createElement("input");
+    cityInput.type = "text";
+    cityInput.className = "win98-addressbar-input";
+    cityInput.value = pending.weatherCity || "";
+    cityInput.placeholder = "Город";
+    cityInput.style.width = "200px";
+    const cityTip = document.createElement("div");
+    cityTip.className = "settings-msg";
+    cityTip.style.marginLeft = "0";
+    cityTip.textContent = "Город для отображения погоды в панели задач";
+
+    wxg.append(cityLbl, cityInput, cityTip);
+    form.appendChild(wxg);
+
     /* ---------- Dialog buttons ---------- */
     const btnRow = document.createElement("div");
     btnRow.className = "win98-dialog-buttons";
@@ -1460,6 +1586,11 @@
       if (doubleRadio.checked) pending.clickMode = "double";
     });
 
+    cityInput.addEventListener("change", () => {
+      const v = cityInput.value.trim();
+      if (v) pending.weatherCity = v;
+    });
+
     okBtn.addEventListener("click", commit);
     cancelBtn.addEventListener("click", cancel);
 
@@ -1487,7 +1618,10 @@
   function init() {
     updateClock();
     setInterval(updateClock, 10000);
-    loadSettings().then(loadBookmarks);
+    loadSettings().then(() => {
+      loadBookmarks();
+      updateWeather();
+    });
   }
 
   // Start
