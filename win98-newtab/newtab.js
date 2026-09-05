@@ -884,7 +884,7 @@
       content: content.outerHTML,
       statusbar: true,
       statusText: `${childCount} пап(ок), ${itemCount} элемент(ов)`,
-      onCreated: (el) => {
+      onCreated: (el, winData) => {
         // Re-attach folder item events
         const folderContent = el.querySelector(".folder-content");
         if (folderContent) {
@@ -899,21 +899,22 @@
         }
 
         // Toolbar nav
-        el.querySelector('[data-nav="back"]')?.addEventListener("click", () => {
-          // Go back — find parent
-          if (node.parentId) {
-            chrome.bookmarks.get(node.parentId, (results) => {
-              if (results && results[0]) openFolderWindow(results[0]);
-            });
-          }
-        });
-        el.querySelector('[data-nav="up"]')?.addEventListener("click", () => {
-          if (node.parentId) {
-            chrome.bookmarks.get(node.parentId, (results) => {
-              if (results && results[0]) openFolderWindow(results[0]);
-            });
-          }
-        });
+        const goToParent = () => {
+          if (!node.parentId) return;
+          chrome.bookmarks.get(node.parentId, (results) => {
+            if (results && results[0]) {
+              // The invisible root ("0") is rendered by the «Все закладки» window
+              if (results[0].id === "0") {
+                closeWindow(winData.id);
+                openAllBookmarksWindow();
+              } else {
+                openFolderWindow(results[0]);
+              }
+            }
+          });
+        };
+        el.querySelector('[data-nav="back"]')?.addEventListener("click", goToParent);
+        el.querySelector('[data-nav="up"]')?.addEventListener("click", goToParent);
       },
     });
   }
@@ -1623,9 +1624,8 @@
         }
       }
 
-      for (const root of tree[0].children || []) {
-        renderNode(root, content);
-      }
+      // Show root folders (Панель закладок, Другие, Мобильные) — like Chrome bookmark manager
+      renderNode(tree[0], content);
 
       createWindow({
         title: "Все закладки",
@@ -1639,17 +1639,14 @@
         statusbar: true,
         statusText: `Загрузка...`,
         onCreated: (el, winData) => {
-          // Re-render content
           const fc = el.querySelector(".folder-content");
           if (fc) {
             fc.innerHTML = "";
             chrome.bookmarks.getTree((t) => {
-              for (const root of t[0].children || []) {
-                renderNode(root, fc);
-              }
+              renderNode(t[0], fc);
               const total = fc.querySelectorAll(".folder-item").length;
               const sf = el.querySelector(".win98-statusbar-field");
-              if (sf) sf.textContent = `Всего: ${total} элементов`;
+              if (sf) sf.textContent = `Всего: ${total} папок`;
             });
           }
 
