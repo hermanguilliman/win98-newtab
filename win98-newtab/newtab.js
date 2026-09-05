@@ -1264,7 +1264,7 @@
       title: "Настройки",
       icon: "icons/settings.svg",
       width: 460,
-      height: 640,
+      height: 540,
       content: "",
       statusbar: false,
       onCreated: (el, winData) => {
@@ -1287,6 +1287,47 @@
 
     // UI type: "color" | "file" | "url" (maps to persisted type color|image)
     let uiType = pending.wallpaper.type === "color" ? "color" : "file";
+
+    /* ---------- Tab bar + panels ---------- */
+    const tabsWrap = document.createElement("div");
+    tabsWrap.className = "win98-tabs-wrap";
+    const tabBar = document.createElement("div");
+    tabBar.className = "win98-tabs";
+    const panels = document.createElement("div");
+    panels.className = "win98-tabpanels";
+
+    const TAB_DEFS = [
+      { id: "wp", label: "Обои" },
+      { id: "behavior", label: "Поведение" },
+      { id: "appearance", label: "Вид" },
+    ];
+    const tabPanels = {};
+
+    TAB_DEFS.forEach((t) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "win98-tab";
+      btn.dataset.tab = t.id;
+      btn.textContent = t.label;
+      btn.addEventListener("click", () => selectTab(t.id));
+      tabBar.appendChild(btn);
+
+      const panel = document.createElement("div");
+      panel.className = "win98-tabpanel";
+      panel.dataset.tabPanel = t.id;
+      panels.appendChild(panel);
+      tabPanels[t.id] = panel;
+    });
+
+    tabsWrap.appendChild(tabBar);
+    tabsWrap.appendChild(panels);
+    form.appendChild(tabsWrap);
+
+    function selectTab(id) {
+      tabBar.querySelectorAll(".win98-tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === id));
+      panels.querySelectorAll(".win98-tabpanel").forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === id));
+    }
+    selectTab("wp");
 
     const commit = () => {
       state.settings = pending;
@@ -1400,7 +1441,7 @@
     msg.className = "settings-msg";
     wg.appendChild(msg);
 
-    form.appendChild(wg);
+    tabPanels.wp.appendChild(wg);
 
     /* ---------- Открытие group ---------- */
     const mg = document.createElement("div");
@@ -1429,7 +1470,7 @@
     doubleLbl.append(doubleRadio, document.createTextNode("Открывать двойным кликом"));
 
     mg.append(singleLbl, doubleLbl);
-    form.appendChild(mg);
+    tabPanels.behavior.appendChild(mg);
 
     /* ---------- Вид group (icon size) ---------- */
     const vg = document.createElement("div");
@@ -1495,7 +1536,7 @@
     vg.appendChild(makeNumRow("Отступ сверху и снизу, пкс", "desktopPadY", 0, 64));
     vg.appendChild(makeNumRow("Отступ слева и справа, пкс", "desktopPadX", 0, 64));
 
-    form.appendChild(vg);
+    tabPanels.appearance.appendChild(vg);
 
     /* ---------- Погода group ---------- */
     const wxg = document.createElement("div");
@@ -1519,7 +1560,7 @@
     cityTip.textContent = "Город для отображения погоды в панели задач";
 
     wxg.append(cityLbl, cityInput, cityTip);
-    form.appendChild(wxg);
+    tabPanels.behavior.appendChild(wxg);
 
     /* ---------- Dialog buttons ---------- */
     const btnRow = document.createElement("div");

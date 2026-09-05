@@ -739,6 +739,72 @@ html, body {
 /* ============================================================
    SETTINGS WINDOW (Win98 dialog form)
    ============================================================ */
+/* ---------- Settings tabs ---------- */
+.win98-tabs-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.win98-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px 2px 0;
+  flex-shrink: 0;
+}
+
+.win98-tab {
+  font-family: var(--win98-font);
+  font-size: 11px;
+  padding: 3px 12px 4px;
+  cursor: pointer;
+  background: var(--win98-silver);
+  border-top: 2px solid var(--win98-white);
+  border-left: 2px solid var(--win98-white);
+  border-right: 2px solid var(--win98-black);
+  color: var(--win98-black);
+  position: relative;
+}
+
+.win98-tab.active {
+  font-weight: bold;
+  /* Bottom edge is open so the tab merges with the panel below */
+  border-bottom: none;
+  padding-bottom: 6px;
+  z-index: 1;
+}
+
+.win98-tab:not(.active) {
+  border-bottom: 2px solid var(--win98-dark-gray);
+}
+
+.win98-tab:not(.active):hover {
+  background: #e8e8e8;
+}
+
+.win98-tabpanels {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--win98-silver);
+  border: 2px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  padding: 4px;
+  margin-top: -1px;
+}
+
+.win98-tabpanel {
+  display: none;
+  height: 100%;
+  overflow: auto;
+}
+
+.win98-tabpanel.active {
+  display: block;
+}
+
 .win98-form {
   padding: 8px;
   background: var(--win98-silver);
