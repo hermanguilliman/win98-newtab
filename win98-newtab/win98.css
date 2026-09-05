@@ -522,8 +522,11 @@ html, body {
   position: fixed;
   bottom: 28px;
   left: 2px;
-  width: 200px;
+  width: 210px;
   display: flex;
+  /* .win98-window задаёт column — иначе синяя полоска встаёт сверху, а не слева */
+  flex-direction: row;
+  align-items: stretch;
   z-index: 9500;
   box-shadow: 3px 3px 6px rgba(0,0,0,0.4);
 }
@@ -536,6 +539,7 @@ html, body {
   justify-content: center;
   padding-bottom: 4px;
   flex-shrink: 0;
+  align-self: stretch;
 }
 
 .start-menu-sidebar-text {
