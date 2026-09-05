@@ -1,0 +1,711 @@
+/* ============================================================
+   Windows 98 New Tab — Full CSS
+   ============================================================ */
+
+/* ---------- Reset & Base ---------- */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --win98-bg:          #008080;
+  --win98-silver:      #c0c0c0;
+  --win98-white:       #ffffff;
+  --win98-black:       #000000;
+  --win98-dark-gray:   #808080;
+  --win98-navy:        #000080;
+  --win98-highlight:   #0000aa;
+  --win98-title-active: linear-gradient(90deg, #000080, #1084d0);
+  --win98-title-inactive: linear-gradient(90deg, #808080, #b0b0b0);
+  --win98-btn-face:    #c0c0c0;
+  --win98-font:        "Microsoft Sans Serif", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --win98-font-size:   11px;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--win98-font);
+  font-size: var(--win98-font-size);
+  color: var(--win98-black);
+  user-select: none;
+}
+
+/* ---------- Win98 3D Border Mixins ---------- */
+.win98-border-outset {
+  border: 2px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray),
+              inset -1px -1px 0 var(--win98-silver);
+}
+
+.win98-border-inset {
+  border: 2px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black),
+              inset -1px -1px 0 var(--win98-silver);
+}
+
+/* ============================================================
+   DESKTOP
+   ============================================================ */
+#desktop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  background: var(--win98-bg);
+  overflow: auto;
+}
+
+#desktop-icons {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  padding: 8px;
+  gap: 4px;
+  min-height: 100%;
+}
+
+/* ---------- Desktop Icon ---------- */
+.desktop-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 72px;
+  padding: 4px 2px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 0;
+  text-align: center;
+}
+
+.desktop-icon:hover {
+  background: rgba(0, 0, 128, 0.15);
+}
+
+.desktop-icon.selected {
+  background: var(--win98-navy);
+  color: var(--win98-white);
+}
+
+.desktop-icon img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.desktop-icon-label {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--win98-white);
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.7);
+  word-break: break-word;
+  line-height: 1.2;
+  max-width: 68px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.desktop-icon.selected .desktop-icon-label {
+  text-shadow: none;
+  background: var(--win98-navy);
+  outline: 1px dotted var(--win98-white);
+  padding: 0 1px;
+}
+
+/* ============================================================
+   WINDOWS
+   ============================================================ */
+.win98-window {
+  position: absolute;
+  background: var(--win98-silver);
+  border: 2px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray),
+              inset -1px -1px 0 var(--win98-silver),
+              2px 2px 4px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  min-height: 120px;
+  padding: 3px;
+}
+
+.win98-window.maximized {
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ---------- Title Bar ---------- */
+.win98-titlebar {
+  display: flex;
+  align-items: center;
+  padding: 2px 3px;
+  background: var(--win98-title-active);
+  color: var(--win98-white);
+  font-weight: bold;
+  font-size: 11px;
+  cursor: default;
+  flex-shrink: 0;
+  height: 20px;
+}
+
+.win98-titlebar.inactive {
+  background: var(--win98-title-inactive);
+}
+
+.win98-titlebar-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 3px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.win98-titlebar-text {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  margin-right: 2px;
+}
+
+.win98-titlebar-buttons {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.win98-titlebar-btn {
+  width: 16px;
+  height: 14px;
+  background: var(--win98-btn-face);
+  border: 1px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--win98-font);
+  font-size: 9px;
+  font-weight: bold;
+  line-height: 1;
+  color: var(--win98-black);
+}
+
+.win98-titlebar-btn:active {
+  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+  padding: 1px 0 0 1px;
+}
+
+/* ---------- Window Content ---------- */
+.win98-window-content {
+  flex: 1;
+  overflow: auto;
+  background: var(--win98-white);
+  border: 2px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  margin: 2px;
+}
+
+/* ---------- Status Bar ---------- */
+.win98-statusbar {
+  display: flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.win98-statusbar-field {
+  flex: 1;
+  height: 14px;
+  border: 1px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Toolbar inside window ---------- */
+.win98-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  gap: 4px;
+  border-bottom: 1px solid var(--win98-dark-gray);
+  background: var(--win98-silver);
+  flex-shrink: 0;
+}
+
+.win98-toolbar-btn {
+  background: var(--win98-btn-face);
+  border: 1px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+  padding: 2px 6px;
+  font-family: var(--win98-font);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.win98-toolbar-btn:active {
+  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+  padding: 3px 5px 1px 7px;
+}
+
+.win98-toolbar-btn img {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+
+/* ---------- Address Bar ---------- */
+.win98-addressbar {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  gap: 4px;
+  background: var(--win98-silver);
+  flex-shrink: 0;
+}
+
+.win98-addressbar label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.win98-addressbar-input {
+  flex: 1;
+  height: 18px;
+  border: 2px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  background: var(--win98-white);
+  font-family: var(--win98-font);
+  font-size: 11px;
+  padding: 0 4px;
+  outline: none;
+}
+
+/* ============================================================
+   FOLDER CONTENT (inside window)
+   ============================================================ */
+.folder-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  padding: 8px;
+  gap: 4px;
+  min-height: 100%;
+}
+
+.folder-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 72px;
+  padding: 4px 2px;
+  cursor: pointer;
+  text-align: center;
+  border: 1px solid transparent;
+}
+
+.folder-item:hover {
+  background: #e0e0e0;
+}
+
+.folder-item.selected {
+  background: var(--win98-navy);
+  color: var(--win98-white);
+}
+
+.folder-item img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.folder-item-label {
+  margin-top: 2px;
+  font-size: 11px;
+  word-break: break-word;
+  line-height: 1.2;
+  max-width: 68px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.folder-item.selected .folder-item-label {
+  background: var(--win98-navy);
+  outline: 1px dotted var(--win98-white);
+  padding: 0 1px;
+}
+
+/* ============================================================
+   TASKBAR
+   ============================================================ */
+#taskbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: var(--win98-silver);
+  border-top: 2px solid var(--win98-white);
+  display: flex;
+  align-items: center;
+  padding: 2px 2px;
+  z-index: 9000;
+  box-shadow: inset 0 1px 0 var(--win98-white);
+}
+
+#taskbar-divider {
+  width: 2px;
+  height: 22px;
+  margin: 0 2px;
+  border-left: 1px solid var(--win98-dark-gray);
+  border-right: 1px solid var(--win98-white);
+}
+
+/* ---------- Start Button ---------- */
+#start-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 1px 6px;
+  font-family: var(--win98-font);
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#start-btn .start-logo {
+  image-rendering: pixelated;
+}
+
+/* ---------- Taskbar Window Buttons ---------- */
+#taskbar-windows {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  overflow: hidden;
+  height: 22px;
+  align-items: center;
+}
+
+.taskbar-win-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 1px 6px;
+  font-family: var(--win98-font);
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 160px;
+  min-width: 40px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.taskbar-win-btn.active {
+  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+  background: var(--win98-silver);
+  font-weight: bold;
+}
+
+.taskbar-win-btn img {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.taskbar-win-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- System Tray ---------- */
+#system-tray {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+#tray-icons {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+#tray-icons img {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+
+#clock {
+  font-size: 11px;
+  white-space: nowrap;
+  padding-left: 4px;
+}
+
+/* ============================================================
+   START MENU
+   ============================================================ */
+#start-menu {
+  position: fixed;
+  bottom: 28px;
+  left: 2px;
+  width: 200px;
+  display: flex;
+  z-index: 9500;
+  box-shadow: 3px 3px 6px rgba(0,0,0,0.4);
+}
+
+.start-menu-sidebar {
+  width: 24px;
+  background: linear-gradient(to top, #000080, #1084d0);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.start-menu-sidebar-text {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: var(--win98-silver);
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+
+.start-menu-content {
+  flex: 1;
+  padding: 2px 0;
+}
+
+.start-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.start-menu-item:hover {
+  background: var(--win98-navy);
+  color: var(--win98-white);
+}
+
+.start-menu-item img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.start-menu-item-title {
+  font-weight: bold;
+}
+
+.start-menu-item-desc {
+  font-size: 10px;
+  color: var(--win98-dark-gray);
+}
+
+.start-menu-item:hover .start-menu-item-desc {
+  color: var(--win98-silver);
+}
+
+.start-menu-separator {
+  height: 1px;
+  margin: 3px 4px;
+  border-top: 1px solid var(--win98-dark-gray);
+  border-bottom: 1px solid var(--win98-white);
+}
+
+/* ============================================================
+   GENERIC BUTTON
+   ============================================================ */
+.win98-btn {
+  background: var(--win98-btn-face);
+  border: 2px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+  font-family: var(--win98-font);
+  font-size: var(--win98-font-size);
+  cursor: pointer;
+}
+
+.win98-btn:active {
+  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+  padding: 1px 0 0 1px;
+}
+
+/* ============================================================
+   SCROLLBAR (Win98 look)
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+::-webkit-scrollbar-track {
+  background: repeating-conic-gradient(var(--win98-silver) 0% 25%, var(--win98-white) 0% 50%) 50% / 2px 2px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--win98-silver);
+  border: 2px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+}
+
+::-webkit-scrollbar-button {
+  background: var(--win98-silver);
+  border: 2px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+::-webkit-scrollbar-button:active {
+  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+}
+
+/* ============================================================
+   DRAG RESIZE HANDLE
+   ============================================================ */
+.win98-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+}
+
+/* ============================================================
+   CONTEXT MENU
+   ============================================================ */
+.win98-context-menu {
+  position: fixed;
+  background: var(--win98-silver);
+  border: 2px solid;
+  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
+  box-shadow: inset 1px 1px 0 var(--win98-dark-gray),
+              inset -1px -1px 0 var(--win98-silver),
+              2px 2px 4px rgba(0,0,0,0.3);
+  padding: 2px;
+  z-index: 10000;
+  min-width: 140px;
+}
+
+.win98-context-menu-item {
+  padding: 3px 20px 3px 24px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+}
+
+.win98-context-menu-item:hover {
+  background: var(--win98-navy);
+  color: var(--win98-white);
+}
+
+.win98-context-menu-item.disabled {
+  color: var(--win98-dark-gray);
+  cursor: default;
+}
+
+.win98-context-menu-item.disabled:hover {
+  background: transparent;
+  color: var(--win98-dark-gray);
+}
+
+.win98-context-menu-separator {
+  height: 1px;
+  margin: 2px 2px;
+  border-top: 1px solid var(--win98-dark-gray);
+  border-bottom: 1px solid var(--win98-white);
+}
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+@keyframes window-open {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.win98-window {
+  animation: window-open 0.12s ease-out;
+}
+
+/* ============================================================
+   LOADING / EMPTY STATE
+   ============================================================ */
+.empty-desktop-msg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--win98-white);
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+}

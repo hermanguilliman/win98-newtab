@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Win98 Open Folder -->
+  <path d="M2 10 L2 26 L30 26 L30 12 L14 12 L12 10 Z" fill="#c8a032"/>
+  <path d="M2 12 L6 12 L4 10 L2 10 Z" fill="#d4c044"/>
+  <path d="M4 13 L28 13 L28 24 L4 24 Z" fill="#d4c044"/>
+  <path d="M4 13 L28 13 L28 15 L4 15 Z" fill="#e0d060"/>
+  <path d="M4 22 L28 22 L28 24 L4 24 Z" fill="#a08020"/>
+  <!-- Front flap (open) -->
+  <path d="M2 14 L30 14 L30 26 L2 26 Z" fill="#d4c044" opacity="0.9"/>
+</svg>
