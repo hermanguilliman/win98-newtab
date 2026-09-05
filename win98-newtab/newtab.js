@@ -513,13 +513,19 @@
     $desktopIcons.innerHTML = "";
     colorIdx = 0;
 
-    for (const root of roots) {
+    roots.forEach((root, rootIdx) => {
+      if (rootIdx > 0) {
+        // Force next group onto a new row
+        const sep = document.createElement("div");
+        sep.className = "desktop-row-separator";
+        $desktopIcons.appendChild(sep);
+      }
       const items = root.children || [];
       for (const item of items) {
         const icon = createDesktopIcon(item);
         $desktopIcons.appendChild(icon);
       }
-    }
+    });
   }
 
   function createDesktopIcon(node) {
