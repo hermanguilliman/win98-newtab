@@ -17,6 +17,7 @@
   --win98-dark-gray:   #808080;
   --win98-navy:        #000080;
   --win98-highlight:   #0000aa;
+  --win98-title-color: #ffffff;
   --win98-title-active: linear-gradient(90deg, #000080, #1084d0);
   --win98-title-inactive: linear-gradient(90deg, #808080, #b0b0b0);
   --win98-btn-face:    #c0c0c0;
@@ -159,7 +160,7 @@ html, body {
   align-items: center;
   padding: 2px 3px;
   background: var(--win98-title-active);
-  color: var(--win98-white);
+  color: var(--win98-title-color, var(--win98-white));
   font-weight: bold;
   font-size: 11px;
   cursor: default;
@@ -977,4 +978,312 @@ input[type="radio"]:disabled:checked::after {
   text-shadow: 1px 1px 0 var(--win98-white);
   cursor: default;
   padding: 1px 0 0 1px;
+}
+
+/* ============================================================
+   THEMES (data-theme on <html>)
+   ============================================================ */
+
+/* ---------- Windows XP (Luna blue) ---------- */
+html[data-theme="xp"] {
+  --win98-bg: #245edc;
+  --win98-navy: #316ac5;
+  --win98-highlight: #316ac5;
+  --win98-title-active: linear-gradient(180deg, #0058ee 0%, #3593ff 100%);
+  --win98-title-inactive: linear-gradient(180deg, #7da2d6 0%, #a9c4e8 100%);
+}
+
+html[data-theme="xp"] #taskbar {
+  background: linear-gradient(180deg, #2f6fd0 0%, #4a9bf5 7%, #2f6fd0 92%, #2454a0 100%);
+  border-top: none;
+  color: #fff;
+}
+
+html[data-theme="xp"] .taskbar-win-btn {
+  color: #fff;
+}
+
+html[data-theme="xp"] .taskbar-win-btn.active {
+  background: linear-gradient(180deg, #2454a0 0%, #4a9bf5 100%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme="xp"] #taskbar-divider {
+  border-color: rgba(255, 255, 255, 0.45) rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme="xp"] #system-tray {
+  background: rgba(0, 0, 0, 0.15);
+  border-color: #1b4480 #7fb5ff #7fb5ff #1b4480;
+  box-shadow: inset 1px 1px 0 #1b4480;
+  color: #fff;
+}
+
+html[data-theme="xp"] #clock,
+html[data-theme="xp"] #weather .weather-temp {
+  color: #fff;
+}
+
+html[data-theme="xp"] #start-btn {
+  background: linear-gradient(180deg, #6ee238 0%, #4fc319 45%, #2f8a06 100%);
+  border: 2px solid;
+  border-color: #e8ffd8 #0a3d00 #0a3d00 #e8ffd8;
+  border-radius: 6px 14px 14px 6px;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.4);
+  color: #fff;
+  font-style: italic;
+}
+
+html[data-theme="xp"] #start-btn:active {
+  border-color: #0a3d00 #e8ffd8 #e8ffd8 #0a3d00;
+  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="xp"] .win98-window {
+  border-radius: 4px;
+}
+
+html[data-theme="xp"] .win98-titlebar {
+  border-radius: 2px 2px 0 0;
+}
+
+/* ---------- Windows Vista (Aero glass) ---------- */
+html[data-theme="vista"] {
+  --win98-bg: #3a6ea5;
+  --win98-navy: #3399ff;
+  --win98-highlight: #3399ff;
+  --win98-title-active: linear-gradient(180deg, #1b1b1d 0%, #3a3a3e 100%);
+  --win98-title-inactive: linear-gradient(180deg, #3a3a3e 0%, #2a2a2e 100%);
+  --win98-title-color: #ffffff;
+}
+
+html[data-theme="vista"] .win98-window {
+  border: 1px solid #222;
+  border-radius: 8px 8px 4px 4px;
+  padding: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+html[data-theme="vista"] .win98-titlebar {
+  border-radius: 4px 4px 0 0;
+}
+
+html[data-theme="vista"] .win98-titlebar-btn,
+html[data-theme="win7"] .win98-titlebar-btn {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.1) 100%);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+html[data-theme="vista"] .win98-titlebar-btn:active,
+html[data-theme="win7"] .win98-titlebar-btn:active {
+  border-color: rgba(0, 0, 0, 0.7);
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme="vista"] #taskbar {
+  background: linear-gradient(180deg, #26262b 0%, #141418 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+html[data-theme="vista"] .taskbar-win-btn {
+  color: #fff;
+}
+
+html[data-theme="vista"] .taskbar-win-btn.active {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+}
+
+html[data-theme="vista"] #system-tray {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: #000 #7f7f7f #7f7f7f #000;
+  box-shadow: inset 1px 1px 0 #000;
+  color: #fff;
+}
+
+html[data-theme="vista"] #clock,
+html[data-theme="vista"] #weather .weather-temp {
+  color: #fff;
+}
+
+html[data-theme="vista"] #start-btn {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05) 70%);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+}
+
+html[data-theme="vista"] #start-btn:hover {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.1) 70%);
+}
+
+html[data-theme="vista"] #start-btn:active {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 6px;
+}
+
+html[data-theme="vista"] .start-menu-sidebar,
+html[data-theme="win7"] .start-menu-sidebar {
+  background: linear-gradient(to top, rgba(20, 20, 24, 0.95), rgba(60, 60, 66, 0.95));
+}
+
+/* ---------- Windows 7 (Aero) ---------- */
+html[data-theme="win7"] {
+  --win98-bg: #3a6ea5;
+  --win98-navy: #4a90d9;
+  --win98-highlight: #4a90d9;
+  --win98-title-active: linear-gradient(180deg, #2d5db8 0%, #3a6ac9 45%, #1e3e8e 100%);
+  --win98-title-inactive: linear-gradient(180deg, #6a6a6a 0%, #8c8c8c 100%);
+  --win98-title-color: #ffffff;
+}
+
+html[data-theme="win7"] .win98-window {
+  border: 1px solid #333;
+  border-radius: 8px 8px 4px 4px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+html[data-theme="win7"] .win98-titlebar {
+  border-radius: 4px 4px 0 0;
+}
+
+html[data-theme="win7"] #taskbar {
+  background: linear-gradient(180deg, #3e3e44 0%, #26262b 100%);
+  border-top: 1px solid #5a5a60;
+  color: #fff;
+}
+
+html[data-theme="win7"] .taskbar-win-btn {
+  color: #fff;
+}
+
+html[data-theme="win7"] .taskbar-win-btn.active {
+  background: linear-gradient(180deg, #4a8ae0 0%, #2b5da8 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: none;
+}
+
+html[data-theme="win7"] #system-tray {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: #000 #7f7f7f #7f7f7f #000;
+  box-shadow: inset 1px 1px 0 #000;
+  color: #fff;
+}
+
+html[data-theme="win7"] #clock,
+html[data-theme="win7"] #weather .weather-temp {
+  color: #fff;
+}
+
+html[data-theme="win7"] #start-btn {
+  background: radial-gradient(circle at 32% 32%, #b8f0a0 0%, #4db648 40%, #19751f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 11px;
+  color: #fff;
+}
+
+html[data-theme="win7"] #start-btn:hover {
+  background: radial-gradient(circle at 32% 32%, #d2f7c0 0%, #5cc450 40%, #218a28 100%);
+}
+
+html[data-theme="win7"] #start-btn:active {
+  background: radial-gradient(circle at 32% 32%, #19751f 0%, #4db648 100%);
+  padding: 1px 6px;
+}
+
+/* ---------- Windows 10 (flat) ---------- */
+html[data-theme="win10"] {
+  --win98-bg: #0f4c81;
+  --win98-navy: #0078d7;
+  --win98-highlight: #0078d7;
+  --win98-title-active: #ffffff;
+  --win98-title-inactive: #e8e8e8;
+  --win98-title-color: #1e1e1e;
+}
+
+html[data-theme="win10"] .win98-window {
+  border: 1px solid #ababab;
+  border-radius: 4px;
+  padding: 3px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+html[data-theme="win10"] .win98-titlebar {
+  border-radius: 3px 3px 0 0;
+}
+
+html[data-theme="win10"] .win98-titlebar-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #1e1e1e;
+  width: 30px;
+  height: 20px;
+  font-size: 10px;
+}
+
+html[data-theme="win10"] .win98-titlebar-btn:hover {
+  background: #e5e5e5;
+}
+
+html[data-theme="win10"] .win98-titlebar-btn:active {
+  background: #cccccc;
+  box-shadow: none;
+  padding: 0;
+}
+
+html[data-theme="win10"] #taskbar {
+  background: #1e1e1e;
+  border-top: 1px solid #5a5a5a;
+  color: #fff;
+}
+
+html[data-theme="win10"] .taskbar-win-btn {
+  color: #fff;
+}
+
+html[data-theme="win10"] .taskbar-win-btn.active {
+  background: #3b3b3b;
+  border: none;
+  box-shadow: inset 0 -2px 0 #0078d7;
+}
+
+html[data-theme="win10"] #system-tray {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #fff;
+}
+
+html[data-theme="win10"] #clock,
+html[data-theme="win10"] #weather .weather-temp {
+  color: #fff;
+}
+
+html[data-theme="win10"] #start-btn {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: #fff;
+}
+
+html[data-theme="win10"] #start-btn:hover {
+  background: #3b3b3b;
+}
+
+html[data-theme="win10"] #start-btn:active {
+  background: #2e2e2e;
+  padding: 1px 6px;
+}
+
+html[data-theme="win10"] .start-menu-sidebar {
+  background: linear-gradient(to top, #101010, #262626);
 }
