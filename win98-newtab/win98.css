@@ -709,3 +709,180 @@ html, body {
   text-align: center;
   pointer-events: none;
 }
+
+/* ============================================================
+   SETTINGS WINDOW (Win98 dialog form)
+   ============================================================ */
+.win98-form {
+  padding: 8px;
+  background: var(--win98-silver);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.win98-groupbox {
+  position: relative;
+  border: 2px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  background: var(--win98-silver);
+  padding: 14px 8px 8px;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+.win98-groupbox-legend {
+  position: absolute;
+  top: -9px;
+  left: 6px;
+  background: var(--win98-silver);
+  padding: 0 4px;
+  font-weight: bold;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+/* ---------- Win98 radio ---------- */
+.win98-radio {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--win98-white);
+  border: 1px solid;
+  border-color: #000000 #a0a0a0 #a0a0a0 #000000;
+  box-shadow: inset -1px -1px 0 #e0e0e0, 1px 1px 0 var(--win98-white);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: #000000;
+}
+
+input[type="radio"]:disabled {
+  background: var(--win98-silver);
+  cursor: default;
+}
+
+input[type="radio"]:disabled:checked::after {
+  background: var(--win98-dark-gray);
+}
+
+/* ---------- Rows ---------- */
+.win98-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 2px 0;
+  margin-left: 18px;
+}
+
+.win98-radio-row .win98-addressbar-input {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+}
+
+.win98-radio-row .win98-btn {
+  padding: 1px 8px;
+  flex-shrink: 0;
+}
+
+.wp-style-row {
+  display: flex;
+  gap: 12px;
+  margin-left: 18px;
+  padding: 4px 0;
+}
+
+/* ---------- Color picker swatch ---------- */
+.wp-color-picker {
+  width: 28px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  background: var(--win98-white);
+  cursor: pointer;
+}
+
+.wp-color-picker::-webkit-color-swatch-wrapper {
+  padding: 1px;
+}
+
+.wp-color-picker::-webkit-color-swatch {
+  border: none;
+}
+
+/* ---------- Preview ---------- */
+.wp-preview {
+  margin: 6px 4px 0 18px;
+}
+
+.wp-preview-img {
+  width: 220px;
+  height: 120px;
+  border: 2px solid;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  background-color: #008080;
+}
+
+/* ---------- Message line ---------- */
+.settings-msg {
+  font-size: 11px;
+  margin: 4px 4px 0 18px;
+  min-height: 14px;
+  line-height: 14px;
+}
+
+.settings-error {
+  color: #800000;
+}
+
+.settings-success {
+  color: #006000;
+}
+
+/* ---------- Dialog buttons ---------- */
+.win98-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 4px 2px;
+  flex-shrink: 0;
+}
+
+.win98-dialog-buttons .win98-btn {
+  min-width: 74px;
+  padding: 3px 12px;
+}
+
+/* ---------- Disabled button ---------- */
+.win98-btn:disabled {
+  color: var(--win98-dark-gray);
+  text-shadow: 1px 1px 0 var(--win98-white);
+  cursor: default;
+  padding: 1px 0 0 1px;
+}

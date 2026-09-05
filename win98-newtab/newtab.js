@@ -16,6 +16,18 @@
     startMenuOpen: false,
     dragState: null,
     resizeState: null,
+    settings: null,
+  };
+
+  /* ---------- Default settings ---------- */
+  const DEFAULT_SETTINGS = {
+    clickMode: "double",
+    wallpaper: {
+      type: "color",
+      color: "#008080",
+      imageData: null,
+      imageStyle: "tile",
+    },
   };
 
   /* ---------- DOM Refs ---------- */
@@ -540,20 +552,25 @@
     div.appendChild(img);
     div.appendChild(label);
 
-    // Double-click → open
-    div.addEventListener("dblclick", (e) => {
+    // Click / Double-click → mode-dependent open
+    div.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (isFolder) {
-        openFolderWindow(node);
+      if (isSingleClickMode()) {
+        const prev = Number(div.dataset.lastClick || 0);
+        const now = Date.now();
+        div.dataset.lastClick = now;
+        if (now - prev < 350) return; // part of a double-click
+        openNode(node);
       } else {
-        window.location.href = node.url;
+        selectDesktopIcon(div);
       }
     });
 
-    // Single click → select
-    div.addEventListener("click", (e) => {
+    div.addEventListener("dblclick", (e) => {
       e.stopPropagation();
-      selectDesktopIcon(div);
+      if (!isSingleClickMode()) {
+        openNode(node);
+      }
     });
 
     // Right-click context menu
@@ -562,10 +579,7 @@
       e.stopPropagation();
       selectDesktopIcon(div);
       showContextMenu(e.clientX, e.clientY, [
-        { label: "Открыть", action: () => {
-          if (isFolder) openFolderWindow(node);
-          else window.location.href = node.url;
-        }},
+        { label: "Открыть", action: () => openNode(node) },
         { type: "separator" },
         { label: "Копировать ссылку", action: () => {
           if (node.url) navigator.clipboard.writeText(node.url);
@@ -579,6 +593,20 @@
   function selectDesktopIcon(el) {
     document.querySelectorAll(".desktop-icon.selected").forEach((d) => d.classList.remove("selected"));
     el.classList.add("selected");
+  }
+
+  /** Open a bookmark node (URL → navigate, folder → window) */
+  function openNode(node) {
+    if (node.url) {
+      window.location.href = node.url;
+    } else {
+      openFolderWindow(node);
+    }
+  }
+
+  /** Current click mode from settings */
+  function isSingleClickMode() {
+    return state.settings && state.settings.clickMode === "single";
   }
 
   /* ============================================================
@@ -683,19 +711,25 @@
     div.appendChild(img);
     div.appendChild(label);
 
-    div.addEventListener("dblclick", (e) => {
+    div.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (isFolder) {
-        openFolderWindow(node);
+      if (isSingleClickMode()) {
+        const prev = Number(div.dataset.lastClick || 0);
+        const now = Date.now();
+        div.dataset.lastClick = now;
+        if (now - prev < 350) return; // part of a double-click
+        openNode(node);
       } else {
-        window.location.href = node.url;
+        document.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
+        div.classList.add("selected");
       }
     });
 
-    div.addEventListener("click", (e) => {
+    div.addEventListener("dblclick", (e) => {
       e.stopPropagation();
-      document.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
-      div.classList.add("selected");
+      if (!isSingleClickMode()) {
+        openNode(node);
+      }
     });
 
     div.addEventListener("contextmenu", (e) => {
@@ -704,10 +738,7 @@
       document.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
       div.classList.add("selected");
       showContextMenu(e.clientX, e.clientY, [
-        { label: "Открыть", action: () => {
-          if (isFolder) openFolderWindow(node);
-          else window.location.href = node.url;
-        }},
+        { label: "Открыть", action: () => openNode(node) },
         { type: "separator" },
         { label: "Копировать ссылку", action: () => {
           if (node.url) navigator.clipboard.writeText(node.url);
@@ -838,6 +869,12 @@
     openAllBookmarksWindow();
   });
 
+  // Start menu: settings
+  document.getElementById("menu-settings").addEventListener("click", () => {
+    closeStartMenu();
+    openSettingsWindow();
+  });
+
   // Close menus on outside click
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#start-menu") && !e.target.closest("#start-btn")) {
@@ -881,11 +918,22 @@
             label.textContent = child.title || "Без названия";
             item.appendChild(img);
             item.appendChild(label);
-            item.addEventListener("dblclick", () => openFolderWindow(child));
             item.addEventListener("click", (e) => {
               e.stopPropagation();
-              container.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
-              item.classList.add("selected");
+              if (isSingleClickMode()) {
+                const prev = Number(item.dataset.lastClick || 0);
+                const now = Date.now();
+                item.dataset.lastClick = now;
+                if (now - prev < 350) return;
+                openNode(child);
+              } else {
+                container.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
+                item.classList.add("selected");
+              }
+            });
+            item.addEventListener("dblclick", (e) => {
+              e.stopPropagation();
+              if (!isSingleClickMode()) openNode(child);
             });
             container.appendChild(item);
           } else if (child.url) {
@@ -902,11 +950,22 @@
             label.textContent = child.title || child.url;
             item.appendChild(img);
             item.appendChild(label);
-            item.addEventListener("dblclick", () => { window.location.href = child.url; });
             item.addEventListener("click", (e) => {
               e.stopPropagation();
-              container.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
-              item.classList.add("selected");
+              if (isSingleClickMode()) {
+                const prev = Number(item.dataset.lastClick || 0);
+                const now = Date.now();
+                item.dataset.lastClick = now;
+                if (now - prev < 350) return;
+                openNode(child);
+              } else {
+                container.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
+                item.classList.add("selected");
+              }
+            });
+            item.addEventListener("dblclick", (e) => {
+              e.stopPropagation();
+              if (!isSingleClickMode()) openNode(child);
             });
             container.appendChild(item);
           }
@@ -953,6 +1012,401 @@
   }
 
   /* ============================================================
+     SETTINGS (storage + wallpaper + click mode)
+     ============================================================ */
+
+  function mergeSettings(partial) {
+    const base = structuredClone(DEFAULT_SETTINGS);
+    if (!partial) return base;
+    if (partial.clickMode === "single" || partial.clickMode === "double") {
+      base.clickMode = partial.clickMode;
+    }
+    if (partial.wallpaper) {
+      const wp = partial.wallpaper;
+      if (wp.type === "color" || wp.type === "image") base.wallpaper.type = wp.type;
+      if (typeof wp.color === "string") base.wallpaper.color = wp.color;
+      if (typeof wp.imageData === "string") base.wallpaper.imageData = wp.imageData;
+      if (["stretch", "tile", "center"].includes(wp.imageStyle)) base.wallpaper.imageStyle = wp.imageStyle;
+    }
+    return base;
+  }
+
+  async function loadSettings() {
+    try {
+      const stored = await chrome.storage.local.get("settings");
+      state.settings = mergeSettings(stored.settings);
+    } catch (err) {
+      state.settings = mergeSettings(null);
+    }
+    applyWallpaper(state.settings.wallpaper);
+  }
+
+  function saveSettings() {
+    return chrome.storage.local.set({ settings: state.settings }).catch(() => {});
+  }
+
+  /** Apply wallpaper to the desktop background */
+  function applyWallpaper(wp) {
+    wp = wp || (state.settings && state.settings.wallpaper) || DEFAULT_SETTINGS.wallpaper;
+    const desk = document.getElementById("desktop");
+    desk.style.backgroundPosition = "0 0";
+
+    if (wp.type !== "color" && wp.imageData) {
+      desk.style.backgroundImage = `url(${wp.imageData})`;
+      desk.style.backgroundColor = wp.color || "#008080";
+      const sty = wp.imageStyle || "tile";
+      if (sty === "stretch") {
+        desk.style.backgroundSize = "100% 100%";
+        desk.style.backgroundRepeat = "no-repeat";
+      } else if (sty === "center") {
+        desk.style.backgroundSize = "auto";
+        desk.style.backgroundRepeat = "no-repeat";
+        desk.style.backgroundPosition = "center center";
+      } else {
+        desk.style.backgroundSize = "auto";
+        desk.style.backgroundRepeat = "repeat";
+      }
+    } else {
+      desk.style.backgroundImage = "none";
+      desk.style.backgroundColor = wp.color || "#008080";
+      desk.style.backgroundSize = "auto";
+      desk.style.backgroundRepeat = "repeat";
+    }
+  }
+
+  /* ============================================================
+     SETTINGS WINDOW
+     ============================================================ */
+
+  function openSettingsWindow() {
+    // Single instance
+    const existing = state.windows.find((w) => w.title === "Настройки");
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+
+    const pending = structuredClone(state.settings);
+    let settingsWinId = null;
+
+    createWindow({
+      title: "Настройки",
+      icon: "icons/settings.svg",
+      width: 460,
+      height: 480,
+      content: "",
+      statusbar: false,
+      onCreated: (el, winData) => {
+        settingsWinId = winData.id;
+        const contentEl = el.querySelector(".win98-window-content");
+        contentEl.style.background = "var(--win98-silver)";
+        contentEl.appendChild(buildSettingsForm(pending, () => settingsWinId));
+      },
+    });
+  }
+
+  /**
+   * Build the settings form. Live-preview applies changes to the desktop,
+   * but they are only committed to disk on OK.
+   */
+  function buildSettingsForm(pending, getWinId) {
+    const form = document.createElement("form");
+    form.className = "win98-form";
+    form.addEventListener("submit", (e) => e.preventDefault());
+
+    // UI type: "color" | "file" | "url" (maps to persisted type color|image)
+    let uiType = pending.wallpaper.type === "color" ? "color" : "file";
+
+    const commit = () => {
+      state.settings = pending;
+      saveSettings();
+      const id = getWinId();
+      if (id) closeWindow(id);
+    };
+
+    const cancel = () => {
+      applyWallpaper(state.settings.wallpaper);
+      const id = getWinId();
+      if (id) closeWindow(id);
+    };
+
+    /* ---------- Обои group ---------- */
+    const wg = document.createElement("div");
+    wg.className = "win98-groupbox";
+    const wgLegend = document.createElement("div");
+    wgLegend.className = "win98-groupbox-legend";
+    wgLegend.textContent = "Обои";
+    wg.appendChild(wgLegend);
+
+    // -- Цвет фона --
+    const colorRow = document.createElement("label");
+    colorRow.className = "win98-radio";
+    const colorRadio = document.createElement("input");
+    colorRadio.type = "radio";
+    colorRadio.name = "wp-type";
+    colorRadio.value = "color";
+    const colorSpan = document.createElement("span");
+    colorSpan.textContent = "Цвет фона:";
+    const colorPicker = document.createElement("input");
+    colorPicker.type = "color";
+    colorPicker.className = "wp-color-picker";
+    colorPicker.value = pending.wallpaper.color || "#008080";
+    colorRow.append(colorRadio, colorSpan, colorPicker);
+    wg.appendChild(colorRow);
+
+    // -- Изображение с компьютера --
+    const fileRow = document.createElement("div");
+    fileRow.className = "win98-radio-row";
+    const fileRadio = document.createElement("input");
+    fileRadio.type = "radio";
+    fileRadio.name = "wp-type";
+    fileRadio.value = "file";
+    const fileLabel = document.createElement("span");
+    fileLabel.textContent = "Изображение с компьютера:";
+    const fileBtn = document.createElement("button");
+    fileBtn.type = "button";
+    fileBtn.className = "win98-btn";
+    fileBtn.textContent = "Выбрать файл...";
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.display = "none";
+    fileRow.append(fileRadio, fileLabel, fileBtn, fileInput);
+    wg.appendChild(fileRow);
+
+    // -- Изображение из интернета --
+    const urlRow = document.createElement("div");
+    urlRow.className = "win98-radio-row";
+    const urlRadio = document.createElement("input");
+    urlRadio.type = "radio";
+    urlRadio.name = "wp-type";
+    urlRadio.value = "url";
+    const urlLabel = document.createElement("span");
+    urlLabel.textContent = "Изображение из интернета:";
+    const urlInput = document.createElement("input");
+    urlInput.type = "url";
+    urlInput.className = "win98-addressbar-input";
+    urlInput.placeholder = "https://example.com/oboi.png";
+    const dlBtn = document.createElement("button");
+    dlBtn.type = "button";
+    dlBtn.className = "win98-btn";
+    dlBtn.textContent = "Скачать";
+    urlRow.append(urlRadio, urlLabel, urlInput, dlBtn);
+    wg.appendChild(urlRow);
+
+    // -- Расположение --
+    const styleRow = document.createElement("div");
+    styleRow.className = "wp-style-row";
+    const STYLE_LABELS = ["Замостить", "Растянуть", "По центру"];
+    ["tile", "stretch", "center"].forEach((s, i) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      const r = document.createElement("input");
+      r.type = "radio";
+      r.name = "wp-style";
+      r.value = s;
+      if (pending.wallpaper.imageStyle === s) r.checked = true;
+      const sp = document.createElement("span");
+      sp.textContent = STYLE_LABELS[i];
+      lbl.append(r, sp);
+      styleRow.appendChild(lbl);
+    });
+    wg.appendChild(styleRow);
+
+    // -- Preview --
+    const preview = document.createElement("div");
+    preview.className = "wp-preview";
+    const previewImg = document.createElement("div");
+    previewImg.className = "wp-preview-img";
+    preview.appendChild(previewImg);
+    wg.appendChild(preview);
+
+    // -- Message line --
+    const msg = document.createElement("div");
+    msg.className = "settings-msg";
+    wg.appendChild(msg);
+
+    form.appendChild(wg);
+
+    /* ---------- Открытие group ---------- */
+    const mg = document.createElement("div");
+    mg.className = "win98-groupbox";
+    const mgLegend = document.createElement("div");
+    mgLegend.className = "win98-groupbox-legend";
+    mgLegend.textContent = "Открытие";
+    mg.appendChild(mgLegend);
+
+    const singleLbl = document.createElement("label");
+    singleLbl.className = "win98-radio";
+    const singleRadio = document.createElement("input");
+    singleRadio.type = "radio";
+    singleRadio.name = "click-mode";
+    singleRadio.value = "single";
+    if (pending.clickMode === "single") singleRadio.checked = true;
+    singleLbl.append(singleRadio, document.createTextNode("Открывать одним кликом"));
+
+    const doubleLbl = document.createElement("label");
+    doubleLbl.className = "win98-radio";
+    const doubleRadio = document.createElement("input");
+    doubleRadio.type = "radio";
+    doubleRadio.name = "click-mode";
+    doubleRadio.value = "double";
+    if (pending.clickMode === "double") doubleRadio.checked = true;
+    doubleLbl.append(doubleRadio, document.createTextNode("Открывать двойным кликом"));
+
+    mg.append(singleLbl, doubleLbl);
+    form.appendChild(mg);
+
+    /* ---------- Dialog buttons ---------- */
+    const btnRow = document.createElement("div");
+    btnRow.className = "win98-dialog-buttons";
+    const okBtn = document.createElement("button");
+    okBtn.type = "button";
+    okBtn.className = "win98-btn";
+    okBtn.textContent = "OK";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "win98-btn";
+    cancelBtn.textContent = "Отмена";
+    btnRow.append(okBtn, cancelBtn);
+    form.appendChild(btnRow);
+
+    /* ---------- Helpers ---------- */
+    const updateEnabled = () => {
+      fileBtn.disabled = uiType !== "file";
+      urlInput.disabled = uiType !== "url";
+      dlBtn.disabled = uiType !== "url";
+      styleRow.querySelectorAll("input").forEach((r) => (r.disabled = uiType === "color"));
+    };
+
+    const renderPreview = () => {
+      const isImg = uiType !== "color" && pending.wallpaper.imageData;
+      previewImg.style.backgroundImage = isImg ? `url(${pending.wallpaper.imageData})` : "none";
+      previewImg.style.backgroundColor = pending.wallpaper.color || "#008080";
+      const sty = pending.wallpaper.imageStyle || "tile";
+      if (sty === "stretch") {
+        previewImg.style.backgroundSize = "100% 100%";
+        previewImg.style.backgroundRepeat = "no-repeat";
+      } else if (sty === "center") {
+        previewImg.style.backgroundSize = "auto";
+        previewImg.style.backgroundRepeat = "no-repeat";
+        previewImg.style.backgroundPosition = "center center";
+      } else {
+        previewImg.style.backgroundSize = "auto";
+        previewImg.style.backgroundRepeat = "repeat";
+        previewImg.style.backgroundPosition = "0 0";
+      }
+    };
+
+    const setMsg = (text, isError = true) => {
+      msg.textContent = text || "";
+      msg.classList.toggle("settings-error", isError);
+      msg.classList.toggle("settings-success", !isError);
+    };
+
+    const liveApply = () => applyWallpaper(pending.wallpaper);
+
+    /* ---------- Events ---------- */
+    [colorRadio, fileRadio, urlRadio].forEach((r) => {
+      r.addEventListener("change", () => {
+        if (!r.checked) return;
+        uiType = r.value;
+        pending.wallpaper.type = uiType === "color" ? "color" : "image";
+        updateEnabled();
+        renderPreview();
+        liveApply();
+      });
+    });
+
+    colorPicker.addEventListener("input", () => {
+      pending.wallpaper.color = colorPicker.value;
+      renderPreview();
+      liveApply();
+    });
+
+    fileBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        pending.wallpaper.imageData = reader.result;
+        pending.wallpaper.type = "image";
+        uiType = "file";
+        fileRadio.checked = true;
+        updateEnabled();
+        renderPreview();
+        liveApply();
+        setMsg("Обои выбраны. Нажмите OK, чтобы сохранить.", false);
+      };
+      reader.onerror = () => setMsg("Не удалось прочитать файл.");
+      reader.readAsDataURL(file);
+    });
+
+    dlBtn.addEventListener("click", async () => {
+      const u = urlInput.value.trim();
+      if (!u) {
+        setMsg("Введите адрес изображения.");
+        return;
+      }
+      dlBtn.disabled = true;
+      dlBtn.textContent = "Загружаем...";
+      setMsg("");
+      try {
+        const resp = await fetch(u, { mode: "cors" });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const blob = await resp.blob();
+        const reader = new FileReader();
+        const dataUrl = await new Promise((res, rej) => {
+          reader.onload = () => res(reader.result);
+          reader.onerror = () => rej(new Error("read error"));
+          reader.readAsDataURL(blob);
+        });
+        pending.wallpaper.imageData = dataUrl;
+        pending.wallpaper.type = "image";
+        uiType = "url";
+        urlRadio.checked = true;
+        updateEnabled();
+        renderPreview();
+        liveApply();
+        setMsg("Обои скачаны и сохранены локально. Нажмите OK.", false);
+      } catch (err) {
+        setMsg("Не удалось загрузить: сервер не разрешает доступ (CORS) или адрес неверный.");
+      } finally {
+        dlBtn.disabled = uiType !== "url";
+        dlBtn.textContent = "Скачать";
+      }
+    });
+
+    styleRow.querySelectorAll("input").forEach((r) => {
+      r.addEventListener("change", () => {
+        if (r.checked) {
+          pending.wallpaper.imageStyle = r.value;
+          renderPreview();
+          liveApply();
+        }
+      });
+    });
+
+    singleRadio.addEventListener("change", () => {
+      if (singleRadio.checked) pending.clickMode = "single";
+    });
+    doubleRadio.addEventListener("change", () => {
+      if (doubleRadio.checked) pending.clickMode = "double";
+    });
+
+    okBtn.addEventListener("click", commit);
+    cancelBtn.addEventListener("click", cancel);
+
+    // Initial state
+    updateEnabled();
+    renderPreview();
+
+    return form;
+  }
+
+  /* ============================================================
      UTILITIES
      ============================================================ */
 
@@ -969,7 +1423,7 @@
   function init() {
     updateClock();
     setInterval(updateClock, 10000);
-    loadBookmarks();
+    loadSettings().then(loadBookmarks);
   }
 
   // Start
