@@ -260,6 +260,11 @@
   let previewFolderStyle = null;
   let previewTheme = null;
 
+  /** Currently active folder icon style id */
+  function folderIconStyleName() {
+    return previewFolderStyle || (state.settings && state.settings.folderIconStyle) || DEFAULT_SETTINGS.folderIconStyle;
+  }
+
   /** Apply the active UI theme: sets data-theme on <html> so CSS picks the palette */
   function applyDesktopTheme(src) {
     const s = src || state.settings || DEFAULT_SETTINGS;
