@@ -471,10 +471,11 @@
     }
 
     const children = tree.children || [];
-    // We show: Bookmarks Bar, Other Bookmarks, and any custom roots
-    const roots = children.filter(
-      (n) => n.children && n.children.length > 0
-    );
+    // Chrome root IDs are always: 1=Bar, 2=Other, 3=Mobile
+    const ROOT_ORDER = { "1": 0, "2": 1, "3": 2 };
+    const roots = children
+      .filter((n) => n.children && n.children.length > 0)
+      .sort((a, b) => (ROOT_ORDER[a.id] ?? 99) - (ROOT_ORDER[b.id] ?? 99));
 
     if (roots.length === 0 && countAllBookmarks(tree) === 0) {
       showEmptyState("Нет закладок. Добавьте закладки в Chrome и они появятся здесь.");
