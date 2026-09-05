@@ -17,6 +17,10 @@
     dragState: null,
     resizeState: null,
     settings: null,
+    treeRoot: null,
+    bookmarksRefreshTimer: 0,
+    searchNodes: [],
+    selectedDesktopEl: null,
   };
 
   /* ---------- Default settings ---------- */
@@ -175,11 +179,15 @@
     return c.toDataURL();
   }
 
-  /** Generate a favicon URL from bookmark URL */
+  /** Generate a favicon URL via Chrome's built-in favicon service (no network round-trip) */
   function getFaviconUrl(url) {
     try {
-      const u = new URL(url);
-      return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=${currentIconSize()}`;
+      new URL(url);
+      // _favicon/ supports 16/32/64/128 — pick the closest to the current icon size
+      const sizes = [16, 32, 64, 128];
+      const wanted = currentIconSize();
+      const size = sizes.reduce((a, b) => (Math.abs(b - wanted) < Math.abs(a - wanted) ? b : a));
+      return chrome.runtime.getURL(`_favicon/?pageUrl=${encodeURIComponent(url)}&size=${size}`);
     } catch {
       return null;
     }
@@ -584,7 +592,17 @@
       return;
     }
 
-    const children = tree.children || [];
+    state.treeRoot = tree;
+    renderBookmarks(tree);
+  }
+
+  /** Render the desktop icons from a bookmarks tree (used on init and on live refresh) */
+  function renderBookmarks(tree) {
+    $desktopIcons.innerHTML = "";
+    const emptyMsg = document.querySelector(".empty-desktop-msg");
+    if (emptyMsg) emptyMsg.remove();
+
+    const children = tree ? tree.children || [] : [];
     // Chrome root IDs are always: 1=Bar, 2=Other, 3=Mobile
     const ROOT_ORDER = { "1": 0, "2": 1, "3": 2 };
     const roots = children
@@ -617,6 +635,34 @@
     $desktop.appendChild(el);
   }
 
+  /** Folder nodes have a children array (possibly empty); bookmarks have a URL. Chrome
+      separator nodes (url: "" without children) must never be rendered as folders. */
+  function isFolderNode(n) {
+    return !!n && !n.url && Array.isArray(n.children);
+  }
+  function isBookmarkNode(n) {
+    return !!n && !!n.url;
+  }
+  /** Anything that should appear on the desktop / in folder windows */
+  function isVisibleNode(n) {
+    return isFolderNode(n) || isBookmarkNode(n);
+  }
+
+  /** Recursively find a node in the cached tree by id */
+  function findNodeById(node, id) {
+    if (!node) return null;
+    if (node.id === id) return node;
+    if (node.children) {
+      for (const child of node.children) {
+        const hit = findNodeById(child, id);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  const EMPTY_FOLDER_HTML = '<div style="padding:20px;color:#808080;font-size:11px;">Папка пуста</div>';
+
   /* ============================================================
      DESKTOP ICONS RENDERING
      ============================================================ */
@@ -636,6 +682,7 @@
       }
       const items = root.children || [];
       for (const item of items) {
+        if (!isVisibleNode(item)) continue;
         const icon = createDesktopIcon(item);
         $desktopIcons.appendChild(icon);
       }
@@ -646,7 +693,7 @@
     const div = document.createElement("div");
     div.className = "desktop-icon";
 
-    const isFolder = !node.url;
+    const isFolder = isFolderNode(node);
 
     // Create icon image
     const img = document.createElement("img");
@@ -702,21 +749,18 @@
       e.preventDefault();
       e.stopPropagation();
       selectDesktopIcon(div);
-      showContextMenu(e.clientX, e.clientY, [
-        { label: "Открыть", action: () => openNode(node) },
-        { type: "separator" },
-        { label: "Копировать ссылку", action: () => {
-          if (node.url) navigator.clipboard.writeText(node.url);
-        }, disabled: !node.url },
-      ]);
+      showContextMenu(e.clientX, e.clientY, buildNodeContextMenuItems(node));
     });
 
+    div._node = node;
     return div;
   }
 
   function selectDesktopIcon(el) {
     document.querySelectorAll(".desktop-icon.selected").forEach((d) => d.classList.remove("selected"));
+    if (!el) return;
     el.classList.add("selected");
+    state.selectedDesktopEl = el;
   }
 
   /** Open a bookmark node (URL → navigate, folder → window) */
@@ -756,9 +800,9 @@
     const content = document.createElement("div");
     content.className = "folder-content";
 
-    const items = node.children || [];
+    const items = (node.children || []).filter(isVisibleNode);
     if (items.length === 0) {
-      content.innerHTML = '<div style="padding:20px;color:#808080;font-size:11px;">Папка пуста</div>';
+      content.innerHTML = EMPTY_FOLDER_HTML;
     } else {
       for (const item of items) {
         content.appendChild(createFolderItem(item, node));
@@ -780,6 +824,7 @@
     createWindow({
       title: node.title || "Папка",
       icon: folderIcon,
+      bookmarkId: node.id,
       width: 550,
       height: 400,
       toolbar: toolbarHtml,
@@ -792,11 +837,12 @@
         const folderContent = el.querySelector(".folder-content");
         if (folderContent) {
           folderContent.innerHTML = "";
-          for (const item of items) {
-            folderContent.appendChild(createFolderItem(item, node));
-          }
           if (items.length === 0) {
-            folderContent.innerHTML = '<div style="padding:20px;color:#808080;font-size:11px;">Папка пуста</div>';
+            folderContent.innerHTML = EMPTY_FOLDER_HTML;
+          } else {
+            for (const item of items) {
+              folderContent.appendChild(createFolderItem(item, node));
+            }
           }
         }
 
@@ -823,8 +869,9 @@
   function createFolderItem(node, parentNode) {
     const div = document.createElement("div");
     div.className = "folder-item";
+    div.dataset.bookmarkId = String(node.id || "");
 
-    const isFolder = !node.url;
+    const isFolder = isFolderNode(node);
     const img = document.createElement("img");
     img.draggable = false;
 
@@ -877,15 +924,10 @@
       e.stopPropagation();
       document.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
       div.classList.add("selected");
-      showContextMenu(e.clientX, e.clientY, [
-        { label: "Открыть", action: () => openNode(node) },
-        { type: "separator" },
-        { label: "Копировать ссылку", action: () => {
-          if (node.url) navigator.clipboard.writeText(node.url);
-        }, disabled: !node.url },
-      ]);
+      showContextMenu(e.clientX, e.clientY, buildNodeContextMenuItems(node));
     });
 
+    div._node = node;
     return div;
   }
 
@@ -902,6 +944,422 @@
       break;
     }
     return parts.join(" > ") || "/";
+  }
+
+  /* ============================================================
+     NODE OPERATIONS (open variants, copy, rename, delete)
+     ============================================================ */
+
+  function copyText(text) {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+  }
+
+  function createTab(url, active) {
+    if (!url) return Promise.resolve();
+    return chrome.tabs.create({ url, active });
+  }
+
+  function openInNewWindow(url, incognito) {
+    if (!url) return;
+    chrome.windows.create({ url, incognito: !!incognito }).catch(() => {});
+  }
+
+  /** Build the right-click menu items for a bookmark or folder node */
+  function buildNodeContextMenuItems(node) {
+    if (!node) return [];
+    if (isBookmarkNode(node)) {
+      return [
+        { label: "Открыть", action: () => openNode(node) },
+        { label: "Открыть в новой вкладке", action: () => createTab(node.url, true) },
+        { label: "Открыть в фоновой вкладке", action: () => createTab(node.url, false) },
+        { label: "Открыть в новом окне", action: () => openInNewWindow(node.url, false) },
+        { label: "Открыть в режиме инкогнито", action: () => openInNewWindow(node.url, true) },
+        { type: "separator" },
+        { label: "Копировать адрес", action: () => copyText(node.url) },
+        { type: "separator" },
+        { label: "Переименовать", action: () => renameNode(node) },
+        { label: "Удалить", action: () => deleteNode(node) },
+      ];
+    }
+    return [
+      { label: "Открыть", action: () => openNode(node) },
+      { type: "separator" },
+      { label: "Переименовать", action: () => renameNode(node) },
+      { label: "Удалить", action: () => deleteNode(node) },
+    ];
+  }
+
+  function renameNode(node) {
+    openPromptDialog("Переименовать", "Новое имя:", node.title || "", (newName) => {
+      if (newName && newName !== node.title) {
+        chrome.bookmarks.update(node.id, { title: newName }).catch(() => {});
+      }
+    });
+  }
+
+  function deleteNode(node) {
+    const folder = isFolderNode(node);
+    openConfirmDialog(
+      folder ? "Удалить папку" : "Удалить закладку",
+      folder
+        ? `Удалить папку «${node.title}» вместе со всем содержимым?`
+        : `Удалить закладку «${node.title}»?`,
+      () => {
+        if (folder) chrome.bookmarks.removeTree(node.id).catch(() => {});
+        else chrome.bookmarks.remove(node.id).catch(() => {});
+      }
+    );
+  }
+
+  /* ============================================================
+     WIN98 DIALOGS (prompt / confirm as child windows)
+     ============================================================ */
+
+  function openDialog(opts) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    if (opts.body instanceof HTMLElement) body.appendChild(opts.body);
+    else body.innerHTML = typeof opts.body === "string" ? opts.body : "";
+
+    const btnRow = document.createElement("div");
+    btnRow.className = "win98-dialog-buttons";
+    const buttons = opts.buttons || [{ label: "OK", onClick: null }];
+
+    const winData = createWindow({
+      title: opts.title || "",
+      icon: opts.icon || "icons/settings.svg",
+      width: opts.width || 340,
+      height: opts.height || 140,
+      content: "",
+      statusbar: false,
+      onCreated: (el) => {
+        const ce = el.querySelector(".win98-window-content");
+        ce.style.background = "var(--win98-silver)";
+        ce.appendChild(body);
+        buttons.forEach((b, i) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "win98-btn";
+          btn.textContent = b.label;
+          btn.addEventListener("click", () => {
+            if (b.onClick) b.onClick();
+            if (b.close !== false) closeWindow(winData.id);
+          });
+          btnRow.appendChild(btn);
+          if (i === 0) body.okButton = btn;
+        });
+        body.appendChild(btnRow);
+      },
+    });
+    return winData;
+  }
+
+  function openConfirmDialog(title, message, onConfirm) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    const txt = document.createElement("div");
+    txt.className = "win98-dialog-text";
+    txt.textContent = message;
+    body.appendChild(txt);
+    openDialog({
+      title,
+      body,
+      buttons: [
+        { label: "OK", onClick: onConfirm },
+        { label: "Отмена" },
+      ],
+    });
+  }
+
+  function openPromptDialog(title, labelText, initialValue, onSubmit) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    const lbl = document.createElement("div");
+    lbl.className = "win98-dialog-label";
+    lbl.textContent = labelText;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "win98-addressbar-input";
+    input.value = initialValue;
+    input.style.width = "100%";
+    body.append(lbl, input);
+
+    const winData = openDialog({
+      title,
+      body,
+      buttons: [
+        { label: "OK", onClick: () => { const v = input.value.trim(); if (v) onSubmit(v); } },
+        { label: "Отмена" },
+      ],
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (body.okButton) body.okButton.click();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeWindow(winData.id);
+      }
+    });
+    setTimeout(() => input.focus(), 50);
+    return winData;
+  }
+
+  /* ============================================================
+     LIVE SYNC with the bookmarks service
+     ============================================================ */
+
+  function attachBookmarkListeners() {
+    ["onCreated", "onRemoved", "onChanged", "onMoved"].forEach((evt) => {
+      const api = chrome.bookmarks[evt];
+      if (api && typeof api.addListener === "function") {
+        api.addListener(scheduleBookmarksRefresh);
+      }
+    });
+  }
+
+  function scheduleBookmarksRefresh() {
+    clearTimeout(state.bookmarksRefreshTimer);
+    state.bookmarksRefreshTimer = setTimeout(refreshAllBookmarks, 250);
+  }
+
+  /** Re-read the whole tree, re-render the desktop and all windows that show a folder */
+  async function refreshAllBookmarks() {
+    let tree = state.treeRoot;
+    try {
+      tree = (await chrome.bookmarks.getTree())[0];
+      state.treeRoot = tree;
+    } catch {
+      // Permission revoked or API unavailable — keep showing what we have
+      return;
+    }
+    renderBookmarks(tree);
+    refreshOpenFolderWindows(tree);
+    refreshSearchWindow();
+  }
+
+  function refreshOpenFolderWindows(tree) {
+    state.windows.forEach((w) => {
+      if (w.bookmarkId == null) return;
+      const node = tree ? findNodeById(tree, w.bookmarkId) : null;
+      const fc = w.el && w.el.querySelector(".folder-content");
+      if (!fc) return;
+      if (!node) {
+        closeWindow(w.id); // folder was deleted
+        return;
+      }
+      const titleEl = w.el.querySelector(".win98-titlebar-text");
+      if (titleEl) titleEl.textContent = node.title || "Папка";
+      fc.innerHTML = "";
+      const items = (node.children || []).filter(isVisibleNode);
+      if (items.length === 0) {
+        fc.innerHTML = EMPTY_FOLDER_HTML;
+      } else {
+        for (const item of items) fc.appendChild(createFolderItem(item, node));
+      }
+      const sf = w.el.querySelector(".win98-statusbar-field");
+      if (sf) sf.textContent = `${items.filter((i) => isFolderNode(i)).length} пап(ок), ${items.filter((i) => isBookmarkNode(i)).length} элемент(ов)`;
+    });
+  }
+
+  /* ============================================================
+     SEARCH (start menu + Ctrl+F)
+     ============================================================ */
+
+  /** Flatten the whole tree into a searchable list of bookmarks and folders */
+  function buildSearchIndex(tree) {
+    const out = [];
+    const walk = (node, path) => {
+      if (!node) return;
+      const p = path ? `${path} > ${node.title}` : node.title;
+      if (isBookmarkNode(node)) {
+        out.push({ id: node.id, title: node.title || "", url: node.url, path, isFolder: false });
+      } else if (isFolderNode(node)) {
+        out.push({ id: node.id, title: node.title || "", url: null, path, isFolder: true });
+        (node.children || []).forEach((c) => walk(c, p));
+      }
+    };
+    (tree ? tree.children || [] : []).forEach((r) => walk(r, ""));
+    return out;
+  }
+
+  function openSearchWindow() {
+    const existing = state.windows.find((w) => w.title === "Поиск");
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+
+    state.searchNodes = buildSearchIndex(state.treeRoot);
+
+    createWindow({
+      title: "Поиск",
+      icon: "icons/search.svg",
+      width: 520,
+      height: 400,
+      content: "",
+      statusbar: true,
+      statusText: "Найдено: 0",
+      onCreated: (el, winData) => {
+        const ce = el.querySelector(".win98-window-content");
+        ce.style.background = "var(--win98-silver)";
+        const ui = buildSearchUI(winData);
+        ce.appendChild(ui);
+        winData.searchFilter = ui.filter;
+        ui.input.focus();
+      },
+    });
+  }
+
+  function buildSearchUI(winData) {
+    const wrap = document.createElement("div");
+    wrap.className = "search-wrap";
+
+    const row = document.createElement("div");
+    row.className = "search-row";
+    const label = document.createElement("label");
+    label.textContent = "Найти:";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "win98-addressbar-input";
+    input.placeholder = "Имя или адрес закладки...";
+    input.style.boxSizing = "border-box";
+    row.append(label, input);
+    wrap.appendChild(row);
+
+    const results = document.createElement("div");
+    results.className = "search-results";
+    wrap.appendChild(results);
+
+    let selectedRow = null;
+    let current = [];
+
+    const statusEl = () => winData.el.querySelector(".win98-statusbar-field");
+
+    function selectRow(rowEl) {
+      results.querySelectorAll(".search-result-row.selected").forEach((r) => r.classList.remove("selected"));
+      if (rowEl) {
+        rowEl.classList.add("selected");
+        rowEl.scrollIntoView({ block: "nearest" });
+      }
+      selectedRow = rowEl;
+    }
+
+    function openSearchResult(n) {
+      const node = findNodeById(state.treeRoot, n.id);
+      if (node) openNode(node);
+    }
+
+    function renderList(filter) {
+      const q = (filter || "").toLowerCase().trim();
+      let list = state.searchNodes;
+      if (q) {
+        list = state.searchNodes.filter(
+          (n) => n.title.toLowerCase().includes(q) || (n.url || "").toLowerCase().includes(q) || (n.path || "").toLowerCase().includes(q)
+        );
+        const score = (n) => {
+          const t = n.title.toLowerCase();
+          const u = (n.url || "").toLowerCase();
+          if (t.startsWith(q)) return 0;
+          if (t.includes(q)) return 1;
+          if (u.startsWith(q)) return 2;
+          return 3;
+        };
+        list = list.sort((a, b) => score(a) - score(b) || a.title.localeCompare(b.title, "ru"));
+      }
+      list = list.slice(0, 200);
+
+      results.innerHTML = "";
+      current = list;
+      list.forEach((n, i) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "search-result-row";
+        const img = document.createElement("img");
+        img.className = "search-result-img";
+        img.draggable = false;
+        if (n.isFolder) {
+          img.src = drawFolderIcon(FOLDER_COLORS[i % FOLDER_COLORS.length], false, 24);
+        } else {
+          const fav = getFaviconUrl(n.url);
+          img.src = fav || drawPageIcon(24);
+          if (fav) img.onerror = () => { img.src = drawPageIcon(24); };
+        }
+        const text = document.createElement("div");
+        text.className = "search-result-text";
+        const t = document.createElement("div");
+        t.className = "search-result-title";
+        t.textContent = n.title || (n.url || "Без названия");
+        const p = document.createElement("div");
+        p.className = "search-result-path";
+        p.textContent = n.isFolder ? n.path || "Папка" : n.url;
+        text.append(t, p);
+        rowEl.append(img, text);
+        rowEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (isSingleClickMode()) openSearchResult(n);
+          else selectRow(rowEl);
+        });
+        rowEl.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          if (!isSingleClickMode()) openSearchResult(n);
+        });
+        results.appendChild(rowEl);
+      });
+
+      selectRow(results.querySelector(".search-result-row"));
+      const st = statusEl();
+      if (st) st.textContent = `Найдено: ${list.length}${list.length >= 200 ? "+" : ""}`;
+    }
+
+    function currentRowIndex() {
+      return Array.from(results.querySelectorAll(".search-result-row")).indexOf(selectedRow);
+    }
+
+    input.addEventListener("input", () => renderList(input.value));
+    input.addEventListener("keydown", (e) => {
+      const rows = results.querySelectorAll(".search-result-row");
+      const idx = currentRowIndex();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        selectRow(rows[Math.min(rows.length - 1, Math.max(0, idx) + 1)]);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        selectRow(rows[Math.max(0, idx - 1)]);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (selectedRow && current[Math.max(0, idx)]) openSearchResult(current[Math.max(0, idx)]);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeWindow(winData.id);
+      }
+    });
+
+    renderList("");
+    wrap.filter = () => renderList(input.value);
+    wrap.input = input;
+    return wrap;
+  }
+
+  /** Keep results of an open search window in sync with the live tree */
+  function refreshSearchWindow() {
+    const sw = state.windows.find((w) => w.title === "Поиск");
+    if (!sw) return;
+    state.searchNodes = buildSearchIndex(state.treeRoot);
+    if (sw.searchFilter) sw.searchFilter();
   }
 
   /* ============================================================
@@ -1015,6 +1473,12 @@
     openSettingsWindow();
   });
 
+  // Start menu: search
+  document.getElementById("menu-search").addEventListener("click", () => {
+    closeStartMenu();
+    openSearchWindow();
+  });
+
   // Close menus on outside click
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#start-menu") && !e.target.closest("#start-btn")) {
@@ -1022,6 +1486,63 @@
     }
     if (!e.target.closest(".win98-context-menu")) {
       hideContextMenu();
+    }
+  });
+
+  /* ============================================================
+     KEYBOARD: desktop navigation + shortcuts
+     ============================================================ */
+
+  /** Estimate how many desktop icons fit in one row (for up/down arrows) */
+  function desktopRowLength() {
+    const size = currentIconSize();
+    const gap = (state.settings && state.settings.iconGap) || DEFAULT_SETTINGS.iconGap;
+    return Math.max(1, Math.floor($desktopIcons.clientWidth / (size + gap + 12)));
+  }
+
+  document.addEventListener("keydown", (e) => {
+    // Ctrl+F — поиск по закладкам (работает из любого места)
+    if (e.ctrlKey && (e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А")) {
+      e.preventDefault();
+      openSearchWindow();
+      return;
+    }
+    if (e.key === "Escape") {
+      if (state.startMenuOpen) closeStartMenu();
+      hideContextMenu();
+      return;
+    }
+
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON") return;
+
+    const all = Array.from(document.querySelectorAll("#desktop-icons .desktop-icon"));
+    const sel = state.selectedDesktopEl;
+
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+      if (!all.length) return;
+      let idx = all.indexOf(sel);
+      if (idx === -1) idx = 0;
+      if (e.key === "ArrowRight") idx = Math.min(all.length - 1, idx + 1);
+      else if (e.key === "ArrowLeft") idx = Math.max(0, idx - 1);
+      else if (e.key === "ArrowDown") idx = Math.min(all.length - 1, idx + desktopRowLength());
+      else idx = Math.max(0, idx - desktopRowLength());
+      selectDesktopIcon(all[idx]);
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "Enter" && sel && sel._node) {
+      e.preventDefault();
+      openNode(sel._node);
+      return;
+    }
+    if ((e.key === "Delete" || e.key === "Del") && sel && sel._node) {
+      e.preventDefault();
+      deleteNode(sel._node);
+      return;
+    }
+    if (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") && sel && sel._node && sel._node.url) {
+      copyText(sel._node.url);
     }
   });
 
@@ -1045,72 +1566,8 @@
       function renderNode(node, container) {
         if (!node.children) return;
         for (const child of node.children) {
-          if (child.children) {
-            // Folder
-            const item = document.createElement("div");
-            item.className = "folder-item";
-            const img = document.createElement("img");
-            img.src = drawFolderIcon(FOLDER_COLORS[colorIdx % FOLDER_COLORS.length]);
-            colorIdx++;
-            img.draggable = false;
-            const label = document.createElement("div");
-            label.className = "folder-item-label";
-            label.textContent = child.title || "Без названия";
-            item.appendChild(img);
-            item.appendChild(label);
-            item.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (isSingleClickMode()) {
-                const prev = Number(item.dataset.lastClick || 0);
-                const now = Date.now();
-                item.dataset.lastClick = now;
-                if (now - prev < 350) return;
-                openNode(child);
-              } else {
-                container.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
-                item.classList.add("selected");
-              }
-            });
-            item.addEventListener("dblclick", (e) => {
-              e.stopPropagation();
-              if (!isSingleClickMode()) openNode(child);
-            });
-            item.addEventListener("auxclick", (e) => handleAuxClick(e, child));
-            container.appendChild(item);
-          } else if (child.url) {
-            // Bookmark
-            const item = document.createElement("div");
-            item.className = "folder-item";
-            const img = document.createElement("img");
-            const favUrl = getFaviconUrl(child.url);
-            img.src = favUrl || drawPageIcon();
-            if (favUrl) img.onerror = () => { img.src = drawPageIcon(); };
-            img.draggable = false;
-            const label = document.createElement("div");
-            label.className = "folder-item-label";
-            label.textContent = child.title || child.url;
-            item.appendChild(img);
-            item.appendChild(label);
-            item.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (isSingleClickMode()) {
-                const prev = Number(item.dataset.lastClick || 0);
-                const now = Date.now();
-                item.dataset.lastClick = now;
-                if (now - prev < 350) return;
-                openNode(child);
-              } else {
-                container.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
-                item.classList.add("selected");
-              }
-            });
-            item.addEventListener("dblclick", (e) => {
-              e.stopPropagation();
-              if (!isSingleClickMode()) openNode(child);
-            });
-            item.addEventListener("auxclick", (e) => handleAuxClick(e, child));
-            container.appendChild(item);
-          }
+          if (!isVisibleNode(child)) continue;
+          container.appendChild(createFolderItem(child, node));
         }
       }
 
@@ -1739,6 +2196,7 @@
   function init() {
     updateClock();
     setInterval(updateClock, 10000);
+    attachBookmarkListeners();
     loadSettings().then(() => {
       loadBookmarks();
       updateWeather();

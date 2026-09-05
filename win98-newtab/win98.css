@@ -704,6 +704,121 @@ html, body {
 }
 
 /* ============================================================
+   SEARCH WINDOW
+   ============================================================ */
+.search-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.search-row label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.search-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-results {
+  flex: 1;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 2px inset;
+  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
+  box-shadow: inset 1px 1px 0 var(--win98-black);
+  padding: 2px;
+}
+
+.search-result-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.search-result-row:hover {
+  background: #e8e8e8;
+}
+
+.search-result-row.selected {
+  background: var(--win98-navy);
+  color: var(--win98-white);
+}
+
+.search-result-row.selected .search-result-path {
+  color: var(--win98-white);
+}
+
+.search-result-img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+
+.search-result-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.search-result-title {
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-path {
+  font-size: 10px;
+  color: var(--win98-dark-gray);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 420px;
+}
+
+/* ============================================================
+   WIN98 DIALOGS (child windows: prompt / confirm)
+   ============================================================ */
+.win98-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+.win98-dialog .win98-dialog-buttons {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.win98-dialog-text {
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.win98-dialog-label {
+  font-size: 11px;
+}
+
+/* ============================================================
    ANIMATIONS
    ============================================================ */
 @keyframes window-open {

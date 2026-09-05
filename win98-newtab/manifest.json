@@ -9,7 +9,8 @@
   "permissions": [
     "bookmarks",
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "favicon"
   ],
   "host_permissions": [
     "https://api.open-meteo.com/*",
