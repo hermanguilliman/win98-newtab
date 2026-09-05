@@ -31,6 +31,16 @@
   --win98-wp-preview:  #008080;
   --win98-font:        "Microsoft Sans Serif", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   --win98-font-size:   11px;
+  /* UI geometry / styling knobs (Win98 defaults: square, flat, hard 3D edges) */
+  --win98-radius:         0px;
+  --win98-radius-sm:      0px;
+  --win98-grad-btn:       none;            /* button face gradient */
+  --win98-btn-shadow:     inset -1px -1px 0 var(--win98-dark-gray); /* pressed edge */
+  --win98-title-h:        20px;            /* titlebar height */
+  --win98-title-grad:     var(--win98-title-active);
+  --win98-panel-grad:     none;            /* toolbar / taskbar gradient */
+  --win98-shadow:         0 0 0 rgba(0,0,0,0); /* window drop shadow (transparent = none, keeps list valid) */
+  --win98-btn-font-size:  11px;
 }
 
 /* ============================================================
@@ -59,6 +69,16 @@
   --win98-input-bg: #ffffff;
   --win98-inset-bg: #ffffff;
   --win98-wp-preview: #2e3436;
+  /* Adwaita look: subtle vertical gradients, gentle 4px rounding, soft shadow */
+  --win98-radius:       4px;
+  --win98-radius-sm:    3px;
+  --win98-grad-btn:     linear-gradient(to bottom, #fafafa 0%, var(--win98-btn-face) 45%, #d8d8d8 100%);
+  --win98-title-h:      26px;
+  --win98-title-grad:   linear-gradient(to bottom, #4a90d9 0%, var(--win98-title-active) 100%);
+  --win98-panel-grad:   linear-gradient(to bottom, #fafafa 0%, var(--win98-silver) 100%);
+  --win98-shadow:       0 4px 12px rgba(0,0,0,0.3);
+  --win98-btn-shadow:   inset 0 1px 0 rgba(255,255,255,0.4);
+  --win98-btn-font-size: 11px;
 }
 :root[data-theme="adwaita-dark"] {
   --win98-bg: #242424;
@@ -75,6 +95,15 @@
   --win98-input-bg: #ffffff;
   --win98-inset-bg: #313131;
   --win98-wp-preview: #242424;
+  --win98-radius:       5px;
+  --win98-radius-sm:    3px;
+  --win98-grad-btn:     linear-gradient(to bottom, #464646 0%, var(--win98-btn-face) 100%);
+  --win98-title-h:      26px;
+  --win98-title-grad:   linear-gradient(to bottom, #2f2f2f 0%, var(--win98-title-active) 100%);
+  --win98-panel-grad:   linear-gradient(to bottom, #2c2c2c 0%, var(--win98-silver) 100%);
+  --win98-shadow:       0 4px 12px rgba(0,0,0,0.6);
+  --win98-btn-shadow:   inset 0 1px 0 rgba(255,255,255,0.12);
+  --win98-btn-font-size: 11px;
 }
 :root[data-theme="breeze"] {
   --win98-bg: #1d99f3;
@@ -91,6 +120,16 @@
   --win98-input-bg: #ffffff;
   --win98-inset-bg: #f4f5f6;
   --win98-wp-preview: #1d99f3;
+  /* Breeze: flat panels, rounded buttons, thin borders */
+  --win98-radius:       3px;
+  --win98-radius-sm:    2px;
+  --win98-grad-btn:     linear-gradient(to bottom, #f7f8f8 0%, var(--win98-btn-face) 100%);
+  --win98-title-h:      22px;
+  --win98-title-grad:   linear-gradient(to bottom, #38b0e6 0%, var(--win98-title-active) 100%);
+  --win98-panel-grad:   linear-gradient(to bottom, #f8f9fa 0%, var(--win98-silver) 100%);
+  --win98-shadow:       0 3px 8px rgba(0,0,0,0.28);
+  --win98-btn-shadow:   inset 0 1px 0 rgba(255,255,255,0.5);
+  --win98-btn-font-size: 11px;
 }
 :root[data-theme="yaru"] {
   --win98-bg: #7a3df0;
@@ -107,6 +146,16 @@
   --win98-input-bg: #ffffff;
   --win98-inset-bg: #f7f7f7;
   --win98-wp-preview: #77216f;
+  /* Yaru: strong rounded corners, soft highlight, generous titlebar */
+  --win98-radius:       6px;
+  --win98-radius-sm:    4px;
+  --win98-grad-btn:     linear-gradient(to bottom, #fafafa 0%, var(--win98-btn-face) 100%);
+  --win98-title-h:      26px;
+  --win98-title-grad:   linear-gradient(to bottom, #f2653c 0%, var(--win98-title-active) 100%);
+  --win98-panel-grad:   linear-gradient(to bottom, #f7f7f7 0%, var(--win98-silver) 100%);
+  --win98-shadow:       0 4px 14px rgba(0,0,0,0.35);
+  --win98-btn-shadow:   inset 0 1px 0 rgba(255,255,255,0.45);
+  --win98-btn-font-size: 11px;
 }
 :root[data-theme="mint-y"] {
   --win98-bg: #5f9b59;
@@ -123,6 +172,16 @@
   --win98-input-bg: #ffffff;
   --win98-inset-bg: #f0f0f0;
   --win98-wp-preview: #5f9b59;
+  /* Mint-Y: subtle gradient, small rounding, light shadow */
+  --win98-radius:       3px;
+  --win98-radius-sm:    2px;
+  --win98-grad-btn:     linear-gradient(to bottom, #f0f0f0 0%, var(--win98-btn-face) 100%);
+  --win98-title-h:      24px;
+  --win98-title-grad:   linear-gradient(to bottom, #81c270 0%, var(--win98-title-active) 100%);
+  --win98-panel-grad:   linear-gradient(to bottom, #e9e9e9 0%, var(--win98-silver) 100%);
+  --win98-shadow:       0 3px 8px rgba(0,0,0,0.25);
+  --win98-btn-shadow:   inset 0 1px 0 rgba(255,255,255,0.4);
+  --win98-btn-font-size: 11px;
 }
 :root[data-theme="arc"] {
   --win98-bg: #2f343f;
@@ -139,6 +198,58 @@
   --win98-input-bg: #ffffff;
   --win98-inset-bg: #f7f8fa;
   --win98-wp-preview: #2f343f;
+  /* Arc: flat, thin (1px) borders, crisp corners, light drop shadow */
+  --win98-radius:       3px;
+  --win98-radius-sm:    2px;
+  --win98-grad-btn:     linear-gradient(to bottom, #fcfcfd 0%, #eaebed 100%);
+  --win98-title-h:      22px;
+  --win98-title-grad:   linear-gradient(to bottom, #e2a76a 0%, var(--win98-title-active) 100%);
+  --win98-panel-grad:   linear-gradient(to bottom, #fbfbfb 0%, var(--win98-silver) 100%);
+  --win98-shadow:       0 4px 10px rgba(0,0,0,0.35);
+  --win98-btn-shadow:   inset 0 1px 0 rgba(255,255,255,0.5);
+  --win98-btn-font-size: 11px;
+}
+
+/* ---- Theme-specific component restyling (structure beyond the palette) ---- */
+/* Adwaita & Adwaita Dark: rounded titlebars + window body, pill-ish start button */
+:root[data-theme="adwaita"] .win98-titlebar,
+:root[data-theme="adwaita-dark"] .win98-titlebar {
+  border-radius: var(--win98-radius) var(--win98-radius) 0 0;
+}
+:root[data-theme="adwaita"] .win98-window,
+:root[data-theme="adwaita-dark"] .win98-window {
+  border-radius: var(--win98-radius);
+  box-shadow: var(--win98-shadow);
+}
+:root[data-theme="adwaita"] #start-btn,
+:root[data-theme="adwaita-dark"] #start-btn {
+  border-radius: var(--win98-radius-sm);
+}
+/* Yaru: strong rounding on windows and start button */
+:root[data-theme="yaru"] .win98-window,
+:root[data-theme="yaru"] #start-btn {
+  border-radius: var(--win98-radius);
+  box-shadow: var(--win98-shadow);
+}
+:root[data-theme="yaru"] .win98-titlebar {
+  border-radius: var(--win98-radius) var(--win98-radius) 0 0;
+}
+/* Breeze / Mint-Y / Arc: rounded windows + titlebars */
+:root[data-theme="breeze"] .win98-window,
+:root[data-theme="mint-y"] .win98-window,
+:root[data-theme="arc"] .win98-window {
+  border-radius: var(--win98-radius);
+  box-shadow: var(--win98-shadow);
+}
+:root[data-theme="breeze"] .win98-titlebar,
+:root[data-theme="mint-y"] .win98-titlebar,
+:root[data-theme="arc"] .win98-titlebar {
+  border-radius: var(--win98-radius) var(--win98-radius) 0 0;
+}
+:root[data-theme="breeze"] #start-btn,
+:root[data-theme="mint-y"] #start-btn,
+:root[data-theme="arc"] #start-btn {
+  border-radius: var(--win98-radius-sm);
 }
 
 html, body {
@@ -255,7 +366,8 @@ html, body {
   border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
   box-shadow: inset 1px 1px 0 var(--win98-dark-gray),
               inset -1px -1px 0 var(--win98-silver),
-              2px 2px 4px rgba(0,0,0,0.3);
+              var(--win98-shadow), 2px 2px 4px rgba(0,0,0,0.3);
+  border-radius: var(--win98-radius);
   display: flex;
   flex-direction: column;
   min-width: 200px;
@@ -275,13 +387,13 @@ html, body {
   display: flex;
   align-items: center;
   padding: 2px 3px;
-  background: var(--win98-title-active);
+  background: var(--win98-title-grad, var(--win98-title-active));
   color: var(--win98-white);
   font-weight: bold;
   font-size: 11px;
   cursor: default;
   flex-shrink: 0;
-  height: 20px;
+  height: var(--win98-title-h, 20px);
 }
 
 .win98-titlebar.inactive {
@@ -313,10 +425,11 @@ html, body {
 .win98-titlebar-btn {
   width: 16px;
   height: 14px;
-  background: var(--win98-btn-face);
+  background: var(--win98-grad-btn, var(--win98-btn-face)), var(--win98-btn-face);
   border: 1px solid;
   border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+  box-shadow: var(--win98-btn-shadow, inset -1px -1px 0 var(--win98-dark-gray));
+  border-radius: var(--win98-radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -375,15 +488,16 @@ html, body {
   padding: 2px 4px;
   gap: 4px;
   border-bottom: 1px solid var(--win98-dark-gray);
-  background: var(--win98-silver);
+  background: var(--win98-panel-grad, var(--win98-silver)), var(--win98-silver);
   flex-shrink: 0;
 }
 
 .win98-toolbar-btn {
-  background: var(--win98-btn-face);
+  background: var(--win98-grad-btn, var(--win98-btn-face)), var(--win98-btn-face);
   border: 1px solid;
   border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+  box-shadow: var(--win98-btn-shadow, inset -1px -1px 0 var(--win98-dark-gray));
+  border-radius: var(--win98-radius-sm);
   padding: 2px 6px;
   font-family: var(--win98-font);
   font-size: 11px;
@@ -411,7 +525,7 @@ html, body {
   align-items: center;
   padding: 2px 4px;
   gap: 4px;
-  background: var(--win98-silver);
+  background: var(--win98-panel-grad, var(--win98-silver)), var(--win98-silver);
   flex-shrink: 0;
 }
 
@@ -499,7 +613,7 @@ html, body {
   left: 0;
   right: 0;
   height: 28px;
-  background: var(--win98-silver);
+  background: var(--win98-panel-grad, var(--win98-silver)), var(--win98-silver);
   border-top: 2px solid var(--win98-white);
   display: flex;
   align-items: center;
@@ -717,12 +831,13 @@ html, body {
    GENERIC BUTTON
    ============================================================ */
 .win98-btn {
-  background: var(--win98-btn-face);
+  background: var(--win98-grad-btn, var(--win98-btn-face)), var(--win98-btn-face);
   border: 2px solid;
   border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+  box-shadow: var(--win98-btn-shadow, inset -1px -1px 0 var(--win98-dark-gray));
+  border-radius: var(--win98-radius-sm);
   font-family: var(--win98-font);
-  font-size: var(--win98-font-size);
+  font-size: var(--win98-btn-font-size, var(--win98-font-size));
   cursor: pointer;
 }
 
@@ -1023,10 +1138,11 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: var(--win98-silver);
+  background: var(--win98-panel-grad, var(--win98-silver)), var(--win98-silver);
   border: 2px solid;
   border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
   box-shadow: inset 1px 1px 0 var(--win98-black);
+  border-radius: 0 var(--win98-radius-sm) var(--win98-radius-sm) var(--win98-radius-sm);
   padding: 4px;
   margin-top: -1px;
 }
