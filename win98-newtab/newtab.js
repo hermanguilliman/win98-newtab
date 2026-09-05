@@ -179,15 +179,11 @@
     return c.toDataURL();
   }
 
-  /** Generate a favicon URL via Chrome's built-in favicon service (no network round-trip) */
+  /** Generate a favicon URL from bookmark URL */
   function getFaviconUrl(url) {
     try {
-      new URL(url);
-      // _favicon/ supports 16/32/64/128 — pick the closest to the current icon size
-      const sizes = [16, 32, 64, 128];
-      const wanted = currentIconSize();
-      const size = sizes.reduce((a, b) => (Math.abs(b - wanted) < Math.abs(a - wanted) ? b : a));
-      return chrome.runtime.getURL(`_favicon/?pageUrl=${encodeURIComponent(url)}&size=${size}`);
+      const u = new URL(url);
+      return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=${currentIconSize()}`;
     } catch {
       return null;
     }
