@@ -20,8 +20,125 @@
   --win98-title-active: linear-gradient(90deg, #000080, #1084d0);
   --win98-title-inactive: linear-gradient(90deg, #808080, #b0b0b0);
   --win98-btn-face:    #c0c0c0;
+  /* Desktop chrome palette (theme-driven): hover/shadow accents that were hardcoded */
+  --win98-hover:       #e0e0e0;
+  --win98-input-bg:    #ffffff;
+  --win98-inset-bg:    #e8e8e8;
+  --win98-radio-check: #000000;
+  --win98-radio-edge1: #000000;
+  --win98-radio-edge2: #a0a0a0;
+  --win98-radio-shadow:#e0e0e0;
+  --win98-wp-preview:  #008080;
   --win98-font:        "Microsoft Sans Serif", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   --win98-font-size:   11px;
+}
+
+/* ============================================================
+   UI THEMES (data-theme on <html>)
+   Classic Windows 98 + popular Linux desktop GTK themes.
+   Adwaita — GNOME, dark variant ships by default.
+   Breeze   — KDE / Plasma Frameworks 5.
+   Yaru     — Ubuntu (GNOME).
+   Mint-Y   — Linux Mint (Cinnamon/MATE).
+   Arc      — popular GTK theme (flat, thin borders).
+   Each redefines only the chrome palette; it deliberately keeps
+   the Win98 3D borders and layout so icons stay recognizable.
+   ============================================================ */
+:root[data-theme="adwaita"] {
+  --win98-bg: #2e3436;
+  --win98-btn-face: #e8e8e8;
+  --win98-silver: #dddddd;
+  --win98-white: #ffffff;
+  --win98-black: #2e3436;
+  --win98-dark-gray: #9aa0a6;
+  --win98-navy: #3584e4;
+  --win98-highlight: #5aa0ee;
+  --win98-title-active: #3584e4;
+  --win98-title-inactive: #b9c0c6;
+  --win98-hover: #bce1f7;
+  --win98-input-bg: #ffffff;
+  --win98-inset-bg: #ffffff;
+  --win98-wp-preview: #2e3436;
+}
+:root[data-theme="adwaita-dark"] {
+  --win98-bg: #242424;
+  --win98-btn-face: #393939;
+  --win98-silver: #4a4a4a;
+  --win98-white: #eeeeec;
+  --win98-black: #e6e6e6;
+  --win98-dark-gray: #7a7a7a;
+  --win98-navy: #3584e4;
+  --win98-highlight: #62a0ea;
+  --win98-title-active: #393939;
+  --win98-title-inactive: #2f2f2f;
+  --win98-hover: #404040;
+  --win98-input-bg: #ffffff;
+  --win98-inset-bg: #313131;
+  --win98-wp-preview: #242424;
+}
+:root[data-theme="breeze"] {
+  --win98-bg: #1d99f3;
+  --win98-btn-face: #eff0f1;
+  --win98-silver: #e3e4e6;
+  --win98-white: #ffffff;
+  --win98-black: #232629;
+  --win98-dark-gray: #7f8c8d;
+  --win98-navy: #3daee9;
+  --win98-highlight: #93cee9;
+  --win98-title-active: #3daee9;
+  --win98-title-inactive: #b0bec5;
+  --win98-hover: #d9edf7;
+  --win98-input-bg: #ffffff;
+  --win98-inset-bg: #f4f5f6;
+  --win98-wp-preview: #1d99f3;
+}
+:root[data-theme="yaru"] {
+  --win98-bg: #7a3df0;
+  --win98-btn-face: #f0f0f0;
+  --win98-silver: #e3e3e3;
+  --win98-white: #ffffff;
+  --win98-black: #111111;
+  --win98-dark-gray: #8b8b8b;
+  --win98-navy: #e95420;
+  --win98-highlight: #ee835c;
+  --win98-title-active: #e95420;
+  --win98-title-inactive: #c0b9b1;
+  --win98-hover: #f8e6d0;
+  --win98-input-bg: #ffffff;
+  --win98-inset-bg: #f7f7f7;
+  --win98-wp-preview: #77216f;
+}
+:root[data-theme="mint-y"] {
+  --win98-bg: #5f9b59;
+  --win98-btn-face: #e0e0e0;
+  --win98-silver: #d3d3d3;
+  --win98-white: #ffffff;
+  --win98-black: #333333;
+  --win98-dark-gray: #8f8f8f;
+  --win98-navy: #6faf5e;
+  --win98-highlight: #8ec97a;
+  --win98-title-active: #6faf5e;
+  --win98-title-inactive: #b3c9ad;
+  --win98-hover: #dcefd4;
+  --win98-input-bg: #ffffff;
+  --win98-inset-bg: #f0f0f0;
+  --win98-wp-preview: #5f9b59;
+}
+:root[data-theme="arc"] {
+  --win98-bg: #2f343f;
+  --win98-btn-face: #f5f6f7;
+  --win98-silver: #e3e4e7;
+  --win98-white: #ffffff;
+  --win98-black: #2f343f;
+  --win98-dark-gray: #767c87;
+  --win98-navy: #d18333;
+  --win98-highlight: #e19545;
+  --win98-title-active: #d18333;
+  --win98-title-inactive: #b0b4bd;
+  --win98-hover: #f3d9bd;
+  --win98-input-bg: #ffffff;
+  --win98-inset-bg: #f7f8fa;
+  --win98-wp-preview: #2f343f;
 }
 
 html, body {
@@ -340,7 +457,7 @@ html, body {
 }
 
 .folder-item:hover {
-  background: #e0e0e0;
+  background: var(--win98-hover);
 }
 
 .folder-item.selected {
@@ -533,7 +650,7 @@ html, body {
 
 .start-menu-sidebar {
   width: 24px;
-  background: linear-gradient(to top, #000080, #1084d0);
+  background: var(--win98-title-active);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -739,7 +856,7 @@ html, body {
 .search-results {
   flex: 1;
   overflow-y: auto;
-  background: #ffffff;
+  background: var(--win98-input-bg);
   border: 2px inset;
   border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
   box-shadow: inset 1px 1px 0 var(--win98-black);
@@ -756,7 +873,7 @@ html, body {
 }
 
 .search-result-row:hover {
-  background: #e8e8e8;
+  background: var(--win98-inset-bg);
 }
 
 .search-result-row.selected {
@@ -899,7 +1016,7 @@ html, body {
 }
 
 .win98-tab:not(.active):hover {
-  background: #e8e8e8;
+  background: var(--win98-inset-bg);
 }
 
 .win98-tabpanels {
@@ -972,10 +1089,10 @@ input[type="radio"] {
   height: 13px;
   margin: 0;
   border-radius: 50%;
-  background: var(--win98-white);
+  background: var(--win98-input-bg);
   border: 1px solid;
-  border-color: #000000 #a0a0a0 #a0a0a0 #000000;
-  box-shadow: inset -1px -1px 0 #e0e0e0, 1px 1px 0 var(--win98-white);
+  border-color: var(--win98-radio-edge1) var(--win98-radio-edge2) var(--win98-radio-edge2) var(--win98-radio-edge1);
+  box-shadow: inset -1px -1px 0 var(--win98-radio-shadow), 1px 1px 0 var(--win98-white);
   position: relative;
   cursor: pointer;
   flex-shrink: 0;
@@ -986,7 +1103,7 @@ input[type="radio"]:checked::after {
   position: absolute;
   inset: 2px;
   border-radius: 50%;
-  background: #000000;
+  background: var(--win98-radio-check);
 }
 
 input[type="radio"]:disabled {
@@ -1057,7 +1174,7 @@ input[type="radio"]:disabled:checked::after {
   border: 2px solid;
   border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
   box-shadow: inset 1px 1px 0 var(--win98-black);
-  background-color: #008080;
+  background-color: var(--win98-wp-preview);
 }
 
 /* ---------- Message line ---------- */

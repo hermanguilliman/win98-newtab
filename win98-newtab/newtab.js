@@ -32,6 +32,7 @@
     desktopPadX: 8,
     desktopPadY: 8,
     folderIconStyle: "classic",
+    theme: "win98",
     weatherCity: "Москва",
     wallpaper: {
       type: "color",
@@ -244,12 +245,26 @@
     { id: "outlined", label: "С контуром" },
   ];
 
+  /** UI themes (classic Win98 + popular Linux GTK themes), selectable in Настройки → Вид */
+  const THEMES = [
+    { id: "win98", label: "Windows 98" },
+    { id: "adwaita", label: "Adwaita (GNOME)", desc: "Стандартная тема GNOME" },
+    { id: "adwaita-dark", label: "Adwaita Dark", desc: "Тёмная версия GNOME" },
+    { id: "breeze", label: "Breeze (KDE)", desc: "Стандартная тема KDE Plasma" },
+    { id: "yaru", label: "Yaru (Ubuntu)", desc: "Родная тема Ubuntu" },
+    { id: "mint-y", label: "Mint-Y (Linux Mint)", desc: "Тема Linux Mint" },
+    { id: "arc", label: "Arc", desc: "Популярная Gtk-тема, плоский стиль" },
+  ];
+
   /** Live-preview override while the settings window is open (cleared on OK/Отмена) */
   let previewFolderStyle = null;
+  let previewTheme = null;
 
-  /** Currently active folder icon style id */
-  function folderIconStyleName() {
-    return previewFolderStyle || (state.settings && state.settings.folderIconStyle) || DEFAULT_SETTINGS.folderIconStyle;
+  /** Apply the active UI theme: sets data-theme on <html> so CSS picks the palette */
+  function applyDesktopTheme(src) {
+    const s = src || state.settings || DEFAULT_SETTINGS;
+    const id = THEMES.some((t) => t.id === s.theme) ? s.theme : DEFAULT_SETTINGS.theme;
+    document.documentElement.dataset.theme = id;
   }
 
   function shadeColor(color, percent) {
@@ -1679,6 +1694,9 @@
     if (FOLDER_STYLES.some((s) => s.id === partial.folderIconStyle)) {
       base.folderIconStyle = partial.folderIconStyle;
     }
+    if (THEMES.some((t) => t.id === partial.theme)) {
+      base.theme = partial.theme;
+    }
     if (typeof partial.weatherCity === "string" && partial.weatherCity.trim()) {
       base.weatherCity = partial.weatherCity.trim();
     }
@@ -1712,6 +1730,7 @@
     el.style.setProperty("--win98-icon-gap", (s.iconGap ?? DEFAULT_SETTINGS.iconGap) + "px");
     el.style.setProperty("--win98-desktop-pad-x", (s.desktopPadX ?? DEFAULT_SETTINGS.desktopPadX) + "px");
     el.style.setProperty("--win98-desktop-pad-y", (s.desktopPadY ?? DEFAULT_SETTINGS.desktopPadY) + "px");
+    applyDesktopTheme(s);
   }
 
   /** Apply the icon size as CSS variables on the desktop + windows (back-compat) */
@@ -1840,6 +1859,7 @@
 
     const commit = () => {
       previewFolderStyle = null;
+      previewTheme = null;
       state.settings = pending;
       applyDesktopStyle();
       saveSettings();
@@ -1851,6 +1871,7 @@
 
     const cancel = () => {
       previewFolderStyle = null;
+      previewTheme = null;
       applyWallpaper(state.settings.wallpaper);
       applyDesktopStyle();
       renderBookmarks(state.treeRoot);
@@ -2016,6 +2037,40 @@
       sizeRow.appendChild(lbl);
     });
     vg.appendChild(sizeRow);
+
+    /* ---------- Вид group (UI theme) ---------- */
+    const tg = document.createElement("div");
+    tg.className = "win98-groupbox";
+    const tgLegend = document.createElement("div");
+    tgLegend.className = "win98-groupbox-legend";
+    tgLegend.textContent = "Тема оформления";
+    tg.appendChild(tgLegend);
+
+    const curTheme = THEMES.some((t) => t.id === pending.theme) ? pending.theme : DEFAULT_SETTINGS.theme;
+    THEMES.forEach((t) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      lbl.style.display = "flex";
+      lbl.style.alignItems = "center";
+      lbl.style.gap = "6px";
+      lbl.style.marginBottom = "2px";
+      const rad = document.createElement("input");
+      rad.type = "radio";
+      rad.name = "theme";
+      rad.value = t.id;
+      if (curTheme === t.id) rad.checked = true;
+      const sp = document.createElement("span");
+      sp.textContent = t.label + (t.desc ? ` — ${t.desc}` : "");
+      rad.addEventListener("change", () => {
+        if (!rad.checked) return;
+        pending.theme = t.id;
+        previewTheme = t.id;
+        applyDesktopStyle(pending); // live preview (theme + layout)
+      });
+      lbl.append(rad, sp);
+      tg.appendChild(lbl);
+    });
+    vg.appendChild(tg);
 
     /* ---------- Вид group (folder icon style) ---------- */
     const fg = document.createElement("div");
