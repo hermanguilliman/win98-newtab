@@ -1,22 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-  <!-- Windows Vista Start orb: glossy blue sphere with flag -->
+  <!-- Windows Vista Start orb: blue glassy sphere with the 4-color flag inside -->
   <defs>
     <radialGradient id="vista-orb" cx="0.32" cy="0.28" r="0.95">
-      <stop offset="0" stop-color="#C5ECFF"/>
-      <stop offset="0.45" stop-color="#3E9BE8"/>
-      <stop offset="1" stop-color="#0A3E8F"/>
+      <stop offset="0" stop-color="#9BD3F7"/>
+      <stop offset="0.45" stop-color="#2F7FE0"/>
+      <stop offset="1" stop-color="#07308F"/>
     </radialGradient>
   </defs>
-  <circle cx="8" cy="8.2" r="7.2" fill="url(#vista-orb)"/>
-  <!-- bottom shadow -->
-  <ellipse cx="8" cy="13.4" rx="5.4" ry="1.6" fill="#041D4A" opacity="0.45"/>
-  <!-- flag panes -->
-  <g opacity="0.92">
-    <path d="M4.2 5.1h2.9v2.7H4.2z" fill="#fff"/>
-    <path d="M8 5.1h2.9v2.7H8z" fill="#fff"/>
-    <path d="M4.2 8.5h2.9v2.7H4.2z" fill="#fff"/>
-    <path d="M8 8.5h2.9v2.7H8z" fill="#fff"/>
-  </g>
-  <!-- gloss highlight -->
-  <ellipse cx="5.4" cy="4.2" rx="3.6" ry="2" fill="#fff" opacity="0.55" transform="rotate(-24 5.4 4.2)"/>
+  <circle cx="8" cy="8" r="7.2" fill="url(#vista-orb)"/>
+  <!-- inner flag panes (curved like Vista) -->
+  <path d="M3.6 4h2.9c0 2.6-1.1 4.8-3 6.3h-2C3.1 8.3 3.6 6.1 3.6 4z" fill="#E81123"/>
+  <path d="M9.4 4h3c-.4 3-1.8 5.5-4.1 7.4 1.6-.6 2.8-1.9 3.7-3.9.3-.6 1-2 1.6-3.5z" fill="#5CB85C"/>
+  <path d="M3.8 12.2h-2C2.6 9.9 3.6 7.8 4.9 6.1c.6.9.7 2 .4 3.2-.2.9-.9 2.1-1.5 2.9z" fill="#3B78FF"/>
+  <path d="M9.4 11.9c-.3 1.4-1 2.6-2 3.6 1.2.2 2.5-.2 3.5-1-.4-1-.8-1.9-1.5-2.6z" fill="#FFB900"/>
+  <!-- glass highlights -->
+  <ellipse cx="5.2" cy="3.8" rx="3.8" ry="2" fill="#fff" opacity="0.7" transform="rotate(-24 5.2 3.8)"/>
+  <circle cx="8" cy="8" r="7.4" fill="none" stroke="#EAF6FF" stroke-width="0.4" opacity="0.7"/>
 </svg>

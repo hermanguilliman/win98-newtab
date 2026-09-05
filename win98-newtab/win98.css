@@ -989,24 +989,35 @@ html[data-theme="xp"] {
   --win98-bg: #245edc;
   --win98-navy: #316ac5;
   --win98-highlight: #316ac5;
-  --win98-title-active: linear-gradient(180deg, #0058ee 0%, #3593ff 100%);
-  --win98-title-inactive: linear-gradient(180deg, #7da2d6 0%, #a9c4e8 100%);
+  --win98-title-active: linear-gradient(180deg, #0863e1 0%, #2d8df5 10%, #0755c1 50%, #07379e 100%);
+  --win98-title-inactive: linear-gradient(180deg, #8399b8 0%, #9fb3cc 60%, #7890b0 100%);
+  --win98-title-color: #ffffff;
 }
 
 html[data-theme="xp"] #taskbar {
-  background: linear-gradient(180deg, #2f6fd0 0%, #4a9bf5 7%, #2f6fd0 92%, #2454a0 100%);
+  background: linear-gradient(180deg, #2f6fd0 0%, #4a9bf5 8%, #2f6fd0 92%, #2454a0 100%);
   border-top: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
   color: #fff;
 }
 
+/* XP taskbar buttons are rounded ovals */
 html[data-theme="xp"] .taskbar-win-btn {
   color: #fff;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #4f8ef7 0%, #2f6fd0 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+html[data-theme="xp"] .taskbar-win-btn:hover {
+  background: linear-gradient(180deg, #6da5f9 0%, #3e7ee0 100%);
 }
 
 html[data-theme="xp"] .taskbar-win-btn.active {
-  background: linear-gradient(180deg, #2454a0 0%, #4a9bf5 100%);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(180deg, #1e4fa8 0%, #2f6fd0 100%);
+  border: 1px solid;
+  border-color: #0d2a5e #5e9df5 #5e9df5 #0d2a5e;
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 html[data-theme="xp"] #taskbar-divider {
@@ -1025,27 +1036,47 @@ html[data-theme="xp"] #weather .weather-temp {
   color: #fff;
 }
 
+/* XP Start button: glossy green pill (rounded on both sides) */
 html[data-theme="xp"] #start-btn {
-  background: linear-gradient(180deg, #6ee238 0%, #4fc319 45%, #2f8a06 100%);
-  border: 2px solid;
-  border-color: #e8ffd8 #0a3d00 #0a3d00 #e8ffd8;
-  border-radius: 6px 14px 14px 6px;
-  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.4);
+  background: linear-gradient(180deg, #7ae03a 0%, #4fc319 40%, #2f8a06 100%);
+  border: 1px solid #f4ffe8;
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5),
+              0 0 0 1px #1b5d04;
   color: #fff;
   font-style: italic;
 }
 
 html[data-theme="xp"] #start-btn:active {
-  border-color: #0a3d00 #e8ffd8 #e8ffd8 #0a3d00;
-  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.35),
+              0 0 0 1px #1b5d04;
 }
 
 html[data-theme="xp"] .win98-window {
-  border-radius: 4px;
+  border: 1px solid #5a7fb0;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 html[data-theme="xp"] .win98-titlebar {
-  border-radius: 2px 2px 0 0;
+  border-radius: 5px 5px 0 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  height: 21px;
+}
+
+html[data-theme="xp"] .win98-titlebar.inactive {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* XP Start menu: light panel, rounded, blue brand rail stays */
+html[data-theme="xp"] #start-menu {
+  background: linear-gradient(180deg, #f4faff 0%, #dfedf9 100%);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+html[data-theme="xp"] #start-menu .start-menu-content {
+  background: linear-gradient(180deg, #f4faff 0%, #dfedf9 100%);
 }
 
 /* ---------- Windows Vista (Aero glass) ---------- */
@@ -1053,55 +1084,73 @@ html[data-theme="vista"] {
   --win98-bg: #3a6ea5;
   --win98-navy: #3399ff;
   --win98-highlight: #3399ff;
-  --win98-title-active: linear-gradient(180deg, #1b1b1d 0%, #3a3a3e 100%);
-  --win98-title-inactive: linear-gradient(180deg, #3a3a3e 0%, #2a2a2e 100%);
+  --win98-title-active: linear-gradient(180deg, #38383d 0%, #1b1b1f 100%);
+  --win98-title-inactive: linear-gradient(180deg, #4a4a50 0%, #333338 100%);
   --win98-title-color: #ffffff;
 }
 
 html[data-theme="vista"] .win98-window {
-  border: 1px solid #222;
+  background: rgba(22, 22, 26, 0.88);
+  border: 1px solid #1a1a1e;
   border-radius: 8px 8px 4px 4px;
   padding: 4px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   overflow: hidden;
 }
 
 html[data-theme="vista"] .win98-titlebar {
   border-radius: 4px 4px 0 0;
+  height: 22px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-html[data-theme="vista"] .win98-titlebar-btn,
-html[data-theme="win7"] .win98-titlebar-btn {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.1) 100%);
-  border-color: rgba(255, 255, 255, 0.6);
-  color: #fff;
-  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.3);
+/* Vista caption buttons: glossy blue, black glyphs */
+html[data-theme="vista"] .win98-titlebar-btn {
+  width: 18px;
+  height: 16px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #9cc2f8 0%, #4e88e8 55%, #2f63c4 100%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  color: #000;
+  font-weight: normal;
 }
 
-html[data-theme="vista"] .win98-titlebar-btn:active,
-html[data-theme="win7"] .win98-titlebar-btn:active {
-  border-color: rgba(0, 0, 0, 0.7);
+html[data-theme="vista"] .win98-titlebar-btn:hover {
+  background: linear-gradient(180deg, #c9e0ff 0%, #6fa5f5 55%, #4a80dd 100%);
+}
+
+html[data-theme="vista"] .win98-titlebar-btn:active {
+  background: linear-gradient(180deg, #2f63c4 0%, #4e88e8 100%);
+  border-color: rgba(0, 0, 0, 0.6);
   box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 html[data-theme="vista"] #taskbar {
-  background: linear-gradient(180deg, #26262b 0%, #141418 100%);
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  background: linear-gradient(180deg, #3a3a40 0%, #17171b 100%);
+  border-top: none;
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.18);
   color: #fff;
 }
 
 html[data-theme="vista"] .taskbar-win-btn {
   color: #fff;
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(130, 165, 240, 0.4) 0%, rgba(70, 105, 210, 0.3) 100%);
+}
+
+html[data-theme="vista"] .taskbar-win-btn:hover {
+  background: linear-gradient(180deg, rgba(150, 185, 250, 0.5) 0%, rgba(90, 120, 230, 0.4) 100%);
 }
 
 html[data-theme="vista"] .taskbar-win-btn.active {
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: none;
+  background: linear-gradient(180deg, rgba(190, 215, 255, 0.6) 0%, rgba(100, 140, 255, 0.45) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 html[data-theme="vista"] #system-tray {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.35);
   border-color: #000 #7f7f7f #7f7f7f #000;
   box-shadow: inset 1px 1px 0 #000;
   color: #fff;
@@ -1112,25 +1161,63 @@ html[data-theme="vista"] #weather .weather-temp {
   color: #fff;
 }
 
+/* Vista Start orb: circular glossy button, no text, proud of the taskbar */
 html[data-theme="vista"] #start-btn {
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05) 70%);
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  align-self: flex-end;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.25) 100%);
   border: none;
-  border-radius: 10px;
+  border-radius: 50%;
   color: #fff;
 }
 
 html[data-theme="vista"] #start-btn:hover {
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.1) 70%);
+  filter: brightness(1.2);
 }
 
 html[data-theme="vista"] #start-btn:active {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 1px 6px;
+  filter: brightness(0.9);
 }
 
-html[data-theme="vista"] .start-menu-sidebar,
-html[data-theme="win7"] .start-menu-sidebar {
-  background: linear-gradient(to top, rgba(20, 20, 24, 0.95), rgba(60, 60, 66, 0.95));
+html[data-theme="vista"] #start-btn .start-logo {
+  width: 24px;
+  height: 24px;
+}
+
+html[data-theme="vista"] #start-btn span {
+  display: none;
+}
+
+/* Vista Start menu: dark glass panel */
+html[data-theme="vista"] #start-menu {
+  background: linear-gradient(180deg, rgba(35, 35, 42, 0.95) 0%, rgba(16, 16, 22, 0.96) 100%);
+  border: 1px solid #3a3a42;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+html[data-theme="vista"] #start-menu .start-menu-item {
+  color: #fff;
+}
+
+html[data-theme="vista"] #start-menu .start-menu-item-desc {
+  color: #b8b8c4;
+}
+
+html[data-theme="vista"] #start-menu .start-menu-item:hover .start-menu-item-desc {
+  color: #dde;
+}
+
+html[data-theme="vista"] .start-menu-separator {
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme="vista"] .start-menu-sidebar {
+  background: linear-gradient(to top, rgba(12, 12, 16, 0.97), rgba(40, 40, 48, 0.97));
 }
 
 /* ---------- Windows 7 (Aero) ---------- */
@@ -1139,64 +1226,134 @@ html[data-theme="win7"] {
   --win98-navy: #4a90d9;
   --win98-highlight: #4a90d9;
   --win98-title-active: linear-gradient(180deg, #2d5db8 0%, #3a6ac9 45%, #1e3e8e 100%);
-  --win98-title-inactive: linear-gradient(180deg, #6a6a6a 0%, #8c8c8c 100%);
+  --win98-title-inactive: linear-gradient(180deg, #7d8aa3 0%, #97a5ba 60%, #6f7f9c 100%);
   --win98-title-color: #ffffff;
 }
 
 html[data-theme="win7"] .win98-window {
-  border: 1px solid #333;
+  background: rgba(235, 242, 252, 0.92);
+  border: 1px solid #5a7fb0;
   border-radius: 8px 8px 4px 4px;
   padding: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   overflow: hidden;
 }
 
 html[data-theme="win7"] .win98-titlebar {
   border-radius: 4px 4px 0 0;
+  height: 22px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
+/* Win7 caption buttons: light glossy, black glyphs, flat hover */
+html[data-theme="win7"] .win98-titlebar-btn {
+  width: 18px;
+  height: 16px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e8f0fb 0%, #b9cde8 55%, #8fa9d8 100%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  color: #000;
+  font-weight: normal;
+}
+
+html[data-theme="win7"] .win98-titlebar-btn:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #d3e0f2 55%, #a8bfe0 100%);
+}
+
+html[data-theme="win7"] .win98-titlebar-btn:active {
+  background: linear-gradient(180deg, #8fa9d8 0%, #b9cde8 100%);
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Win7: light translucent glass taskbar */
 html[data-theme="win7"] #taskbar {
-  background: linear-gradient(180deg, #3e3e44 0%, #26262b 100%);
-  border-top: 1px solid #5a5a60;
-  color: #fff;
+  background: linear-gradient(180deg, #dfeafb 0%, #c2d5f0 55%, #a8c2e8 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.9);
+  color: #1e3a5f;
 }
 
 html[data-theme="win7"] .taskbar-win-btn {
-  color: #fff;
+  color: #1e3a5f;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+html[data-theme="win7"] .taskbar-win-btn:hover {
+  background: rgba(255, 255, 255, 0.55);
 }
 
 html[data-theme="win7"] .taskbar-win-btn.active {
-  background: linear-gradient(180deg, #4a8ae0 0%, #2b5da8 100%);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35),
+              inset 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+html[data-theme="win7"] #taskbar-divider {
+  border-color: rgba(0, 0, 0, 0.15) rgba(255, 255, 255, 0.6);
 }
 
 html[data-theme="win7"] #system-tray {
-  background: rgba(0, 0, 0, 0.3);
-  border-color: #000 #7f7f7f #7f7f7f #000;
-  box-shadow: inset 1px 1px 0 #000;
-  color: #fff;
+  background: rgba(255, 255, 255, 0.45);
+  border-color: #8fa9d8 #eef4fc #eef4fc #8fa9d8;
+  box-shadow: inset 1px 1px 0 #8fa9d8;
+  color: #1e3a5f;
 }
 
 html[data-theme="win7"] #clock,
 html[data-theme="win7"] #weather .weather-temp {
-  color: #fff;
+  color: #1e3a5f;
 }
 
+/* Win7 Start orb: circular glossy, no text */
 html[data-theme="win7"] #start-btn {
-  background: radial-gradient(circle at 32% 32%, #b8f0a0 0%, #4db648 40%, #19751f 100%);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 11px;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  align-self: flex-end;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
   color: #fff;
 }
 
 html[data-theme="win7"] #start-btn:hover {
-  background: radial-gradient(circle at 32% 32%, #d2f7c0 0%, #5cc450 40%, #218a28 100%);
+  filter: brightness(1.15);
 }
 
 html[data-theme="win7"] #start-btn:active {
-  background: radial-gradient(circle at 32% 32%, #19751f 0%, #4db648 100%);
-  padding: 1px 6px;
+  filter: brightness(0.85);
+}
+
+html[data-theme="win7"] #start-btn .start-logo {
+  width: 26px;
+  height: 26px;
+}
+
+html[data-theme="win7"] #start-btn span {
+  display: none;
+}
+
+/* Win7 Start menu: light glass panel, blue brand rail */
+html[data-theme="win7"] #start-menu {
+  background: linear-gradient(180deg, #f2f7fd 0%, #dce8f7 100%);
+  border: 1px solid #b0c6e4;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+html[data-theme="win7"] #start-menu .start-menu-content {
+  background: linear-gradient(180deg, #f2f7fd 0%, #dce8f7 100%);
+}
+
+html[data-theme="win7"] .start-menu-sidebar {
+  background: linear-gradient(to top, #1e3e8e, #4a8ae0);
+}
+
+html[data-theme="win7"] .start-menu-sidebar-text {
+  color: #fff;
 }
 
 /* ---------- Windows 10 (flat) ---------- */
@@ -1204,8 +1361,8 @@ html[data-theme="win10"] {
   --win98-bg: #0f4c81;
   --win98-navy: #0078d7;
   --win98-highlight: #0078d7;
-  --win98-title-active: #ffffff;
-  --win98-title-inactive: #e8e8e8;
+  --win98-title-active: #f3f3f3;
+  --win98-title-inactive: #e1e1e1;
   --win98-title-color: #1e1e1e;
 }
 
@@ -1234,6 +1391,12 @@ html[data-theme="win10"] .win98-titlebar-btn:hover {
   background: #e5e5e5;
 }
 
+/* Win10 close button turns red on hover */
+html[data-theme="win10"] .win98-titlebar-btn[data-action="close"]:hover {
+  background: #e81123;
+  color: #fff;
+}
+
 html[data-theme="win10"] .win98-titlebar-btn:active {
   background: #cccccc;
   box-shadow: none;
@@ -1248,6 +1411,11 @@ html[data-theme="win10"] #taskbar {
 
 html[data-theme="win10"] .taskbar-win-btn {
   color: #fff;
+  border-radius: 2px;
+}
+
+html[data-theme="win10"] .taskbar-win-btn:hover {
+  background: #3b3b3b;
 }
 
 html[data-theme="win10"] .taskbar-win-btn.active {
@@ -1282,6 +1450,31 @@ html[data-theme="win10"] #start-btn:hover {
 html[data-theme="win10"] #start-btn:active {
   background: #2e2e2e;
   padding: 1px 6px;
+}
+
+/* Win10 Start menu: dark flat panel */
+html[data-theme="win10"] #start-menu {
+  background: #202020;
+  border: 1px solid #3a3a3a;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+html[data-theme="win10"] #start-menu .start-menu-item {
+  color: #fff;
+}
+
+html[data-theme="win10"] #start-menu .start-menu-item-desc {
+  color: #b0b0b0;
+}
+
+html[data-theme="win10"] #start-menu .start-menu-item:hover .start-menu-item-desc {
+  color: #d8d8d8;
+}
+
+html[data-theme="win10"] .start-menu-separator {
+  border-top: 1px solid #4a4a4a;
+  border-bottom: 1px solid #101010;
 }
 
 html[data-theme="win10"] .start-menu-sidebar {
