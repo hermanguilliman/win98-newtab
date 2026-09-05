@@ -31,6 +31,7 @@
     iconGap: 4,
     desktopPadX: 8,
     desktopPadY: 8,
+    folderIconStyle: "classic",
     weatherCity: "Москва",
     wallpaper: {
       type: "color",
@@ -58,12 +59,12 @@
      ICON GENERATION (Canvas → DataURL)
      ============================================================ */
 
-  /** Draw a classic Win98 folder icon */
+  /** Draw a folder icon in the given style: "classic" (flat), "glossy" (gradient + shine) or "outlined" (dark contour) */
   function currentIconSize() {
     return (state.settings && state.settings.iconSize) || DEFAULT_SETTINGS.iconSize;
   }
 
-  function drawFolderIcon(color = "#d4c044", open = false, size = currentIconSize()) {
+  function drawFolderIcon(color = "#d4c044", open = false, size = currentIconSize(), style = folderIconStyleName()) {
     const c = document.createElement("canvas");
     c.width = size;
     c.height = size;
@@ -71,9 +72,18 @@
     const k = size / 32;
     const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
 
+    const light = shadeColor(color, 30);
+    const dark = shadeColor(color, -45);
+
+    const outlineRect = (x, y, w, h) => {
+      ctx.strokeStyle = shadeColor(color, -55);
+      ctx.lineWidth = Math.max(1, k);
+      ctx.strokeRect((x + 0.5) * k, (y + 0.5) * k, (w - 1) * k, (h - 1) * k);
+    };
+
     if (open) {
       // Back flap
-      ctx.fillStyle = shadeColor(color, -30);
+      ctx.fillStyle = dark;
       r(2, 8, 28, 22);
       // Tab
       ctx.fillStyle = color;
@@ -82,7 +92,7 @@
       ctx.fillStyle = color;
       r(2, 10, 28, 20);
       // Highlight
-      ctx.fillStyle = shadeColor(color, 30);
+      ctx.fillStyle = light;
       r(4, 12, 24, 2);
       // Shadow
       ctx.fillStyle = shadeColor(color, -40);
@@ -93,18 +103,49 @@
       ctx.fillStyle = color;
       r(2, 4, 14, 5);
       // Back
-      ctx.fillStyle = shadeColor(color, -30);
+      ctx.fillStyle = dark;
       r(2, 8, 28, 22);
-      // Front
-      ctx.fillStyle = color;
+      // Front (glossy gets a vertical gradient)
+      if (style === "glossy") {
+        const grad = ctx.createLinearGradient(0, 9 * k, 0, 30 * k);
+        grad.addColorStop(0, shadeColor(color, 20));
+        grad.addColorStop(0.55, color);
+        grad.addColorStop(1, shadeColor(color, -30));
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = color;
+      }
       r(2, 9, 28, 21);
       // Highlight
-      ctx.fillStyle = shadeColor(color, 30);
+      ctx.fillStyle = light;
       r(4, 10, 24, 2);
       // Inner shadow
       ctx.fillStyle = shadeColor(color, -20);
       r(4, 28, 24, 2);
       r(28, 11, 2, 19);
+    }
+
+    if (style === "glossy") {
+      // Diagonal shine stripe across the front
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.beginPath();
+      ctx.moveTo(5 * k, 11 * k);
+      ctx.lineTo(14 * k, 11 * k);
+      ctx.lineTo(9 * k, 19 * k);
+      ctx.lineTo(5 * k, 19 * k);
+      ctx.closePath();
+      ctx.fill();
+    } else if (style === "outlined") {
+      // Crisp dark outline around every part of the folder
+      if (open) {
+        outlineRect(2, 6, 14, 5);
+        outlineRect(2, 8, 28, 22);
+        outlineRect(2, 10, 28, 20);
+      } else {
+        outlineRect(2, 4, 14, 5);
+        outlineRect(2, 8, 28, 22);
+        outlineRect(2, 9, 28, 21);
+      }
     }
 
     return c.toDataURL();
@@ -195,6 +236,21 @@
     "#64a0c8", "#c86464", "#64c864",
     "#c89644", "#9664c8", "#c864a0",
   ];
+
+  /** Folder icon appearance styles (selectable in Настройки → Вид) */
+  const FOLDER_STYLES = [
+    { id: "classic", label: "Классические" },
+    { id: "glossy", label: "Объёмные" },
+    { id: "outlined", label: "С контуром" },
+  ];
+
+  /** Live-preview override while the settings window is open (cleared on OK/Отмена) */
+  let previewFolderStyle = null;
+
+  /** Currently active folder icon style id */
+  function folderIconStyleName() {
+    return previewFolderStyle || (state.settings && state.settings.folderIconStyle) || DEFAULT_SETTINGS.folderIconStyle;
+  }
 
   function shadeColor(color, percent) {
     let R = parseInt(color.substring(1, 3), 16);
@@ -1623,6 +1679,9 @@
     if (clampInt(partial.iconGap, 0, 32) !== null) base.iconGap = clampInt(partial.iconGap, 0, 32);
     if (clampInt(partial.desktopPadX, 0, 64) !== null) base.desktopPadX = clampInt(partial.desktopPadX, 0, 64);
     if (clampInt(partial.desktopPadY, 0, 64) !== null) base.desktopPadY = clampInt(partial.desktopPadY, 0, 64);
+    if (FOLDER_STYLES.some((s) => s.id === partial.folderIconStyle)) {
+      base.folderIconStyle = partial.folderIconStyle;
+    }
     if (typeof partial.weatherCity === "string" && partial.weatherCity.trim()) {
       base.weatherCity = partial.weatherCity.trim();
     }
@@ -1783,17 +1842,21 @@
     selectTab("wp");
 
     const commit = () => {
+      previewFolderStyle = null;
       state.settings = pending;
       applyDesktopStyle();
       saveSettings();
       updateWeather();
+      renderBookmarks(state.treeRoot);
       const id = getWinId();
       if (id) closeWindow(id);
     };
 
     const cancel = () => {
+      previewFolderStyle = null;
       applyWallpaper(state.settings.wallpaper);
       applyDesktopStyle();
+      renderBookmarks(state.treeRoot);
       const id = getWinId();
       if (id) closeWindow(id);
     };
@@ -1956,6 +2019,49 @@
       sizeRow.appendChild(lbl);
     });
     vg.appendChild(sizeRow);
+
+    /* ---------- Вид group (folder icon style) ---------- */
+    const fg = document.createElement("div");
+    fg.className = "win98-groupbox";
+    const fgLegend = document.createElement("div");
+    fgLegend.className = "win98-groupbox-legend";
+    fgLegend.textContent = "Иконки папок";
+    fg.appendChild(fgLegend);
+
+    const curFolderStyle = FOLDER_STYLES.some((s) => s.id === pending.folderIconStyle)
+      ? pending.folderIconStyle
+      : DEFAULT_SETTINGS.folderIconStyle;
+
+    FOLDER_STYLES.forEach((s) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      lbl.style.display = "flex";
+      lbl.style.alignItems = "center";
+      lbl.style.gap = "6px";
+      lbl.style.marginBottom = "2px";
+      const rad = document.createElement("input");
+      rad.type = "radio";
+      rad.name = "folder-style";
+      rad.value = s.id;
+      if (curFolderStyle === s.id) rad.checked = true;
+      const prev = document.createElement("img");
+      prev.src = drawFolderIcon("#d4c044", false, 24, s.id);
+      prev.width = 24;
+      prev.height = 24;
+      prev.style.imageRendering = "pixelated";
+      prev.style.flexShrink = "0";
+      const sp = document.createElement("span");
+      sp.textContent = s.label;
+      rad.addEventListener("change", () => {
+        if (!rad.checked) return;
+        pending.folderIconStyle = s.id;
+        previewFolderStyle = s.id;
+        renderBookmarks(state.treeRoot); // live preview on the desktop
+      });
+      lbl.append(rad, prev, sp);
+      fg.appendChild(lbl);
+    });
+    vg.appendChild(fg);
 
     // Numeric style settings with live preview
     const makeNumRow = (label, key, min, max) => {
