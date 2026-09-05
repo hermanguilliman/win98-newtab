@@ -690,6 +690,9 @@
       }
     });
 
+    // Middle mouse button → open bookmark in a background tab
+    div.addEventListener("auxclick", (e) => handleAuxClick(e, node));
+
     // Right-click context menu
     div.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -719,6 +722,19 @@
     } else {
       openFolderWindow(node);
     }
+  }
+
+  /** Open a bookmark URL in a new background tab (middle-click) */
+  function openInBackgroundTab(url) {
+    chrome.tabs.create({ url, active: false });
+  }
+
+  /** Middle-click (auxclick, button=1) → background tab; folders are ignored */
+  function handleAuxClick(e, node) {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (node && node.url) openInBackgroundTab(node.url);
   }
 
   /** Current click mode from settings */
@@ -848,6 +864,9 @@
         openNode(node);
       }
     });
+
+    // Middle mouse button → open bookmark in a background tab
+    div.addEventListener("auxclick", (e) => handleAuxClick(e, node));
 
     div.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -1052,6 +1071,7 @@
               e.stopPropagation();
               if (!isSingleClickMode()) openNode(child);
             });
+            item.addEventListener("auxclick", (e) => handleAuxClick(e, child));
             container.appendChild(item);
           } else if (child.url) {
             // Bookmark
@@ -1084,6 +1104,7 @@
               e.stopPropagation();
               if (!isSingleClickMode()) openNode(child);
             });
+            item.addEventListener("auxclick", (e) => handleAuxClick(e, child));
             container.appendChild(item);
           }
         }
