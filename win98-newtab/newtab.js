@@ -28,7 +28,6 @@
     desktopPadX: 8,
     desktopPadY: 8,
     weatherCity: "Москва",
-    theme: "win98",
     wallpaper: {
       type: "color",
       color: "#008080",
@@ -39,15 +38,6 @@
 
   /** Allowed icon sizes */
   const ICON_SIZES = [24, 32, 48];
-
-  /** UI themes (OS look-alikes) */
-  const THEMES = {
-    win98: { label: "Windows 98", startLabel: "98" },
-    xp: { label: "Windows XP", startLabel: "XP" },
-    vista: { label: "Windows Vista", startLabel: "Vista" },
-    win7: { label: "Windows 7", startLabel: "7" },
-    win10: { label: "Windows 10", startLabel: "10" },
-  };
 
   /* ---------- DOM Refs ---------- */
   const $desktop = document.getElementById("desktop");
@@ -1183,9 +1173,6 @@
     if (typeof partial.weatherCity === "string" && partial.weatherCity.trim()) {
       base.weatherCity = partial.weatherCity.trim();
     }
-    if (THEMES[partial.theme]) {
-      base.theme = partial.theme;
-    }
     if (partial.wallpaper) {
       const wp = partial.wallpaper;
       if (wp.type === "color" || wp.type === "image") base.wallpaper.type = wp.type;
@@ -1207,7 +1194,7 @@
     applyDesktopStyle();
   }
 
-  /** Apply all desktop layout CSS variables (icon size, label size, spacing, padding) + theme */
+  /** Apply all desktop layout CSS variables (icon size, label size, spacing, padding) */
   function applyDesktopStyle(src) {
     const s = src || state.settings || DEFAULT_SETTINGS;
     const el = document.documentElement;
@@ -1216,22 +1203,6 @@
     el.style.setProperty("--win98-icon-gap", (s.iconGap ?? DEFAULT_SETTINGS.iconGap) + "px");
     el.style.setProperty("--win98-desktop-pad-x", (s.desktopPadX ?? DEFAULT_SETTINGS.desktopPadX) + "px");
     el.style.setProperty("--win98-desktop-pad-y", (s.desktopPadY ?? DEFAULT_SETTINGS.desktopPadY) + "px");
-    applyTheme(s);
-  }
-
-  /** Apply the UI theme: data-theme attribute + start button logo + start menu sidebar label */
-  function applyTheme(src) {
-    const s = src || state.settings || DEFAULT_SETTINGS;
-    const theme = THEMES[s.theme] ? s.theme : DEFAULT_SETTINGS.theme;
-    document.documentElement.dataset.theme = theme;
-    const logoEl = document.querySelector("#start-btn .start-logo");
-    if (logoEl) {
-      logoEl.src = "icons/" + (theme === "win98" ? "logo" : "logo-" + theme) + ".svg";
-    }
-    const startLabelEl = document.querySelector(".start-menu-sidebar-text strong");
-    if (startLabelEl) {
-      startLabelEl.textContent = "Windows" + (THEMES[theme].startLabel || "98");
-    }
   }
 
   /** Apply the icon size as CSS variables on the desktop + windows (back-compat) */
@@ -1500,40 +1471,6 @@
 
     mg.append(singleLbl, doubleLbl);
     tabPanels.behavior.appendChild(mg);
-
-    /* ---------- Тема оформления group ---------- */
-    const tg = document.createElement("div");
-    tg.className = "win98-groupbox";
-    const tgLegend = document.createElement("div");
-    tgLegend.className = "win98-groupbox-legend";
-    tgLegend.textContent = "Тема оформления";
-    tg.appendChild(tgLegend);
-
-    const themeRow = document.createElement("div");
-    themeRow.className = "wp-style-row";
-    themeRow.style.flexWrap = "wrap";
-    const currentTheme = (pending.theme && THEMES[pending.theme] && pending.theme) || DEFAULT_SETTINGS.theme;
-    Object.entries(THEMES).forEach(([id, t]) => {
-      const lbl = document.createElement("label");
-      lbl.className = "win98-radio";
-      const r = document.createElement("input");
-      r.type = "radio";
-      r.name = "theme";
-      r.value = id;
-      if (currentTheme === id) r.checked = true;
-      const sp = document.createElement("span");
-      sp.textContent = t.label;
-      lbl.append(r, sp);
-      r.addEventListener("change", () => {
-        if (r.checked) {
-          pending.theme = id;
-          applyTheme(pending); // live preview
-        }
-      });
-      themeRow.appendChild(lbl);
-    });
-    tg.appendChild(themeRow);
-    tabPanels.appearance.appendChild(tg);
 
     /* ---------- Вид group (icon size) ---------- */
     const vg = document.createElement("div");

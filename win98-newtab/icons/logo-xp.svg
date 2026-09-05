@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-  <!-- Windows XP Start banner: waving flag, orange pane dropped low -->
-  <path d="M1.6 1.6H7V7H1.6z" fill="#E81123"/>
-  <path d="M8.4 1.6H14.4V7H8.4z" fill="#5CB85C"/>
-  <path d="M1.6 7H7v6.4H1.6z" fill="#3B78FF"/>
-  <path d="M8.4 7.6H14.4V14h-6z" fill="#FFB900"/>
-  <!-- wavy seams (signature XP wave) -->
-  <path d="M7 1.6c-.9 1.5-.9 3.9 0 5.4M7 7c-.9 1.5-.9 4.6 0 6.9" stroke="#F0F0F0" stroke-width="0.7" fill="none"/>
-</svg>
