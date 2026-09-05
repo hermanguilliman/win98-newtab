@@ -23,6 +23,10 @@
   const DEFAULT_SETTINGS = {
     clickMode: "double",
     iconSize: 32,
+    labelSize: 11,
+    iconGap: 4,
+    desktopPadX: 8,
+    desktopPadY: 8,
     weatherCity: "Москва",
     wallpaper: {
       type: "color",
@@ -1162,6 +1166,10 @@
     if (ICON_SIZES.includes(partial.iconSize)) {
       base.iconSize = partial.iconSize;
     }
+    if (clampInt(partial.labelSize, 9, 18) !== null) base.labelSize = clampInt(partial.labelSize, 9, 18);
+    if (clampInt(partial.iconGap, 0, 32) !== null) base.iconGap = clampInt(partial.iconGap, 0, 32);
+    if (clampInt(partial.desktopPadX, 0, 64) !== null) base.desktopPadX = clampInt(partial.desktopPadX, 0, 64);
+    if (clampInt(partial.desktopPadY, 0, 64) !== null) base.desktopPadY = clampInt(partial.desktopPadY, 0, 64);
     if (typeof partial.weatherCity === "string" && partial.weatherCity.trim()) {
       base.weatherCity = partial.weatherCity.trim();
     }
@@ -1183,13 +1191,24 @@
       state.settings = mergeSettings(null);
     }
     applyWallpaper(state.settings.wallpaper);
-    applyIconSize();
+    applyDesktopStyle();
   }
 
-  /** Apply the icon size as CSS variables on the desktop + windows */
+  /** Apply all desktop layout CSS variables (icon size, label size, spacing, padding) */
+  function applyDesktopStyle(src) {
+    const s = src || state.settings || DEFAULT_SETTINGS;
+    const el = document.documentElement;
+    el.style.setProperty("--win98-icon-size", (s.iconSize || DEFAULT_SETTINGS.iconSize) + "px");
+    el.style.setProperty("--win98-label-size", (s.labelSize ?? DEFAULT_SETTINGS.labelSize) + "px");
+    el.style.setProperty("--win98-icon-gap", (s.iconGap ?? DEFAULT_SETTINGS.iconGap) + "px");
+    el.style.setProperty("--win98-desktop-pad-x", (s.desktopPadX ?? DEFAULT_SETTINGS.desktopPadX) + "px");
+    el.style.setProperty("--win98-desktop-pad-y", (s.desktopPadY ?? DEFAULT_SETTINGS.desktopPadY) + "px");
+  }
+
+  /** Apply the icon size as CSS variables on the desktop + windows (back-compat) */
   function applyIconSize(size) {
-    const px = (size || (state.settings && state.settings.iconSize) || DEFAULT_SETTINGS.iconSize) + "px";
-    document.documentElement.style.setProperty("--win98-icon-size", px);
+    if (size) state.settings = { ...(state.settings || DEFAULT_SETTINGS), iconSize: size };
+    applyDesktopStyle();
   }
 
   function saveSettings() {
@@ -1245,7 +1264,7 @@
       title: "Настройки",
       icon: "icons/settings.svg",
       width: 460,
-      height: 560,
+      height: 640,
       content: "",
       statusbar: false,
       onCreated: (el, winData) => {
@@ -1271,7 +1290,7 @@
 
     const commit = () => {
       state.settings = pending;
-      applyIconSize(pending.iconSize);
+      applyDesktopStyle();
       saveSettings();
       updateWeather();
       const id = getWinId();
@@ -1280,7 +1299,7 @@
 
     const cancel = () => {
       applyWallpaper(state.settings.wallpaper);
-      applyIconSize(state.settings.iconSize);
+      applyDesktopStyle();
       const id = getWinId();
       if (id) closeWindow(id);
     };
@@ -1437,12 +1456,45 @@
       r.addEventListener("change", () => {
         if (r.checked) {
           pending.iconSize = s;
-          applyIconSize(s); // live preview
+          applyDesktopStyle(pending); // live preview
         }
       });
       sizeRow.appendChild(lbl);
     });
     vg.appendChild(sizeRow);
+
+    // Numeric style settings with live preview
+    const makeNumRow = (label, key, min, max) => {
+      const row = document.createElement("div");
+      row.className = "wp-style-row";
+      row.style.justifyContent = "space-between";
+      const cap = document.createElement("span");
+      cap.textContent = label;
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = String(min);
+      inp.max = String(max);
+      inp.value = String(pending[key] ?? DEFAULT_SETTINGS[key]);
+      inp.className = "win98-addressbar-input";
+      inp.style.width = "64px";
+      inp.addEventListener("change", () => {
+        const v = clampInt(inp.value, min, max);
+        if (v === null) {
+          inp.value = String(pending[key] ?? DEFAULT_SETTINGS[key]);
+          return;
+        }
+        pending[key] = v;
+        inp.value = String(v);
+        applyDesktopStyle(pending); // live preview
+      });
+      row.append(cap, inp);
+      return row;
+    };
+    vg.appendChild(makeNumRow("Размер текста, пкс", "labelSize", 9, 18));
+    vg.appendChild(makeNumRow("Расстояние между иконками, пкс", "iconGap", 0, 32));
+    vg.appendChild(makeNumRow("Отступ сверху и снизу, пкс", "desktopPadY", 0, 64));
+    vg.appendChild(makeNumRow("Отступ слева и справа, пкс", "desktopPadX", 0, 64));
+
     form.appendChild(vg);
 
     /* ---------- Погода group ---------- */
@@ -1630,6 +1682,13 @@
     const div = document.createElement("div");
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  /** Clamp an integer to [min,max]; returns null if not a finite number */
+  function clampInt(v, min, max) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return Math.min(max, Math.max(min, Math.round(n)));
   }
 
   /* ============================================================

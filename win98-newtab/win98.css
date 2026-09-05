@@ -66,8 +66,8 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
-  padding: 8px;
-  gap: 4px;
+  padding: var(--win98-desktop-pad-y, 8px) var(--win98-desktop-pad-x, 8px);
+  gap: var(--win98-icon-gap, 4px);
   min-height: 100%;
 }
 
@@ -109,7 +109,7 @@ html, body {
 
 .desktop-icon-label {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--win98-label-size, 11px);
   color: var(--win98-white);
   text-shadow: 1px 1px 1px rgba(0,0,0,0.7);
   word-break: break-word;
@@ -357,7 +357,7 @@ html, body {
 
 .folder-item-label {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--win98-label-size, 11px);
   word-break: break-word;
   line-height: 1.2;
   max-width: calc(var(--win98-icon-size, 32px) + 4px);
