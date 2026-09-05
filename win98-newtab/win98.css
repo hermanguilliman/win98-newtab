@@ -83,7 +83,7 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  width: 72px;
+  width: calc(var(--win98-icon-size, 32px) + 8px);
   padding: 4px 2px;
   cursor: pointer;
   border: 1px solid transparent;
@@ -101,8 +101,8 @@ html, body {
 }
 
 .desktop-icon img {
-  width: 32px;
-  height: 32px;
+  width: var(--win98-icon-size, 32px);
+  height: var(--win98-icon-size, 32px);
   image-rendering: pixelated;
   pointer-events: none;
 }
@@ -114,7 +114,7 @@ html, body {
   text-shadow: 1px 1px 1px rgba(0,0,0,0.7);
   word-break: break-word;
   line-height: 1.2;
-  max-width: 68px;
+  max-width: calc(var(--win98-icon-size, 32px) + 4px);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -332,7 +332,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 72px;
+  width: calc(var(--win98-icon-size, 32px) + 8px);
   padding: 4px 2px;
   cursor: pointer;
   text-align: center;
@@ -349,8 +349,8 @@ html, body {
 }
 
 .folder-item img {
-  width: 32px;
-  height: 32px;
+  width: var(--win98-icon-size, 32px);
+  height: var(--win98-icon-size, 32px);
   image-rendering: pixelated;
   pointer-events: none;
 }
@@ -360,7 +360,7 @@ html, body {
   font-size: 11px;
   word-break: break-word;
   line-height: 1.2;
-  max-width: 68px;
+  max-width: calc(var(--win98-icon-size, 32px) + 4px);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;

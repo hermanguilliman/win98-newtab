@@ -22,6 +22,7 @@
   /* ---------- Default settings ---------- */
   const DEFAULT_SETTINGS = {
     clickMode: "double",
+    iconSize: 32,
     wallpaper: {
       type: "color",
       color: "#008080",
@@ -29,6 +30,9 @@
       imageStyle: "tile",
     },
   };
+
+  /** Allowed icon sizes */
+  const ICON_SIZES = [24, 32, 48];
 
   /* ---------- DOM Refs ---------- */
   const $desktop = document.getElementById("desktop");
@@ -45,46 +49,52 @@
      ============================================================ */
 
   /** Draw a classic Win98 folder icon */
-  function drawFolderIcon(color = "#d4c044", open = false) {
+  function currentIconSize() {
+    return (state.settings && state.settings.iconSize) || DEFAULT_SETTINGS.iconSize;
+  }
+
+  function drawFolderIcon(color = "#d4c044", open = false, size = currentIconSize()) {
     const c = document.createElement("canvas");
-    c.width = 32;
-    c.height = 32;
+    c.width = size;
+    c.height = size;
     const ctx = c.getContext("2d");
+    const k = size / 32;
+    const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
 
     if (open) {
       // Back flap
       ctx.fillStyle = shadeColor(color, -30);
-      ctx.fillRect(2, 8, 28, 22);
+      r(2, 8, 28, 22);
       // Tab
       ctx.fillStyle = color;
-      ctx.fillRect(2, 6, 14, 5);
+      r(2, 6, 14, 5);
       // Front
       ctx.fillStyle = color;
-      ctx.fillRect(2, 10, 28, 20);
+      r(2, 10, 28, 20);
       // Highlight
       ctx.fillStyle = shadeColor(color, 30);
-      ctx.fillRect(4, 12, 24, 2);
+      r(4, 12, 24, 2);
       // Shadow
       ctx.fillStyle = shadeColor(color, -40);
-      ctx.fillRect(4, 28, 24, 2);
-      ctx.fillRect(28, 12, 2, 18);
+      r(4, 28, 24, 2);
+      r(28, 12, 2, 18);
     } else {
       // Tab
       ctx.fillStyle = color;
-      ctx.fillRect(2, 4, 14, 5);
+      r(2, 4, 14, 5);
       // Back
       ctx.fillStyle = shadeColor(color, -30);
-      ctx.fillRect(2, 8, 28, 22);
+      r(2, 8, 28, 22);
       // Front
       ctx.fillStyle = color;
-      ctx.fillRect(2, 9, 28, 21);
+      r(2, 9, 28, 21);
       // Highlight
       ctx.fillStyle = shadeColor(color, 30);
-      ctx.fillRect(4, 10, 24, 2);
+      r(4, 10, 24, 2);
       // Inner shadow
       ctx.fillStyle = shadeColor(color, -20);
-      ctx.fillRect(4, 28, 24, 2);
-      ctx.fillRect(28, 11, 2, 19);
+      r(4, 28, 24, 2);
+      r(28, 11, 2, 19);
     }
 
     return c.toDataURL();
@@ -120,38 +130,40 @@
   }
 
   /** Draw a generic webpage icon */
-  function drawPageIcon() {
+  function drawPageIcon(size = currentIconSize()) {
     const c = document.createElement("canvas");
-    c.width = 32;
-    c.height = 32;
+    c.width = size;
+    c.height = size;
     const ctx = c.getContext("2d");
+    const k = size / 32;
+    const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
 
     // Page background
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(4, 2, 22, 28);
+    r(4, 2, 22, 28);
     // Page border
     ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(4.5, 2.5, 21, 27);
+    ctx.lineWidth = Math.max(1, k);
+    ctx.strokeRect(4.5 * k, 2.5 * k, 21 * k, 27 * k);
     // Corner fold
     ctx.fillStyle = "#c0c0c0";
     ctx.beginPath();
-    ctx.moveTo(20, 2);
-    ctx.lineTo(26, 8);
-    ctx.lineTo(20, 8);
+    ctx.moveTo(20 * k, 2 * k);
+    ctx.lineTo(26 * k, 8 * k);
+    ctx.lineTo(20 * k, 8 * k);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#000000";
     ctx.beginPath();
-    ctx.moveTo(20, 2);
-    ctx.lineTo(20, 8);
-    ctx.lineTo(26, 8);
+    ctx.moveTo(20 * k, 2 * k);
+    ctx.lineTo(20 * k, 8 * k);
+    ctx.lineTo(26 * k, 8 * k);
     ctx.stroke();
     // Text lines
     ctx.fillStyle = "#000000";
     for (let i = 0; i < 4; i++) {
       const w = i === 3 ? 12 : 16;
-      ctx.fillRect(7, 12 + i * 4, w, 1.5);
+      r(7, 12 + i * 4, w, 1.5);
     }
 
     return c.toDataURL();
@@ -161,7 +173,7 @@
   function getFaviconUrl(url) {
     try {
       const u = new URL(url);
-      return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=32`;
+      return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=${currentIconSize()}`;
     } catch {
       return null;
     }
@@ -1028,6 +1040,9 @@
     if (partial.clickMode === "single" || partial.clickMode === "double") {
       base.clickMode = partial.clickMode;
     }
+    if (ICON_SIZES.includes(partial.iconSize)) {
+      base.iconSize = partial.iconSize;
+    }
     if (partial.wallpaper) {
       const wp = partial.wallpaper;
       if (wp.type === "color" || wp.type === "image") base.wallpaper.type = wp.type;
@@ -1046,6 +1061,13 @@
       state.settings = mergeSettings(null);
     }
     applyWallpaper(state.settings.wallpaper);
+    applyIconSize();
+  }
+
+  /** Apply the icon size as CSS variables on the desktop + windows */
+  function applyIconSize(size) {
+    const px = (size || (state.settings && state.settings.iconSize) || DEFAULT_SETTINGS.iconSize) + "px";
+    document.documentElement.style.setProperty("--win98-icon-size", px);
   }
 
   function saveSettings() {
@@ -1101,7 +1123,7 @@
       title: "Настройки",
       icon: "icons/settings.svg",
       width: 460,
-      height: 480,
+      height: 560,
       content: "",
       statusbar: false,
       onCreated: (el, winData) => {
@@ -1127,6 +1149,7 @@
 
     const commit = () => {
       state.settings = pending;
+      applyIconSize(pending.iconSize);
       saveSettings();
       const id = getWinId();
       if (id) closeWindow(id);
@@ -1134,6 +1157,7 @@
 
     const cancel = () => {
       applyWallpaper(state.settings.wallpaper);
+      applyIconSize(state.settings.iconSize);
       const id = getWinId();
       if (id) closeWindow(id);
     };
@@ -1264,6 +1288,39 @@
 
     mg.append(singleLbl, doubleLbl);
     form.appendChild(mg);
+
+    /* ---------- Вид group (icon size) ---------- */
+    const vg = document.createElement("div");
+    vg.className = "win98-groupbox";
+    const vgLegend = document.createElement("div");
+    vgLegend.className = "win98-groupbox-legend";
+    vgLegend.textContent = "Вид";
+    vg.appendChild(vgLegend);
+
+    const SIZE_LABELS = { 24: "Мелкие", 32: "Средние", 48: "Крупные" };
+    const sizeRow = document.createElement("div");
+    sizeRow.className = "wp-style-row";
+    ICON_SIZES.forEach((s) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      const r = document.createElement("input");
+      r.type = "radio";
+      r.name = "icon-size";
+      r.value = String(s);
+      if (pending.iconSize === s) r.checked = true;
+      const sp = document.createElement("span");
+      sp.textContent = SIZE_LABELS[s] || s;
+      lbl.append(r, sp);
+      r.addEventListener("change", () => {
+        if (r.checked) {
+          pending.iconSize = s;
+          applyIconSize(s); // live preview
+        }
+      });
+      sizeRow.appendChild(lbl);
+    });
+    vg.appendChild(sizeRow);
+    form.appendChild(vg);
 
     /* ---------- Dialog buttons ---------- */
     const btnRow = document.createElement("div");
