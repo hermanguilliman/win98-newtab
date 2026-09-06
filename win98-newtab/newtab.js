@@ -2302,7 +2302,7 @@
         if (clockClicks >= 10) {
             clockClicks = 0;
             clearTimeout(clockClickTimer);
-            openMessageBox("Внимание", "Ты старый");
+            openMessageBox("Внимание", "Ты старый", "icons/pc_icon.png");
         }
     });
 
