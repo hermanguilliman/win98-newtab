@@ -35,6 +35,7 @@
         weatherCity: "Москва",
         showClockDate: true,
         showClockWeekday: true,
+        labelBg: false,
         wallpaper: {
             type: "color",
             color: "#008080",
@@ -2033,6 +2034,9 @@
         if (typeof partial.showClockWeekday === "boolean") {
             base.showClockWeekday = partial.showClockWeekday;
         }
+        if (typeof partial.labelBg === "boolean") {
+            base.labelBg = partial.labelBg;
+        }
         if (partial.wallpaper) {
             const wp = partial.wallpaper;
             if (wp.type === "color" || wp.type === "image")
@@ -2081,6 +2085,19 @@
         el.style.setProperty(
             "--win98-desktop-pad-y",
             (s.desktopPadY ?? DEFAULT_SETTINGS.desktopPadY) + "px",
+        );
+        // Icon label appearance: white background (with dark text) or transparent
+        el.style.setProperty(
+            "--win98-label-bg",
+            s.labelBg ? "var(--win98-white)" : "transparent",
+        );
+        el.style.setProperty(
+            "--win98-label-color",
+            s.labelBg ? "var(--win98-black)" : "var(--win98-white)",
+        );
+        el.style.setProperty(
+            "--win98-label-shadow",
+            s.labelBg ? "none" : "1px 1px 1px rgba(0,0,0,0.7)",
         );
     }
 
@@ -2523,6 +2540,32 @@
         );
 
         tabPanels.appearance.appendChild(vg);
+
+        /* ---------- Надписи group (icon label background) ---------- */
+        const lg = document.createElement("div");
+        lg.className = "win98-groupbox";
+        const lgLegend = document.createElement("div");
+        lgLegend.className = "win98-groupbox-legend";
+        lgLegend.textContent = "Надписи";
+        lg.appendChild(lgLegend);
+
+        const bgLbl = document.createElement("label");
+        bgLbl.className = "win98-checkbox";
+        const bgCb = document.createElement("input");
+        bgCb.type = "checkbox";
+        bgCb.checked = !!pending.labelBg;
+        bgLbl.append(
+            bgCb,
+            document.createTextNode(
+                "Белый фон под названиями ссылок и папок",
+            ),
+        );
+        bgLbl.addEventListener("change", () => {
+            pending.labelBg = bgCb.checked;
+            applyDesktopStyle(pending); // live preview on the desktop
+        });
+        lg.appendChild(bgLbl);
+        tabPanels.appearance.appendChild(lg);
 
         /* ---------- Погода group ---------- */
         const wxg = document.createElement("div");
