@@ -33,6 +33,8 @@
         desktopPadY: 8,
         folderIconStyle: "classic",
         weatherCity: "Москва",
+        showClockDate: true,
+        showClockWeekday: true,
         wallpaper: {
             type: "color",
             color: "#008080",
@@ -288,11 +290,23 @@
     /* ============================================================
      CLOCK
      ============================================================ */
-    function updateClock() {
+    function updateClock(src) {
+        const s = src || state.settings || DEFAULT_SETTINGS;
         const now = new Date();
         const h = now.getHours().toString().padStart(2, "0");
         const m = now.getMinutes().toString().padStart(2, "0");
-        $clock.textContent = `${h}:${m}`;
+        const parts = [];
+        if (s.showClockWeekday) {
+            const wd = now.toLocaleDateString("ru-RU", { weekday: "short" });
+            parts.push(wd.endsWith(".") ? wd : wd + ".");
+        }
+        if (s.showClockDate) {
+            const d = now.getDate().toString().padStart(2, "0");
+            const mo = (now.getMonth() + 1).toString().padStart(2, "0");
+            parts.push(`${d}.${mo}.${now.getFullYear()}`);
+        }
+        parts.push(`${h}:${m}`);
+        $clock.textContent = parts.join(" ");
     }
 
     /* ============================================================
@@ -2013,6 +2027,12 @@
         ) {
             base.weatherCity = partial.weatherCity.trim();
         }
+        if (typeof partial.showClockDate === "boolean") {
+            base.showClockDate = partial.showClockDate;
+        }
+        if (typeof partial.showClockWeekday === "boolean") {
+            base.showClockWeekday = partial.showClockWeekday;
+        }
         if (partial.wallpaper) {
             const wp = partial.wallpaper;
             if (wp.type === "color" || wp.type === "image")
@@ -2035,6 +2055,7 @@
         }
         applyWallpaper(state.settings.wallpaper);
         applyDesktopStyle();
+        updateClock();
     }
 
     /** Apply all desktop layout CSS variables (icon size, label size, spacing, padding) */
@@ -2211,6 +2232,7 @@
             state.settings = pending;
             applyDesktopStyle();
             saveSettings();
+            updateClock();
             updateWeather();
             renderBookmarks(state.treeRoot);
             const id = getWinId();
@@ -2221,6 +2243,7 @@
             previewFolderStyle = null;
             applyWallpaper(state.settings.wallpaper);
             applyDesktopStyle();
+            updateClock();
             renderBookmarks(state.treeRoot);
             const id = getWinId();
             if (id) closeWindow(id);
@@ -2358,6 +2381,31 @@
 
         mg.append(singleLbl, doubleLbl);
         tabPanels.behavior.appendChild(mg);
+
+        /* ---------- Часы group ---------- */
+        const clg = document.createElement("div");
+        clg.className = "win98-groupbox";
+        const clgLegend = document.createElement("div");
+        clgLegend.className = "win98-groupbox-legend";
+        clgLegend.textContent = "Часы";
+        clg.appendChild(clgLegend);
+
+        const dateLbl = document.createElement("label");
+        dateLbl.className = "win98-checkbox";
+        const dateCb = document.createElement("input");
+        dateCb.type = "checkbox";
+        dateCb.checked = !!pending.showClockDate;
+        dateLbl.append(dateCb, document.createTextNode("Показывать дату"));
+
+        const wdLbl = document.createElement("label");
+        wdLbl.className = "win98-checkbox";
+        const wdCb = document.createElement("input");
+        wdCb.type = "checkbox";
+        wdCb.checked = !!pending.showClockWeekday;
+        wdLbl.append(wdCb, document.createTextNode("Показывать день недели"));
+
+        clg.append(dateLbl, wdLbl);
+        tabPanels.behavior.appendChild(clg);
 
         /* ---------- Вид group (icon size) ---------- */
         const vg = document.createElement("div");
@@ -2650,6 +2698,15 @@
             if (v) pending.weatherCity = v;
         });
 
+        dateCb.addEventListener("change", () => {
+            pending.showClockDate = dateCb.checked;
+            updateClock(pending);
+        });
+        wdCb.addEventListener("change", () => {
+            pending.showClockWeekday = wdCb.checked;
+            updateClock(pending);
+        });
+
         okBtn.addEventListener("click", commit);
         cancelBtn.addEventListener("click", cancel);
 
@@ -2682,7 +2739,9 @@
      ============================================================ */
 
     function init() {
-        updateClock();
+        // Render bare time immediately; date/weekday appear only after settings
+        // are loaded, so disabled toggles never flash back on at startup.
+        updateClock({});
         setInterval(updateClock, 10000);
         attachBookmarkListeners();
         loadSettings().then(() => {

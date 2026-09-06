@@ -1051,6 +1051,51 @@ input[type="radio"]:disabled:checked::after {
     background: var(--win98-dark-gray);
 }
 
+/* ---------- Win98 checkbox ---------- */
+.win98-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    padding: 2px 0;
+    cursor: pointer;
+}
+
+.win98-checkbox input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    background: var(--win98-input-bg);
+    border: 1px solid;
+    border-color: var(--win98-radio-edge1) var(--win98-radio-edge2)
+        var(--win98-radio-edge2) var(--win98-radio-edge1);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-radio-shadow),
+        1px 1px 0 var(--win98-white);
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.win98-checkbox input[type="checkbox"]:checked::after {
+    content: "×";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--win98-radio-check);
+}
+
+.win98-checkbox input[type="checkbox"]:disabled {
+    background: var(--win98-silver);
+    cursor: default;
+}
+
 /* ---------- Rows ---------- */
 .win98-radio-row {
     display: flex;
