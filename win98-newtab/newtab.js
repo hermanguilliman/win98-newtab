@@ -1514,6 +1514,15 @@
     }
 
     function openFolderWindow(node) {
+        // Single instance per folder: if it is already displayed in some window,
+        // just bring that window to the front instead of opening a new one.
+        const existing = state.windows.find((w) => w.bookmarkId === node.id);
+        if (existing) {
+            if (existing.minimized) restoreWindow(existing.id);
+            else bringToFront(existing.id);
+            return;
+        }
+
         const folderIcon = drawFolderIcon(
             FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
             true,
