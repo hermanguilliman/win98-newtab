@@ -535,7 +535,6 @@
     /* ============================================================
      WEATHER (Open-Meteo, no API key)
      ============================================================ */
-    const WEATHER_TTL = 30 * 60 * 1000; // refresh cache at most every 30 min
 
     /** Map WMO weather code → emoji icon */
     function weatherIcon(code) {
@@ -568,27 +567,20 @@
         $weather.classList.add("visible");
     }
 
-    async function loadWeatherCache() {
-        try {
-            return (await chrome.storage.local.get("weather")) || {};
-        } catch {
-            return {};
-        }
-    }
-
     function saveWeatherCache(city, temp, code) {
         const payload = { city, temp, code, ts: Date.now() };
         return chrome.storage.local.set({ weather: payload }).catch(() => {});
     }
 
-    async function refreshWeather() {
-        const city =
+    async function refreshWeather(city) {
+        const currentCity =
+            city ||
             (state.settings && state.settings.weatherCity) ||
             DEFAULT_SETTINGS.weatherCity;
         try {
             // Resolve city → coordinates
             const geoResp = await fetch(
-                `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=ru&format=json`,
+                `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(currentCity)}&count=1&language=ru&format=json`,
                 { mode: "cors" },
             );
             const geo = await geoResp.json();
@@ -609,7 +601,7 @@
             }
             renderWeather(wx.current.temperature_2m, wx.current.weather_code);
             saveWeatherCache(
-                city,
+                currentCity,
                 wx.current.temperature_2m,
                 wx.current.weather_code,
             );
@@ -618,22 +610,41 @@
         }
     }
 
-    async function updateWeather() {
-        const city =
+    /** Read the stored settings + weather cache in parallel (used at startup so
+     *  the tray renders the cached value without waiting on anything else) */
+    async function readCityAndCache() {
+        let city =
             (state.settings && state.settings.weatherCity) ||
             DEFAULT_SETTINGS.weatherCity;
-        const cache = await loadWeatherCache();
-        if (
-            cache &&
-            typeof cache.temp === "number" &&
-            cache.city === city &&
-            Date.now() - cache.ts < WEATHER_TTL
-        ) {
-            renderWeather(cache.temp, cache.code);
-            return;
+        let cache = {};
+        try {
+            const [settings, stored] = await Promise.all([
+                chrome.storage.local.get("settings"),
+                chrome.storage.local.get("weather"),
+            ]);
+            if (settings.settings && settings.settings.weatherCity) {
+                city = settings.settings.weatherCity;
+            }
+            cache = stored || {};
+        } catch {
+            // keep defaults on failure
         }
-        hideWeather();
-        refreshWeather();
+        return { city, cache };
+    }
+
+    async function updateWeather() {
+        const { city, cache } = await readCityAndCache();
+        // Always show the last saved value immediately (if it matches the
+        // current city) so the tray never flicks/clears on load — then refresh
+        // in the background so the stale value is replaced as soon as the
+        // network responds. If there is no cache for this city yet, fall back
+        // to the remote value with nothing shown in the meantime.
+        if (cache && typeof cache.temp === "number" && cache.city === city) {
+            renderWeather(cache.temp, cache.code);
+        } else {
+            hideWeather();
+        }
+        refreshWeather(city);
     }
 
     /* ============================================================
@@ -3163,9 +3174,9 @@
         updateClock({});
         setInterval(updateClock, 10000);
         attachBookmarkListeners();
+        updateWeather(); // reads cache + refreshes in the background right away
         loadSettings().then(() => {
             loadBookmarks();
-            updateWeather();
         });
     }
 
