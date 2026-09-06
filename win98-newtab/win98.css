@@ -1299,6 +1299,31 @@ input[type="radio"]:disabled:checked::after {
     color: #006000;
 }
 
+/* ---------- О системе ---------- */
+.about-title {
+    font-weight: bold;
+    margin: 2px 0 6px;
+}
+
+.about-desc {
+    font-size: 11px;
+    line-height: 1.4;
+    margin-bottom: 10px;
+}
+
+.about-row {
+    font-size: 11px;
+    margin-top: 4px;
+}
+
+.about-row-key {
+    color: var(--win98-dark-gray);
+}
+
+.about-row-value {
+    margin-left: 6px;
+}
+
 /* ---------- Dialog buttons ---------- */
 .win98-dialog-buttons {
     display: flex;

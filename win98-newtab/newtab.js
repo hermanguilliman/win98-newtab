@@ -43,6 +43,7 @@
             color: "#008080",
             imageData: null,
             imageStyle: "tile",
+            uiType: "color",
         },
     };
 
@@ -2571,6 +2572,8 @@
                 base.wallpaper.imageData = wp.imageData;
             if (["stretch", "tile", "center"].includes(wp.imageStyle))
                 base.wallpaper.imageStyle = wp.imageStyle;
+            if (["color", "file", "url"].includes(wp.uiType))
+                base.wallpaper.uiType = wp.uiType;
         }
         return base;
     }
@@ -2712,7 +2715,9 @@
         form.addEventListener("submit", (e) => e.preventDefault());
 
         // UI type: "color" | "file" | "url" (maps to persisted type color|image)
-        let uiType = pending.wallpaper.type === "color" ? "color" : "file";
+        let uiType =
+            pending.wallpaper.uiType ||
+            (pending.wallpaper.type === "color" ? "color" : "file");
 
         /* ---------- Tab bar + panels ---------- */
         const tabsWrap = document.createElement("div");
@@ -2726,6 +2731,7 @@
             { id: "wp", label: "Обои" },
             { id: "behavior", label: "Поведение" },
             { id: "appearance", label: "Вид" },
+            { id: "about", label: "О системе" },
         ];
         const tabPanels = {};
 
@@ -2764,6 +2770,14 @@
         selectTab("wp");
 
         const commit = () => {
+            if (uiType !== "color" && !pending.wallpaper.imageData) {
+                setMsg(
+                    uiType === "url"
+                        ? "Укажите адрес изображения и нажмите «Скачать»."
+                        : "Выберите файл изображения.",
+                );
+                return; // не закрываем окно, пока обои не выбраны
+            }
             previewFolderStyle = null;
             previewFolderViewMode = null;
             state.settings = pending;
@@ -2804,6 +2818,7 @@
         colorRadio.type = "radio";
         colorRadio.name = "wp-type";
         colorRadio.value = "color";
+        colorRadio.checked = uiType === "color";
         const colorSpan = document.createElement("span");
         colorSpan.textContent = "Цвет фона:";
         const colorPicker = document.createElement("input");
@@ -2820,6 +2835,7 @@
         fileRadio.type = "radio";
         fileRadio.name = "wp-type";
         fileRadio.value = "file";
+        fileRadio.checked = uiType === "file";
         const fileLabel = document.createElement("span");
         fileLabel.textContent = "Изображение с компьютера:";
         const fileBtn = document.createElement("button");
@@ -2840,6 +2856,7 @@
         urlRadio.type = "radio";
         urlRadio.name = "wp-type";
         urlRadio.value = "url";
+        urlRadio.checked = uiType === "url";
         const urlLabel = document.createElement("span");
         urlLabel.textContent = "Изображение из интернета:";
         const urlInput = document.createElement("input");
@@ -3149,6 +3166,45 @@
         wxg.append(cityLbl, cityInput, cityTip);
         tabPanels.behavior.appendChild(wxg);
 
+        /* ---------- О системе group ---------- */
+        const abg = document.createElement("div");
+        abg.className = "win98-groupbox";
+        const abgLegend = document.createElement("div");
+        abgLegend.className = "win98-groupbox-legend";
+        abgLegend.textContent = "О системе";
+        abg.appendChild(abgLegend);
+
+        const aboutTitle = document.createElement("div");
+        aboutTitle.className = "about-title";
+        aboutTitle.textContent = "Win98 Bookmarks Desktop";
+
+        const aboutDesc = document.createElement("div");
+        aboutDesc.className = "about-desc";
+        aboutDesc.textContent =
+            "Дополнение для Chrome, превращающее новую вкладку в рабочий стол Windows 98: закладки и папки отображаются значками на рабочем столе, двойной клик открывает окна, поиск и настройки — в меню «Пуск».";
+
+        const aboutRows = document.createElement("div");
+        aboutRows.className = "about-rows";
+        [
+            ["Автор", "Herman Guilliman"],
+            ["Год", "2026"],
+            ["Поддержка", "hermanguilliman@proton.me"],
+        ].forEach(([k, v]) => {
+            const row = document.createElement("div");
+            row.className = "about-row";
+            const kEl = document.createElement("span");
+            kEl.className = "about-row-key";
+            kEl.textContent = k + ":";
+            const vEl = document.createElement("span");
+            vEl.className = "about-row-value";
+            vEl.textContent = v;
+            row.append(kEl, vEl);
+            aboutRows.appendChild(row);
+        });
+
+        abg.append(aboutTitle, aboutDesc, aboutRows);
+        tabPanels.about.appendChild(abg);
+
         /* ---------- Dialog buttons ---------- */
         const btnRow = document.createElement("div");
         btnRow.className = "win98-dialog-buttons";
@@ -3209,6 +3265,7 @@
                 if (!r.checked) return;
                 uiType = r.value;
                 pending.wallpaper.type = uiType === "color" ? "color" : "image";
+                pending.wallpaper.uiType = uiType;
                 updateEnabled();
                 renderPreview();
                 liveApply();
@@ -3229,6 +3286,7 @@
             reader.onload = () => {
                 pending.wallpaper.imageData = reader.result;
                 pending.wallpaper.type = "image";
+                pending.wallpaper.uiType = "file";
                 uiType = "file";
                 fileRadio.checked = true;
                 updateEnabled();
@@ -3261,6 +3319,7 @@
                 });
                 pending.wallpaper.imageData = dataUrl;
                 pending.wallpaper.type = "image";
+                pending.wallpaper.uiType = "url";
                 uiType = "url";
                 urlRadio.checked = true;
                 updateEnabled();
