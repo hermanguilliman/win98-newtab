@@ -569,6 +569,7 @@ body {
     gap: 3px;
     font-size: 11px;
     white-space: nowrap;
+    cursor: pointer;
 }
 #weather.visible {
     display: flex;
@@ -580,6 +581,65 @@ body {
 }
 #weather .weather-temp {
     padding-right: 2px;
+}
+
+/* ---------- Weather details window ---------- */
+.weather-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 6px;
+}
+
+.weather-hero {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--win98-title-active);
+    color: var(--win98-white);
+    border: 1px solid var(--win98-highlight);
+}
+
+.weather-hero-icon {
+    font-size: 36px;
+    line-height: 1;
+    filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.3));
+}
+
+.weather-hero-info {
+    min-width: 0;
+}
+
+.weather-hero-temp {
+    font-size: 28px;
+    font-weight: bold;
+    line-height: 1.1;
+}
+
+.weather-hero-city {
+    font-size: 11px;
+    color: var(--win98-silver);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.weather-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 11px;
+    padding: 2px 0;
+}
+
+.weather-stat-label {
+    color: var(--win98-dark-gray);
+}
+
+.weather-stat-value {
+    font-weight: bold;
 }
 
 #clock {

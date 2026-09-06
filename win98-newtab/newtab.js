@@ -21,6 +21,7 @@
         bookmarksRefreshTimer: 0,
         searchNodes: [],
         selectedDesktopEl: null,
+        weatherData: null,
     };
 
     /* ---------- Default settings ---------- */
@@ -567,8 +568,38 @@
         $weather.classList.add("visible");
     }
 
-    function saveWeatherCache(city, temp, code) {
-        const payload = { city, temp, code, ts: Date.now() };
+    /** Map wind bearing (deg) → Russian compass direction */
+    function windDirName(deg) {
+        const dirs = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"];
+        return dirs[Math.round(((deg % 360) / 45)) % 8];
+    }
+
+    function weatherCityName() {
+        return (
+            (state.settings && state.settings.weatherCity) ||
+            DEFAULT_SETTINGS.weatherCity
+        );
+    }
+
+    /** Render the weather emoji as a transparent 32×32 PNG (for the window icon) */
+    function weatherEmojiDataUrl(code) {
+        try {
+            const c = document.createElement("canvas");
+            c.width = 32;
+            c.height = 32;
+            const ctx = c.getContext("2d");
+            ctx.font = "24px 'Segoe UI Emoji', 'Noto Color Emoji', serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(weatherIcon(code), 16, 18);
+            return c.toDataURL();
+        } catch {
+            return "icons/search.svg";
+        }
+    }
+
+    function saveWeatherCache(city, data) {
+        const payload = { city, ts: Date.now(), ...data };
         return chrome.storage.local.set({ weather: payload }).catch(() => {});
     }
 
@@ -589,9 +620,9 @@
                 hideWeather();
                 return;
             }
-            // Current weather
+            // Current weather (full set of fields for the details window)
             const wxResp = await fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&current=temperature_2m,weather_code`,
+                `https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&current=temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,cloud_cover`,
                 { mode: "cors" },
             );
             const wx = await wxResp.json();
@@ -599,12 +630,22 @@
                 hideWeather();
                 return;
             }
-            renderWeather(wx.current.temperature_2m, wx.current.weather_code);
-            saveWeatherCache(
-                currentCity,
-                wx.current.temperature_2m,
-                wx.current.weather_code,
-            );
+            const cur = wx.current;
+            state.weatherData = {
+                city: currentCity,
+                temp: cur.temperature_2m,
+                code: cur.weather_code,
+                feelsLike: cur.apparent_temperature,
+                humidity: cur.relative_humidity_2m,
+                precipitation: cur.precipitation,
+                windSpeed: cur.wind_speed_10m,
+                windDirection: cur.wind_direction_10m,
+                cloudCover: cur.cloud_cover,
+                updated: new Date().toLocaleTimeString("ru-RU"),
+            };
+            renderWeather(cur.temperature_2m, cur.weather_code);
+            saveWeatherCache(currentCity, state.weatherData);
+            renderOpenWeatherWindow();
         } catch {
             // Offline or blocked — keep showing cached value if any, else nothing
         }
@@ -640,12 +681,142 @@
         // network responds. If there is no cache for this city yet, fall back
         // to the remote value with nothing shown in the meantime.
         if (cache && typeof cache.temp === "number" && cache.city === city) {
+            state.weatherData = cache;
             renderWeather(cache.temp, cache.code);
         } else {
+            state.weatherData = null;
             hideWeather();
         }
         refreshWeather(city);
     }
+
+    /** Re-render the open weather details window (no-op if it is closed) */
+    function renderOpenWeatherWindow() {
+        const win = state.windows.find((w) => w.winType === "weather");
+        if (win) renderWeatherWindow(win);
+    }
+
+    /** Fill the weather details window content from state.weatherData */
+    function renderWeatherWindow(winData) {
+        const el = winData.el;
+        const ce = el.querySelector(".win98-window-content");
+        const d = state.weatherData;
+        ce.replaceChildren();
+
+        const wrap = document.createElement("div");
+        wrap.className = "weather-details";
+
+        // Hero panel
+        const hero = document.createElement("div");
+        hero.className = "weather-hero";
+        const icon = document.createElement("span");
+        icon.className = "weather-hero-icon";
+        icon.textContent = d ? weatherIcon(d.code) : "🌡️";
+        const heroInfo = document.createElement("div");
+        heroInfo.className = "weather-hero-info";
+        const heroTemp = document.createElement("div");
+        heroTemp.className = "weather-hero-temp";
+        heroTemp.textContent = d ? `${Math.round(d.temp)}°` : "—";
+        const heroCity = document.createElement("div");
+        heroCity.className = "weather-hero-city";
+        heroCity.textContent = d && d.city ? d.city : weatherCityName();
+        heroInfo.append(heroTemp, heroCity);
+        hero.append(icon, heroInfo);
+        wrap.appendChild(hero);
+
+        // Details group box
+        const box = document.createElement("div");
+        box.className = "win98-groupbox";
+        const legend = document.createElement("span");
+        legend.className = "win98-groupbox-legend";
+        legend.textContent = "Подробнее";
+        box.appendChild(legend);
+
+        const rows = [
+            [
+                "Ощущается как",
+                d && d.feelsLike != null ? `${Math.round(d.feelsLike)}°` : "—",
+            ],
+            [
+                "Влажность",
+                d && d.humidity != null ? `${Math.round(d.humidity)}%` : "—",
+            ],
+            [
+                "Осадки",
+                d && d.precipitation != null
+                    ? `${d.precipitation} мм`
+                    : "—",
+            ],
+            [
+                "Ветер",
+                d && d.windSpeed != null
+                    ? `${Math.round(d.windSpeed)} км/ч${
+                          d.windDirection != null
+                              ? ", " + windDirName(d.windDirection)
+                              : ""
+                      }`
+                    : "—",
+            ],
+            [
+                "Облачность",
+                d && d.cloudCover != null ? `${d.cloudCover}%` : "—",
+            ],
+        ];
+        rows.forEach(([label, value]) => {
+            const row = document.createElement("div");
+            row.className = "weather-stat-row";
+            const l = document.createElement("span");
+            l.className = "weather-stat-label";
+            l.textContent = label;
+            const v = document.createElement("span");
+            v.className = "weather-stat-value";
+            v.textContent = value;
+            row.append(l, v);
+            box.appendChild(row);
+        });
+        wrap.appendChild(box);
+        ce.appendChild(wrap);
+
+        // Status bar
+        const sb = el.querySelector(".win98-statusbar-field");
+        if (sb) {
+            sb.textContent = d && d.updated
+                ? `Обновлено: ${d.updated}`
+                : "Загрузка данных...";
+        }
+    }
+
+    /** Open the single-instance weather details window */
+    function openWeatherWindow() {
+        const existing = state.windows.find((w) => w.winType === "weather");
+        if (existing) {
+            if (existing.minimized) restoreWindow(existing.id);
+            else bringToFront(existing.id);
+            return;
+        }
+        createWindow({
+            winType: "weather",
+            title: "Погода",
+            icon: state.weatherData
+                ? weatherEmojiDataUrl(state.weatherData.code)
+                : "icons/search.svg",
+            width: 360,
+            height: 290,
+            content: "",
+            statusbar: true,
+            statusText: "Загрузка данных...",
+            onCreated: (el, winData) => {
+                el.querySelector(".win98-window-content").style.background =
+                    "var(--win98-silver)";
+                renderWeatherWindow(winData);
+            },
+        });
+        if (!state.weatherData) refreshWeather();
+    }
+
+    // Tray weather: hint + double-click opens the details window
+    $weather.title = "Двойное нажатие — подробная информация о погоде";
+    $weather.addEventListener("dblclick", () => openWeatherWindow());
 
     /* ============================================================
      WINDOW MANAGEMENT
