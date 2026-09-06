@@ -3,873 +3,904 @@
    ============================================================ */
 
 /* ---------- Reset & Base ---------- */
-*, *::before, *::after {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
 :root {
-  --win98-bg:          #008080;
-  --win98-silver:      #c0c0c0;
-  --win98-white:       #ffffff;
-  --win98-black:       #000000;
-  --win98-dark-gray:   #808080;
-  --win98-navy:        #000080;
-  --win98-highlight:   #0000aa;
-  --win98-title-active: linear-gradient(90deg, #000080, #1084d0);
-  --win98-title-inactive: linear-gradient(90deg, #808080, #b0b0b0);
-  --win98-btn-face:    #c0c0c0;
-  /* Desktop chrome palette (theme-driven): hover/shadow accents that were hardcoded */
-  --win98-hover:       #e0e0e0;
-  --win98-input-bg:    #ffffff;
-  --win98-inset-bg:    #e8e8e8;
-  --win98-radio-check: #000000;
-  --win98-radio-edge1: #000000;
-  --win98-radio-edge2: #a0a0a0;
-  --win98-radio-shadow:#e0e0e0;
-  --win98-wp-preview:  #008080;
-  --win98-font:        "Microsoft Sans Serif", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  --win98-font-size:   11px;
+    --win98-bg: #008080;
+    --win98-silver: #c0c0c0;
+    --win98-white: #ffffff;
+    --win98-black: #000000;
+    --win98-dark-gray: #808080;
+    --win98-navy: #000080;
+    --win98-highlight: #0000aa;
+    --win98-title-active: linear-gradient(90deg, #000080, #1084d0);
+    --win98-title-inactive: linear-gradient(90deg, #808080, #b0b0b0);
+    --win98-btn-face: #c0c0c0;
+    /* Desktop chrome palette (theme-driven): hover/shadow accents that were hardcoded */
+    --win98-hover: #e0e0e0;
+    --win98-input-bg: #ffffff;
+    --win98-inset-bg: #e8e8e8;
+    --win98-radio-check: #000000;
+    --win98-radio-edge1: #000000;
+    --win98-radio-edge2: #a0a0a0;
+    --win98-radio-shadow: #e0e0e0;
+    --win98-wp-preview: #008080;
+    --win98-font:
+        "Microsoft Sans Serif", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    --win98-font-size: 11px;
 }
 
-html, body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  font-family: var(--win98-font);
-  font-size: var(--win98-font-size);
-  color: var(--win98-black);
-  user-select: none;
+html,
+body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: var(--win98-font);
+    font-size: var(--win98-font-size);
+    color: var(--win98-black);
+    user-select: none;
 }
 
 /* ---------- Win98 3D Border Mixins ---------- */
 .win98-border-outset {
-  border: 2px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray),
-              inset -1px -1px 0 var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow:
+        inset 1px 1px 0 var(--win98-dark-gray),
+        inset -1px -1px 0 var(--win98-silver);
 }
 
 .win98-border-inset {
-  border: 2px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black),
-              inset -1px -1px 0 var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow:
+        inset 1px 1px 0 var(--win98-black),
+        inset -1px -1px 0 var(--win98-silver);
 }
 
 /* ============================================================
    DESKTOP
    ============================================================ */
 #desktop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 28px;
-  background: var(--win98-bg);
-  overflow: auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 28px;
+    background: var(--win98-bg);
+    overflow: auto;
 }
 
 #desktop-icons {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  padding: var(--win98-desktop-pad-y, 8px) var(--win98-desktop-pad-x, 8px);
-  gap: var(--win98-icon-gap, 4px);
-  min-height: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    padding: var(--win98-desktop-pad-y, 8px) var(--win98-desktop-pad-x, 8px);
+    gap: var(--win98-icon-gap, 4px);
+    min-height: 100%;
 }
 
 .desktop-row-separator {
-  width: 100%;
-  height: 8px;
-  flex-shrink: 0;
+    width: 100%;
+    height: 8px;
+    flex-shrink: 0;
 }
 
 /* ---------- Desktop Icon ---------- */
 .desktop-icon {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  width: calc(var(--win98-icon-size, 32px) + 8px);
-  padding: 4px 2px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  border-radius: 0;
-  text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: calc(var(--win98-icon-size, 32px) + 8px);
+    padding: 4px 2px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 0;
+    text-align: center;
 }
 
 .desktop-icon:hover {
-  background: rgba(0, 0, 128, 0.15);
+    background: rgba(0, 0, 128, 0.15);
 }
 
 .desktop-icon.selected {
-  background: var(--win98-navy);
-  color: var(--win98-white);
+    background: var(--win98-navy);
+    color: var(--win98-white);
 }
 
 .desktop-icon img {
-  width: var(--win98-icon-size, 32px);
-  height: var(--win98-icon-size, 32px);
-  image-rendering: pixelated;
-  pointer-events: none;
+    width: var(--win98-icon-size, 32px);
+    height: var(--win98-icon-size, 32px);
+    image-rendering: pixelated;
+    pointer-events: none;
 }
 
 .desktop-icon-label {
-  margin-top: 2px;
-  font-size: var(--win98-label-size, 11px);
-  color: var(--win98-white);
-  text-shadow: 1px 1px 1px rgba(0,0,0,0.7);
-  word-break: break-word;
-  line-height: 1.2;
-  max-width: calc(var(--win98-icon-size, 32px) + 4px);
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+    margin-top: 2px;
+    font-size: var(--win98-label-size, 11px);
+    color: var(--win98-white);
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.7);
+    word-break: break-word;
+    line-height: 1.2;
+    max-width: calc(var(--win98-icon-size, 32px) + 4px);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
 }
 
 .desktop-icon.selected .desktop-icon-label {
-  text-shadow: none;
-  background: var(--win98-navy);
-  outline: 1px dotted var(--win98-white);
-  padding: 0 1px;
+    text-shadow: none;
+    background: var(--win98-navy);
+    outline: 1px dotted var(--win98-white);
+    padding: 0 1px;
 }
 
 /* ============================================================
    WINDOWS
    ============================================================ */
 .win98-window {
-  position: absolute;
-  background: var(--win98-silver);
-  border: 2px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray),
-              inset -1px -1px 0 var(--win98-silver),
-              2px 2px 4px rgba(0,0,0,0.3);
-  display: flex;
-  flex-direction: column;
-  min-width: 200px;
-  min-height: 120px;
-  padding: 3px;
+    position: absolute;
+    background: var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow:
+        inset 1px 1px 0 var(--win98-dark-gray),
+        inset -1px -1px 0 var(--win98-silver),
+        2px 2px 4px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    min-height: 120px;
+    padding: 3px;
 }
 
 .win98-window.maximized {
-  top: 0 !important;
-  left: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
 }
 
 /* ---------- Title Bar ---------- */
 .win98-titlebar {
-  display: flex;
-  align-items: center;
-  padding: 2px 3px;
-  background: var(--win98-title-active);
-  color: var(--win98-white);
-  font-weight: bold;
-  font-size: 11px;
-  cursor: default;
-  flex-shrink: 0;
-  height: 20px;
+    display: flex;
+    align-items: center;
+    padding: 2px 3px;
+    background: var(--win98-title-active);
+    color: var(--win98-white);
+    font-weight: bold;
+    font-size: 11px;
+    cursor: default;
+    flex-shrink: 0;
+    height: 20px;
 }
 
 .win98-titlebar.inactive {
-  background: var(--win98-title-inactive);
+    background: var(--win98-title-inactive);
 }
 
 .win98-titlebar-icon {
-  width: 16px;
-  height: 16px;
-  margin-right: 3px;
-  image-rendering: pixelated;
-  flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-right: 3px;
+    image-rendering: pixelated;
+    flex-shrink: 0;
 }
 
 .win98-titlebar-text {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  margin-right: 2px;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    margin-right: 2px;
 }
 
 .win98-titlebar-buttons {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
 }
 
 .win98-titlebar-btn {
-  width: 16px;
-  height: 14px;
-  background: var(--win98-btn-face);
-  border: 1px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  font-family: var(--win98-font);
-  font-size: 9px;
-  font-weight: bold;
-  line-height: 1;
-  color: var(--win98-black);
+    width: 16px;
+    height: 14px;
+    background: var(--win98-btn-face);
+    border: 1px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    font-family: var(--win98-font);
+    font-size: 9px;
+    font-weight: bold;
+    line-height: 1;
+    color: var(--win98-black);
 }
 
 .win98-titlebar-btn:active {
-  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
-  padding: 1px 0 0 1px;
+    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
+        var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+    padding: 1px 0 0 1px;
 }
 
 /* ---------- Window Content ---------- */
 .win98-window-content {
-  flex: 1;
-  overflow: auto;
-  background: var(--win98-white);
-  border: 2px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  margin: 2px;
+    flex: 1;
+    overflow: auto;
+    background: var(--win98-white);
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    margin: 2px;
 }
 
 /* ---------- Status Bar ---------- */
 .win98-statusbar {
-  display: flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 2px;
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 2px;
+    flex-shrink: 0;
 }
 
 .win98-statusbar-field {
-  flex: 1;
-  height: 14px;
-  border: 1px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  padding: 0 4px;
-  font-size: 11px;
-  line-height: 14px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+    flex: 1;
+    height: 14px;
+    border: 1px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 14px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 /* ---------- Toolbar inside window ---------- */
 .win98-toolbar {
-  display: flex;
-  align-items: center;
-  padding: 2px 4px;
-  gap: 4px;
-  border-bottom: 1px solid var(--win98-dark-gray);
-  background: var(--win98-silver);
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    gap: 4px;
+    border-bottom: 1px solid var(--win98-dark-gray);
+    background: var(--win98-silver);
+    flex-shrink: 0;
 }
 
 .win98-toolbar-btn {
-  background: var(--win98-btn-face);
-  border: 1px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
-  padding: 2px 6px;
-  font-family: var(--win98-font);
-  font-size: 11px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 3px;
+    background: var(--win98-btn-face);
+    border: 1px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+    padding: 2px 6px;
+    font-family: var(--win98-font);
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 3px;
 }
 
 .win98-toolbar-btn:active {
-  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
-  padding: 3px 5px 1px 7px;
+    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
+        var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+    padding: 3px 5px 1px 7px;
 }
 
 .win98-toolbar-btn:disabled {
-  color: var(--win98-dark-gray);
-  text-shadow: 1px 1px 0 var(--win98-white);
-  cursor: default;
-  box-shadow: none;
-  background: var(--win98-silver);
+    color: var(--win98-dark-gray);
+    text-shadow: 1px 1px 0 var(--win98-white);
+    cursor: default;
+    box-shadow: none;
+    background: var(--win98-silver);
 }
 
 .win98-toolbar-btn img {
-  width: 16px;
-  height: 16px;
-  image-rendering: pixelated;
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
 }
 
 /* ---------- Address Bar ---------- */
 .win98-addressbar {
-  display: flex;
-  align-items: center;
-  padding: 2px 4px;
-  gap: 4px;
-  background: var(--win98-silver);
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    gap: 4px;
+    background: var(--win98-silver);
+    flex-shrink: 0;
 }
 
 .win98-addressbar label {
-  font-size: 11px;
-  white-space: nowrap;
+    font-size: 11px;
+    white-space: nowrap;
 }
 
 .win98-addressbar-input {
-  flex: 1;
-  height: 18px;
-  border: 2px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  background: var(--win98-white);
-  font-family: var(--win98-font);
-  font-size: 11px;
-  padding: 0 4px;
-  outline: none;
+    flex: 1;
+    height: 18px;
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    background: var(--win98-white);
+    font-family: var(--win98-font);
+    font-size: 11px;
+    padding: 0 4px;
+    outline: none;
 }
 
 /* ============================================================
    FOLDER CONTENT (inside window)
    ============================================================ */
 .folder-content {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  padding: 8px;
-  gap: 4px;
-  min-height: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    padding: 8px;
+    gap: 4px;
+    min-height: 100%;
 }
 
 .folder-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: calc(var(--win98-icon-size, 32px) + 8px);
-  padding: 4px 2px;
-  cursor: pointer;
-  text-align: center;
-  border: 1px solid transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: calc(var(--win98-icon-size, 32px) + 8px);
+    padding: 4px 2px;
+    cursor: pointer;
+    text-align: center;
+    border: 1px solid transparent;
 }
 
 .folder-item:hover {
-  background: var(--win98-hover);
+    background: var(--win98-hover);
 }
 
 .folder-item.selected {
-  background: var(--win98-navy);
-  color: var(--win98-white);
+    background: var(--win98-navy);
+    color: var(--win98-white);
 }
 
 .folder-item img {
-  width: var(--win98-icon-size, 32px);
-  height: var(--win98-icon-size, 32px);
-  image-rendering: pixelated;
-  pointer-events: none;
+    width: var(--win98-icon-size, 32px);
+    height: var(--win98-icon-size, 32px);
+    image-rendering: pixelated;
+    pointer-events: none;
 }
 
 .folder-item-label {
-  margin-top: 2px;
-  font-size: var(--win98-label-size, 11px);
-  word-break: break-word;
-  line-height: 1.2;
-  max-width: calc(var(--win98-icon-size, 32px) + 4px);
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+    margin-top: 2px;
+    font-size: var(--win98-label-size, 11px);
+    word-break: break-word;
+    line-height: 1.2;
+    max-width: calc(var(--win98-icon-size, 32px) + 4px);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
 }
 
 .folder-item.selected .folder-item-label {
-  background: var(--win98-navy);
-  outline: 1px dotted var(--win98-white);
-  padding: 0 1px;
+    background: var(--win98-navy);
+    outline: 1px dotted var(--win98-white);
+    padding: 0 1px;
 }
 
 /* ============================================================
    TASKBAR
    ============================================================ */
 #taskbar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 28px;
-  background: var(--win98-silver);
-  border-top: 2px solid var(--win98-white);
-  display: flex;
-  align-items: center;
-  padding: 2px 2px;
-  z-index: 9000;
-  box-shadow: inset 0 1px 0 var(--win98-white);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    background: var(--win98-silver);
+    border-top: 2px solid var(--win98-white);
+    display: flex;
+    align-items: center;
+    padding: 2px 2px;
+    z-index: 9000;
+    box-shadow: inset 0 1px 0 var(--win98-white);
 }
 
 #taskbar-divider {
-  width: 2px;
-  height: 22px;
-  margin: 0 2px;
-  border-left: 1px solid var(--win98-dark-gray);
-  border-right: 1px solid var(--win98-white);
+    width: 2px;
+    height: 22px;
+    margin: 0 2px;
+    border-left: 1px solid var(--win98-dark-gray);
+    border-right: 1px solid var(--win98-white);
 }
 
 /* ---------- Start Button ---------- */
 #start-btn {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 22px;
-  padding: 1px 6px;
-  font-family: var(--win98-font);
-  font-size: 11px;
-  font-weight: bold;
-  cursor: pointer;
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 22px;
+    padding: 1px 6px;
+    font-family: var(--win98-font);
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    flex-shrink: 0;
 }
 
 #start-btn .start-logo {
-  image-rendering: pixelated;
+    image-rendering: pixelated;
 }
 
 /* ---------- Taskbar Window Buttons ---------- */
 #taskbar-windows {
-  display: flex;
-  flex: 1;
-  gap: 2px;
-  overflow: hidden;
-  height: 22px;
-  align-items: center;
+    display: flex;
+    flex: 1;
+    gap: 2px;
+    overflow: hidden;
+    height: 22px;
+    align-items: center;
 }
 
 .taskbar-win-btn {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 20px;
-  padding: 1px 6px;
-  font-family: var(--win98-font);
-  font-size: 11px;
-  cursor: pointer;
-  max-width: 160px;
-  min-width: 40px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 20px;
+    padding: 1px 6px;
+    font-family: var(--win98-font);
+    font-size: 11px;
+    cursor: pointer;
+    max-width: 160px;
+    min-width: 40px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .taskbar-win-btn.active {
-  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
-  background: var(--win98-silver);
-  font-weight: bold;
+    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
+        var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+    background: var(--win98-silver);
+    font-weight: bold;
 }
 
 .taskbar-win-btn img {
-  width: 16px;
-  height: 16px;
-  image-rendering: pixelated;
-  flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
+    flex-shrink: 0;
 }
 
 .taskbar-win-btn span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* ---------- System Tray ---------- */
 #system-tray {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 6px;
-  border: 1px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  margin-left: auto;
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 6px;
+    border: 1px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 #tray-icons {
-  display: flex;
-  gap: 4px;
-  align-items: center;
+    display: flex;
+    gap: 4px;
+    align-items: center;
 }
 
 #tray-icons img {
-  width: 16px;
-  height: 16px;
-  image-rendering: pixelated;
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
 }
 
 /* ---------- Weather ---------- */
 #weather {
-  display: none;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  white-space: nowrap;
+    display: none;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    white-space: nowrap;
 }
 #weather.visible {
-  display: flex;
+    display: flex;
 }
 #weather .weather-icon {
-  font-size: 12px;
-  line-height: 1;
-  filter: drop-shadow(0 1px 0 var(--win98-white));
+    font-size: 12px;
+    line-height: 1;
+    filter: drop-shadow(0 1px 0 var(--win98-white));
 }
 #weather .weather-temp {
-  padding-right: 2px;
+    padding-right: 2px;
 }
 
 #clock {
-  font-size: 11px;
-  white-space: nowrap;
-  padding-left: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    padding-left: 4px;
 }
 
 /* ============================================================
    START MENU
    ============================================================ */
 #start-menu {
-  position: fixed;
-  bottom: 28px;
-  left: 2px;
-  width: 210px;
-  display: flex;
-  /* .win98-window задаёт column — иначе синяя полоска встаёт сверху, а не слева */
-  flex-direction: row;
-  align-items: stretch;
-  z-index: 9500;
-  box-shadow: 3px 3px 6px rgba(0,0,0,0.4);
+    position: fixed;
+    bottom: 28px;
+    left: 2px;
+    width: 210px;
+    display: flex;
+    /* .win98-window задаёт column — иначе синяя полоска встаёт сверху, а не слева */
+    flex-direction: row;
+    align-items: stretch;
+    z-index: 9500;
+    box-shadow: 3px 3px 6px rgba(0, 0, 0, 0.4);
 }
 
 .start-menu-sidebar {
-  width: 24px;
-  background: var(--win98-title-active);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 4px;
-  flex-shrink: 0;
-  align-self: stretch;
+    width: 24px;
+    background: var(--win98-title-active);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 4px;
+    flex-shrink: 0;
+    align-self: stretch;
 }
 
 .start-menu-sidebar-text {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  color: var(--win98-silver);
-  font-size: 16px;
-  letter-spacing: 1px;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    color: var(--win98-silver);
+    font-size: 16px;
+    letter-spacing: 1px;
 }
 
 .start-menu-content {
-  flex: 1;
-  padding: 2px 0;
+    flex: 1;
+    padding: 2px 0;
 }
 
 .start-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  cursor: pointer;
-  font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 11px;
 }
 
 .start-menu-item:hover {
-  background: var(--win98-navy);
-  color: var(--win98-white);
+    background: var(--win98-navy);
+    color: var(--win98-white);
 }
 
 .start-menu-item img {
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
-  flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    image-rendering: pixelated;
+    flex-shrink: 0;
 }
 
 .start-menu-item-title {
-  font-weight: bold;
+    font-weight: bold;
 }
 
 .start-menu-item-desc {
-  font-size: 10px;
-  color: var(--win98-dark-gray);
+    font-size: 10px;
+    color: var(--win98-dark-gray);
 }
 
 .start-menu-item:hover .start-menu-item-desc {
-  color: var(--win98-silver);
+    color: var(--win98-silver);
 }
 
 .start-menu-separator {
-  height: 1px;
-  margin: 3px 4px;
-  border-top: 1px solid var(--win98-dark-gray);
-  border-bottom: 1px solid var(--win98-white);
+    height: 1px;
+    margin: 3px 4px;
+    border-top: 1px solid var(--win98-dark-gray);
+    border-bottom: 1px solid var(--win98-white);
 }
 
 /* ============================================================
    GENERIC BUTTON
    ============================================================ */
 .win98-btn {
-  background: var(--win98-btn-face);
-  border: 2px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
-  font-family: var(--win98-font);
-  font-size: var(--win98-font-size);
-  cursor: pointer;
+    background: var(--win98-btn-face);
+    border: 2px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+    font-family: var(--win98-font);
+    font-size: var(--win98-font-size);
+    cursor: pointer;
 }
 
 .win98-btn:active {
-  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
-  padding: 1px 0 0 1px;
+    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
+        var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+    padding: 1px 0 0 1px;
 }
 
 /* ============================================================
    SCROLLBAR (Win98 look)
    ============================================================ */
 ::-webkit-scrollbar {
-  width: 16px;
-  height: 16px;
+    width: 16px;
+    height: 16px;
 }
 
 ::-webkit-scrollbar-track {
-  background: repeating-conic-gradient(var(--win98-silver) 0% 25%, var(--win98-white) 0% 50%) 50% / 2px 2px;
+    background: repeating-conic-gradient(
+            var(--win98-silver) 0% 25%,
+            var(--win98-white) 0% 50%
+        )
+        50% / 2px 2px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--win98-silver);
-  border: 2px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+    background: var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
 }
 
 ::-webkit-scrollbar-button {
-  background: var(--win98-silver);
-  border: 2px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
-  display: block;
-  width: 16px;
-  height: 16px;
+    background: var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
+    display: block;
+    width: 16px;
+    height: 16px;
 }
 
 ::-webkit-scrollbar-button:active {
-  border-color: var(--win98-black) var(--win98-white) var(--win98-white) var(--win98-black);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
+        var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
 }
 
 /* ============================================================
    DRAG RESIZE HANDLE
    ============================================================ */
 .win98-resize-handle {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
 }
 
 /* ============================================================
    CONTEXT MENU
    ============================================================ */
 .win98-context-menu {
-  position: fixed;
-  background: var(--win98-silver);
-  border: 2px solid;
-  border-color: var(--win98-white) var(--win98-black) var(--win98-black) var(--win98-white);
-  box-shadow: inset 1px 1px 0 var(--win98-dark-gray),
-              inset -1px -1px 0 var(--win98-silver),
-              2px 2px 4px rgba(0,0,0,0.3);
-  padding: 2px;
-  z-index: 10000;
-  min-width: 140px;
+    position: fixed;
+    background: var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow:
+        inset 1px 1px 0 var(--win98-dark-gray),
+        inset -1px -1px 0 var(--win98-silver),
+        2px 2px 4px rgba(0, 0, 0, 0.3);
+    padding: 2px;
+    z-index: 10000;
+    min-width: 140px;
 }
 
 .win98-context-menu-item {
-  padding: 3px 20px 3px 24px;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-  position: relative;
+    padding: 3px 20px 3px 24px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    position: relative;
 }
 
 .win98-context-menu-item:hover {
-  background: var(--win98-navy);
-  color: var(--win98-white);
+    background: var(--win98-navy);
+    color: var(--win98-white);
 }
 
 .win98-context-menu-item.disabled {
-  color: var(--win98-dark-gray);
-  cursor: default;
+    color: var(--win98-dark-gray);
+    cursor: default;
 }
 
 .win98-context-menu-item.disabled:hover {
-  background: transparent;
-  color: var(--win98-dark-gray);
+    background: transparent;
+    color: var(--win98-dark-gray);
 }
 
 .win98-context-menu-separator {
-  height: 1px;
-  margin: 2px 2px;
-  border-top: 1px solid var(--win98-dark-gray);
-  border-bottom: 1px solid var(--win98-white);
+    height: 1px;
+    margin: 2px 2px;
+    border-top: 1px solid var(--win98-dark-gray);
+    border-bottom: 1px solid var(--win98-white);
 }
 
 /* ============================================================
    SEARCH WINDOW
    ============================================================ */
 .search-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  height: 100%;
-  box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    height: 100%;
+    box-sizing: border-box;
 }
 
 .search-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .search-row label {
-  font-size: 11px;
-  white-space: nowrap;
+    font-size: 11px;
+    white-space: nowrap;
 }
 
 .search-row input {
-  flex: 1;
-  min-width: 0;
+    flex: 1;
+    min-width: 0;
 }
 
 .search-results {
-  flex: 1;
-  overflow-y: auto;
-  background: var(--win98-input-bg);
-  border: 2px inset;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  padding: 2px;
+    flex: 1;
+    overflow-y: auto;
+    background: var(--win98-input-bg);
+    border: 2px inset;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    padding: 2px;
 }
 
 .search-result-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  cursor: pointer;
-  font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    cursor: pointer;
+    font-size: 11px;
 }
 
 .search-result-row:hover {
-  background: var(--win98-inset-bg);
+    background: var(--win98-inset-bg);
 }
 
 .search-result-row.selected {
-  background: var(--win98-navy);
-  color: var(--win98-white);
+    background: var(--win98-navy);
+    color: var(--win98-white);
 }
 
 .search-result-row.selected .search-result-path {
-  color: var(--win98-white);
+    color: var(--win98-white);
 }
 
 .search-result-img {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  image-rendering: pixelated;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    image-rendering: pixelated;
 }
 
 .search-result-text {
-  min-width: 0;
-  overflow: hidden;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .search-result-title {
-  font-weight: bold;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .search-result-path {
-  font-size: 10px;
-  color: var(--win98-dark-gray);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 420px;
+    font-size: 10px;
+    color: var(--win98-dark-gray);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 420px;
 }
 
 /* ============================================================
    WIN98 DIALOGS (child windows: prompt / confirm)
    ============================================================ */
 .win98-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  font-size: 11px;
-  box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px;
+    font-size: 11px;
+    box-sizing: border-box;
 }
 
 .win98-dialog .win98-dialog-buttons {
-  justify-content: flex-end;
-  margin-top: 6px;
+    justify-content: flex-end;
+    margin-top: 6px;
 }
 
 .win98-dialog-text {
-  line-height: 1.4;
-  word-break: break-word;
+    line-height: 1.4;
+    word-break: break-word;
 }
 
 .win98-dialog-label {
-  font-size: 11px;
+    font-size: 11px;
 }
 
 /* ============================================================
    ANIMATIONS
    ============================================================ */
 @keyframes window-open {
-  from {
-    transform: scale(0.8);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
+    from {
+        transform: scale(0.8);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
 }
 
 .win98-window {
-  animation: window-open 0.12s ease-out;
+    animation: window-open 0.12s ease-out;
 }
 
 /* ============================================================
    LOADING / EMPTY STATE
    ============================================================ */
 .empty-desktop-msg {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: var(--win98-white);
-  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-  font-size: 12px;
-  text-align: center;
-  pointer-events: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--win98-white);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none;
 }
 
 /* ============================================================
@@ -877,240 +908,247 @@ html, body {
    ============================================================ */
 /* ---------- Settings tabs ---------- */
 .win98-tabs-wrap {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
 }
 
 .win98-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 2px 2px 0;
-  flex-shrink: 0;
+    display: flex;
+    gap: 2px;
+    padding: 2px 2px 0;
+    flex-shrink: 0;
 }
 
 .win98-tab {
-  font-family: var(--win98-font);
-  font-size: 11px;
-  padding: 3px 12px 4px;
-  cursor: pointer;
-  background: var(--win98-silver);
-  border-top: 2px solid var(--win98-white);
-  border-left: 2px solid var(--win98-white);
-  border-right: 2px solid var(--win98-black);
-  color: var(--win98-black);
-  position: relative;
+    font-family: var(--win98-font);
+    font-size: 11px;
+    padding: 3px 12px 4px;
+    cursor: pointer;
+    background: var(--win98-silver);
+    border-top: 2px solid var(--win98-white);
+    border-left: 2px solid var(--win98-white);
+    border-right: 2px solid var(--win98-black);
+    color: var(--win98-black);
+    position: relative;
 }
 
 .win98-tab.active {
-  font-weight: bold;
-  /* Bottom edge is open so the tab merges with the panel below */
-  border-bottom: none;
-  padding-bottom: 6px;
-  z-index: 1;
+    font-weight: bold;
+    /* Bottom edge is open so the tab merges with the panel below */
+    border-bottom: none;
+    padding-bottom: 6px;
+    z-index: 1;
 }
 
 .win98-tab:not(.active) {
-  border-bottom: 2px solid var(--win98-dark-gray);
+    border-bottom: 2px solid var(--win98-dark-gray);
 }
 
 .win98-tab:not(.active):hover {
-  background: var(--win98-inset-bg);
+    background: var(--win98-inset-bg);
 }
 
 .win98-tabpanels {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--win98-silver);
-  border: 2px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  padding: 4px;
-  margin-top: -1px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    padding: 4px;
+    margin-top: -1px;
 }
 
 .win98-tabpanel {
-  display: none;
-  height: 100%;
-  overflow: auto;
+    display: none;
+    height: 100%;
+    overflow: auto;
 }
 
 .win98-tabpanel.active {
-  display: block;
+    display: block;
 }
 
 .win98-form {
-  padding: 8px;
-  background: var(--win98-silver);
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+    padding: 8px;
+    background: var(--win98-silver);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .win98-groupbox {
-  position: relative;
-  border: 2px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  background: var(--win98-silver);
-  padding: 14px 8px 8px;
-  margin-top: 8px;
-  flex-shrink: 0;
+    position: relative;
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    background: var(--win98-silver);
+    padding: 14px 8px 8px;
+    margin-top: 8px;
+    flex-shrink: 0;
 }
 
 .win98-groupbox-legend {
-  position: absolute;
-  top: -9px;
-  left: 6px;
-  background: var(--win98-silver);
-  padding: 0 4px;
-  font-weight: bold;
-  font-size: 11px;
-  line-height: 14px;
+    position: absolute;
+    top: -9px;
+    left: 6px;
+    background: var(--win98-silver);
+    padding: 0 4px;
+    font-weight: bold;
+    font-size: 11px;
+    line-height: 14px;
 }
 
 /* ---------- Win98 radio ---------- */
 .win98-radio {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  padding: 2px 0;
-  cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    padding: 2px 0;
+    cursor: pointer;
 }
 
 input[type="radio"] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  border-radius: 50%;
-  background: var(--win98-input-bg);
-  border: 1px solid;
-  border-color: var(--win98-radio-edge1) var(--win98-radio-edge2) var(--win98-radio-edge2) var(--win98-radio-edge1);
-  box-shadow: inset -1px -1px 0 var(--win98-radio-shadow), 1px 1px 0 var(--win98-white);
-  position: relative;
-  cursor: pointer;
-  flex-shrink: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    border-radius: 50%;
+    background: var(--win98-input-bg);
+    border: 1px solid;
+    border-color: var(--win98-radio-edge1) var(--win98-radio-edge2)
+        var(--win98-radio-edge2) var(--win98-radio-edge1);
+    box-shadow:
+        inset -1px -1px 0 var(--win98-radio-shadow),
+        1px 1px 0 var(--win98-white);
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
 }
 
 input[type="radio"]:checked::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border-radius: 50%;
-  background: var(--win98-radio-check);
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    background: var(--win98-radio-check);
 }
 
 input[type="radio"]:disabled {
-  background: var(--win98-silver);
-  cursor: default;
+    background: var(--win98-silver);
+    cursor: default;
 }
 
 input[type="radio"]:disabled:checked::after {
-  background: var(--win98-dark-gray);
+    background: var(--win98-dark-gray);
 }
 
 /* ---------- Rows ---------- */
 .win98-radio-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  padding: 2px 0;
-  margin-left: 18px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    padding: 2px 0;
+    margin-left: 18px;
 }
 
 .win98-radio-row .win98-addressbar-input {
-  flex: 1;
-  min-width: 0;
-  height: 18px;
+    flex: 1;
+    min-width: 0;
+    height: 18px;
 }
 
 .win98-radio-row .win98-btn {
-  padding: 1px 8px;
-  flex-shrink: 0;
+    padding: 1px 8px;
+    flex-shrink: 0;
 }
 
 .wp-style-row {
-  display: flex;
-  gap: 12px;
-  margin-left: 18px;
-  padding: 4px 0;
+    display: flex;
+    gap: 12px;
+    margin-left: 18px;
+    padding: 4px 0;
 }
 
 /* ---------- Color picker swatch ---------- */
 .wp-color-picker {
-  width: 28px;
-  height: 18px;
-  padding: 0;
-  border: 2px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  background: var(--win98-white);
-  cursor: pointer;
+    width: 28px;
+    height: 18px;
+    padding: 0;
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    background: var(--win98-white);
+    cursor: pointer;
 }
 
 .wp-color-picker::-webkit-color-swatch-wrapper {
-  padding: 1px;
+    padding: 1px;
 }
 
 .wp-color-picker::-webkit-color-swatch {
-  border: none;
+    border: none;
 }
 
 /* ---------- Preview ---------- */
 .wp-preview {
-  margin: 6px 4px 0 18px;
+    margin: 6px 4px 0 18px;
 }
 
 .wp-preview-img {
-  width: 220px;
-  height: 120px;
-  border: 2px solid;
-  border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white) var(--win98-dark-gray);
-  box-shadow: inset 1px 1px 0 var(--win98-black);
-  background-color: var(--win98-wp-preview);
+    width: 220px;
+    height: 120px;
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    background-color: var(--win98-wp-preview);
 }
 
 /* ---------- Message line ---------- */
 .settings-msg {
-  font-size: 11px;
-  margin: 4px 4px 0 18px;
-  min-height: 14px;
-  line-height: 14px;
+    font-size: 11px;
+    margin: 4px 4px 0 18px;
+    min-height: 14px;
+    line-height: 14px;
 }
 
 .settings-error {
-  color: #800000;
+    color: #800000;
 }
 
 .settings-success {
-  color: #006000;
+    color: #006000;
 }
 
 /* ---------- Dialog buttons ---------- */
 .win98-dialog-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 6px 4px 2px;
-  flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 6px 4px 2px;
+    flex-shrink: 0;
 }
 
 .win98-dialog-buttons .win98-btn {
-  min-width: 74px;
-  padding: 3px 12px;
+    min-width: 74px;
+    padding: 3px 12px;
 }
 
 /* ---------- Disabled button ---------- */
 .win98-btn:disabled {
-  color: var(--win98-dark-gray);
-  text-shadow: 1px 1px 0 var(--win98-white);
-  cursor: default;
-  padding: 1px 0 0 1px;
+    color: var(--win98-dark-gray);
+    text-shadow: 1px 1px 0 var(--win98-white);
+    cursor: default;
+    padding: 1px 0 0 1px;
 }
