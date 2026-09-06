@@ -949,12 +949,12 @@ body {
     flex-direction: column;
     gap: 10px;
     padding: 14px 16px;
-    font-size: 11px;
+    font-size: 16px;
     box-sizing: border-box;
 }
 
 .win98-dialog .win98-dialog-buttons {
-    justify-content: flex-end;
+    justify-content: center;
     margin-top: 6px;
 }
 

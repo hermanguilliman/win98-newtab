@@ -1847,7 +1847,7 @@
         return openDialog({
             title,
             icon: icon || drawComputerIcon(16),
-            width: 340,
+            width: 270,
             height: 168,
             body,
             buttons: [{ label: "OK" }],
