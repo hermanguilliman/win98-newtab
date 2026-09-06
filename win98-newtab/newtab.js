@@ -35,7 +35,7 @@
         weatherCity: "Москва",
         showClockDate: true,
         showClockWeekday: true,
-        labelBg: false,
+        iconLabelShadow: true,
         wallpaper: {
             type: "color",
             color: "#008080",
@@ -2034,8 +2034,8 @@
         if (typeof partial.showClockWeekday === "boolean") {
             base.showClockWeekday = partial.showClockWeekday;
         }
-        if (typeof partial.labelBg === "boolean") {
-            base.labelBg = partial.labelBg;
+        if (typeof partial.iconLabelShadow === "boolean") {
+            base.iconLabelShadow = partial.iconLabelShadow;
         }
         if (partial.wallpaper) {
             const wp = partial.wallpaper;
@@ -2086,18 +2086,12 @@
             "--win98-desktop-pad-y",
             (s.desktopPadY ?? DEFAULT_SETTINGS.desktopPadY) + "px",
         );
-        // Icon label appearance: white background (with dark text) or transparent
-        el.style.setProperty(
-            "--win98-label-bg",
-            s.labelBg ? "var(--win98-white)" : "transparent",
-        );
-        el.style.setProperty(
-            "--win98-label-color",
-            s.labelBg ? "var(--win98-black)" : "var(--win98-white)",
-        );
+        // Icon label appearance: transparent like original Win98 with drop
+        // shadows ("Use drop shadows for icon labels on the desktop" checkbox).
+        // No opaque background — the wallpaper/desktop color shows through.
         el.style.setProperty(
             "--win98-label-shadow",
-            s.labelBg ? "none" : "1px 1px 1px rgba(0,0,0,0.7)",
+            s.iconLabelShadow ? "1px 1px 1px rgba(0,0,0,0.7)" : "none",
         );
     }
 
@@ -2549,22 +2543,22 @@
         lgLegend.textContent = "Надписи";
         lg.appendChild(lgLegend);
 
-        const bgLbl = document.createElement("label");
-        bgLbl.className = "win98-checkbox";
-        const bgCb = document.createElement("input");
-        bgCb.type = "checkbox";
-        bgCb.checked = !!pending.labelBg;
-        bgLbl.append(
-            bgCb,
+        const shadowLbl = document.createElement("label");
+        shadowLbl.className = "win98-checkbox";
+        const shadowCb = document.createElement("input");
+        shadowCb.type = "checkbox";
+        shadowCb.checked = !!pending.iconLabelShadow;
+        shadowLbl.append(
+            shadowCb,
             document.createTextNode(
-                "Белый фон под названиями ссылок и папок",
+                "Тени для подписей значков на рабочем столе",
             ),
         );
-        bgLbl.addEventListener("change", () => {
-            pending.labelBg = bgCb.checked;
+        shadowLbl.addEventListener("change", () => {
+            pending.iconLabelShadow = shadowCb.checked;
             applyDesktopStyle(pending); // live preview on the desktop
         });
-        lg.appendChild(bgLbl);
+        lg.appendChild(shadowLbl);
         tabPanels.appearance.appendChild(lg);
 
         /* ---------- Погода group ---------- */

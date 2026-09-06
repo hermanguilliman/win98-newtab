@@ -127,8 +127,7 @@ body {
 .desktop-icon-label {
     margin-top: 2px;
     font-size: var(--win98-label-size, 11px);
-    color: var(--win98-label-color, var(--win98-white));
-    background: var(--win98-label-bg, transparent);
+    color: var(--win98-white);
     text-shadow: var(--win98-label-shadow, 1px 1px 1px rgba(0, 0, 0, 0.7));
     word-break: break-word;
     line-height: 1.2;
@@ -393,7 +392,6 @@ body {
 .folder-item-label {
     margin-top: 2px;
     font-size: var(--win98-label-size, 11px);
-    background: var(--win98-label-bg, transparent);
     word-break: break-word;
     line-height: 1.2;
     max-width: calc(var(--win98-icon-size, 32px) + 4px);
