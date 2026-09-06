@@ -513,6 +513,14 @@ html, body {
   padding: 3px 5px 1px 7px;
 }
 
+.win98-toolbar-btn:disabled {
+  color: var(--win98-dark-gray);
+  text-shadow: 1px 1px 0 var(--win98-white);
+  cursor: default;
+  box-shadow: none;
+  background: var(--win98-silver);
+}
+
 .win98-toolbar-btn img {
   width: 16px;
   height: 16px;

@@ -407,6 +407,7 @@
       minimized: false,
       maximized: false,
       prevBounds: null,
+      winType: opts.winType || null,
     };
 
     // Build DOM
@@ -866,29 +867,136 @@
      FOLDER WINDOW
      ============================================================ */
 
-  function openFolderWindow(node) {
-    const folderIcon = drawFolderIcon(FOLDER_COLORS[colorIdx % FOLDER_COLORS.length], true);
+  /* Sentinel id for the synthetic «Все закладки» top-level listing */
+  const ALL_ROOT_ID = "__root__";
 
-    const content = document.createElement("div");
-    content.className = "folder-content";
+  /** Build the synthetic top-level node that lists the Chrome root folders */
+  function buildAllBookmarksNode(tree) {
+    return {
+      id: ALL_ROOT_ID,
+      title: "Все закладки",
+      children: ((tree && tree.children) || []).filter(isVisibleNode),
+    };
+  }
+
+  /** Re-resolve a nav target against the live tree (synthetic root is always rebuilt fresh) */
+  function resolveNavNode(node, tree) {
+    const t = tree || state.treeRoot;
+    if (!node) return null;
+    if (node.id === ALL_ROOT_ID) return buildAllBookmarksNode(t);
+    return findNodeById(t, node.id) || null;
+  }
+
+  /**
+   * Render the children of `node` into an already-open folder window and keep
+   * the title / addressbar / statusbar / nav buttons in sync.
+   */
+  function renderFolderContent(winData, node) {
+    const el = winData.el;
+    if (!el) return;
+    // The window may be created with empty content — ensure the folder container exists
+    let fc = el.querySelector(".folder-content");
+    if (!fc) {
+      const contentEl = el.querySelector(".win98-window-content");
+      if (!contentEl) return;
+      fc = document.createElement("div");
+      fc.className = "folder-content";
+      contentEl.appendChild(fc);
+    }
 
     const items = (node.children || []).filter(isVisibleNode);
+    fc.innerHTML = "";
     if (items.length === 0) {
-      content.innerHTML = EMPTY_FOLDER_HTML;
+      fc.innerHTML = EMPTY_FOLDER_HTML;
     } else {
       for (const item of items) {
-        content.appendChild(createFolderItem(item, node));
+        fc.appendChild(
+          createFolderItem(item, node, {
+            // Folders inside a window navigate the SAME window instead of opening a new one
+            navigateTo: isFolderNode(item) ? (n) => navigateInWindow(winData, n) : undefined,
+          })
+        );
       }
     }
 
-    const childCount = items.filter((i) => !i.url).length;
-    const itemCount = items.filter((i) => i.url).length;
+    const titleEl = el.querySelector(".win98-titlebar-text");
+    if (titleEl) titleEl.textContent = node.title || "Папка";
+    const tbBtn = document.getElementById(`tb-${winData.id}`);
+    if (tbBtn) {
+      const tbSpan = tbBtn.querySelector("span");
+      if (tbSpan) tbSpan.textContent = node.title || "Папка";
+    }
+    const ab = el.querySelector(".win98-addressbar-input");
+    if (ab) ab.value = getNodePath(node);
+    const sf = el.querySelector(".win98-statusbar-field");
+    if (sf) {
+      const folders = items.filter(isFolderNode).length;
+      const bookmarks = items.filter(isBookmarkNode).length;
+      sf.textContent =
+        node.id === ALL_ROOT_ID
+          ? `Корневых папок: ${folders}`
+          : `${folders} пап(ок), ${bookmarks} элемент(ов)`;
+    }
+  }
+
+  /** Navigate an open folder window to another folder (same window, no new window) */
+  function navigateInWindow(winData, node, opts) {
+    opts = opts || {};
+    if (!winData || !node) return;
+    if (!opts.fromHistory) {
+      // Save the current folder so «Назад» can return to it
+      winData.navStack.push(winData.currentNode || null);
+    }
+    const target = opts.fromHistory ? node : resolveNavNode(node) || node;
+    winData.currentNode = target;
+    winData.bookmarkId = target.id;
+    renderFolderContent(winData, target);
+    updateNavButtons(winData);
+  }
+
+  function goBack(winData) {
+    const prev = winData.navStack.pop();
+    if (!prev) return;
+    const target = resolveNavNode(prev);
+    if (target) navigateInWindow(winData, target, { fromHistory: true });
+  }
+
+  function goUp(winData) {
+    const cur = winData.currentNode;
+    if (!cur) return;
+    if (cur.id === ALL_ROOT_ID) return; // top level — button is disabled anyway
+    if (cur.parentId && cur.parentId !== "0") {
+      const parent = resolveNavNode({ id: cur.parentId });
+      if (parent) {
+        navigateInWindow(winData, parent);
+        return;
+      }
+    }
+    // Chrome root folder (parentId "0") → up to the «Все закладки» listing
+    navigateInWindow(winData, buildAllBookmarksNode(state.treeRoot));
+  }
+
+  /** «Назад» disabled without history; «Вверх» disabled at the top level (no previous level) */
+  function updateNavButtons(winData) {
+    const el = winData.el;
+    if (!el) return;
+    const back = el.querySelector('[data-nav="back"]');
+    if (back) back.disabled = winData.navStack.length === 0;
+    const up = el.querySelector('[data-nav="up"]');
+    if (up) {
+      const cur = winData.currentNode;
+      up.disabled = !cur || cur.id === ALL_ROOT_ID;
+    }
+  }
+
+  function openFolderWindow(node) {
+    const folderIcon = drawFolderIcon(FOLDER_COLORS[colorIdx % FOLDER_COLORS.length], true);
 
     const toolbarHtml = `
       <button class="win98-toolbar-btn" data-nav="back" disabled>
         <span>← Назад</span>
       </button>
-      <button class="win98-toolbar-btn" data-nav="up" data-parent="${node.parentId || ""}">
+      <button class="win98-toolbar-btn" data-nav="up" disabled>
         <span>⬆ Вверх</span>
       </button>
     `;
@@ -900,46 +1008,26 @@
       width: 550,
       height: 400,
       toolbar: toolbarHtml,
+      addressbar: true,
       addressbarValue: getNodePath(node),
-      content: content.outerHTML,
+      content: "",
       statusbar: true,
-      statusText: `${childCount} пап(ок), ${itemCount} элемент(ов)`,
+      statusText: "",
       onCreated: (el, winData) => {
-        // Re-attach folder item events
-        const folderContent = el.querySelector(".folder-content");
-        if (folderContent) {
-          folderContent.innerHTML = "";
-          if (items.length === 0) {
-            folderContent.innerHTML = EMPTY_FOLDER_HTML;
-          } else {
-            for (const item of items) {
-              folderContent.appendChild(createFolderItem(item, node));
-            }
-          }
-        }
+        // Folder windows browse the tree with history in a single window
+        winData.currentNode = node;
+        winData.navStack = [];
+        renderFolderContent(winData, node);
+        updateNavButtons(winData);
 
-        // Toolbar nav
-        const goToParent = () => {
-          if (!node.parentId) return;
-          chrome.bookmarks.get(node.parentId, (results) => {
-            if (results && results[0]) {
-              // The invisible root ("0") is rendered by the «Все закладки» window
-              if (results[0].id === "0") {
-                closeWindow(winData.id);
-                openAllBookmarksWindow();
-              } else {
-                openFolderWindow(results[0]);
-              }
-            }
-          });
-        };
-        el.querySelector('[data-nav="back"]')?.addEventListener("click", goToParent);
-        el.querySelector('[data-nav="up"]')?.addEventListener("click", goToParent);
+        el.querySelector('[data-nav="back"]')?.addEventListener("click", () => goBack(winData));
+        el.querySelector('[data-nav="up"]')?.addEventListener("click", () => goUp(winData));
       },
     });
   }
 
-  function createFolderItem(node, parentNode) {
+  function createFolderItem(node, parentNode, options) {
+    options = options || {};
     const div = document.createElement("div");
     div.className = "folder-item";
     div.dataset.bookmarkId = String(node.id || "");
@@ -968,6 +1056,16 @@
     div.appendChild(img);
     div.appendChild(label);
 
+    // Open a bookmark normally; a folder either navigates the current window
+    // (folder windows / «Все закладки») or opens a new one (desktop, search)
+    const openItem = () => {
+      if (isFolderNode(node) && typeof options.navigateTo === "function") {
+        options.navigateTo(node);
+      } else {
+        openNode(node);
+      }
+    };
+
     div.addEventListener("click", (e) => {
       e.stopPropagation();
       if (isSingleClickMode()) {
@@ -975,7 +1073,7 @@
         const now = Date.now();
         div.dataset.lastClick = now;
         if (now - prev < 350) return; // part of a double-click
-        openNode(node);
+        openItem();
       } else {
         document.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
         div.classList.add("selected");
@@ -985,7 +1083,7 @@
     div.addEventListener("dblclick", (e) => {
       e.stopPropagation();
       if (!isSingleClickMode()) {
-        openNode(node);
+        openItem();
       }
     });
 
@@ -1005,16 +1103,15 @@
   }
 
   function getNodePath(node) {
-    // Build a simple path string from the node title
+    // Build the full path from the cached tree: root > … > parent > node
     const parts = [];
-    let current = node;
-    while (current && current.title) {
-      parts.unshift(current.title);
-      if (current.parentId) {
-        // Synchronous would need cache, just show title
-        break;
-      }
-      break;
+    let cur = node;
+    while (cur && cur.title) {
+      parts.unshift(cur.title);
+      if (!cur.parentId || cur.parentId === "0") break;
+      const parent = findNodeById(state.treeRoot, cur.parentId);
+      if (!parent) break;
+      cur = parent;
     }
     return parts.join(" > ") || "/";
   }
@@ -1227,24 +1324,34 @@
   function refreshOpenFolderWindows(tree) {
     state.windows.forEach((w) => {
       if (w.bookmarkId == null) return;
-      const node = tree ? findNodeById(tree, w.bookmarkId) : null;
       const fc = w.el && w.el.querySelector(".folder-content");
       if (!fc) return;
+
+      // The «Все закладки» top-level listing (or a nested folder inside that window)
+      if (w.bookmarkId === ALL_ROOT_ID || w.winType === "all-bookmarks") {
+        const target = resolveNavNode(w.currentNode, tree);
+        if (!target) {
+          // Current folder was deleted → return to the top-level listing
+          w.currentNode = buildAllBookmarksNode(tree);
+          w.bookmarkId = ALL_ROOT_ID;
+          renderFolderContent(w, w.currentNode);
+        } else {
+          w.currentNode = target;
+          if (w.bookmarkId !== target.id) w.bookmarkId = target.id;
+          renderFolderContent(w, target);
+        }
+        updateNavButtons(w);
+        return;
+      }
+
+      const node = tree ? findNodeById(tree, w.bookmarkId) : null;
       if (!node) {
         closeWindow(w.id); // folder was deleted
         return;
       }
-      const titleEl = w.el.querySelector(".win98-titlebar-text");
-      if (titleEl) titleEl.textContent = node.title || "Папка";
-      fc.innerHTML = "";
-      const items = (node.children || []).filter(isVisibleNode);
-      if (items.length === 0) {
-        fc.innerHTML = EMPTY_FOLDER_HTML;
-      } else {
-        for (const item of items) fc.appendChild(createFolderItem(item, node));
-      }
-      const sf = w.el.querySelector(".win98-statusbar-field");
-      if (sf) sf.textContent = `${items.filter((i) => isFolderNode(i)).length} пап(ок), ${items.filter((i) => isBookmarkNode(i)).length} элемент(ов)`;
+      w.currentNode = node;
+      renderFolderContent(w, node);
+      updateNavButtons(w);
     });
   }
 
@@ -1624,8 +1731,8 @@
      ============================================================ */
 
   function openAllBookmarksWindow() {
-    // Check if already open
-    const existing = state.windows.find((w) => w.title === "Все закладки");
+    // Single instance — track by winType, not title (title changes while browsing)
+    const existing = state.windows.find((w) => w.winType === "all-bookmarks");
     if (existing) {
       if (existing.minimized) restoreWindow(existing.id);
       else bringToFront(existing.id);
@@ -1633,46 +1740,48 @@
     }
 
     chrome.bookmarks.getTree((tree) => {
-      const content = document.createElement("div");
-      content.className = "folder-content";
+      state.treeRoot = tree[0];
 
-      function renderNode(node, container) {
-        if (!node.children) return;
-        for (const child of node.children) {
-          if (!isVisibleNode(child)) continue;
-          container.appendChild(createFolderItem(child, node));
-        }
-      }
-
-      // Show root folders (Панель закладок, Другие, Мобильные) — like Chrome bookmark manager
-      renderNode(tree[0], content);
+      const toolbarHtml = `
+        <button class="win98-toolbar-btn" data-nav="back" disabled>
+          <span>← Назад</span>
+        </button>
+        <button class="win98-toolbar-btn" data-nav="up" disabled>
+          <span>⬆ Вверх</span>
+        </button>
+        <button class="win98-toolbar-btn" data-nav="refresh">
+          <span>🔄 Обновить</span>
+        </button>
+      `;
 
       createWindow({
+        winType: "all-bookmarks",
         title: "Все закладки",
         icon: drawFolderIcon("#d4c044", true),
         width: 650,
         height: 450,
-        toolbar: `
-          <button class="win98-toolbar-btn" id="ab-refresh"><span>🔄 Обновить</span></button>
-        `,
-        content: content.outerHTML,
+        toolbar: toolbarHtml,
+        bookmarkId: ALL_ROOT_ID,
+        addressbar: true,
+        addressbarValue: "Все закладки",
+        content: "",
         statusbar: true,
-        statusText: `Загрузка...`,
+        statusText: "",
         onCreated: (el, winData) => {
-          const fc = el.querySelector(".folder-content");
-          if (fc) {
-            fc.innerHTML = "";
-            chrome.bookmarks.getTree((t) => {
-              renderNode(t[0], fc);
-              const total = fc.querySelectorAll(".folder-item").length;
-              const sf = el.querySelector(".win98-statusbar-field");
-              if (sf) sf.textContent = `Всего: ${total} папок`;
-            });
-          }
+          winData.currentNode = buildAllBookmarksNode(state.treeRoot);
+          winData.navStack = [];
+          renderFolderContent(winData, winData.currentNode);
+          updateNavButtons(winData);
 
-          el.querySelector("#ab-refresh")?.addEventListener("click", () => {
-            closeWindow(winData.id);
-            openAllBookmarksWindow();
+          el.querySelector('[data-nav="back"]')?.addEventListener("click", () => goBack(winData));
+          el.querySelector('[data-nav="up"]')?.addEventListener("click", () => goUp(winData));
+          el.querySelector('[data-nav="refresh"]')?.addEventListener("click", () => {
+            chrome.bookmarks.getTree((t) => {
+              state.treeRoot = t[0];
+              const target = resolveNavNode(winData.currentNode, t[0]);
+              if (target) navigateInWindow(winData, target, { fromHistory: true });
+              else updateNavButtons(winData);
+            });
           });
         },
       });
