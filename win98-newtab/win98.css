@@ -950,11 +950,6 @@ body {
     box-sizing: border-box;
 }
 
-.win98-dialog .win98-dialog-buttons {
-    justify-content: center;
-    margin-top: 6px;
-}
-
 .win98-dialog-text {
     line-height: 1.4;
     word-break: break-word;
@@ -967,7 +962,7 @@ body {
 /* Message box: icon left, text right; OK button centered at the bottom */
 .win98-msgbox {
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: center;
     gap: 0;
     padding: 8px 10px 6px;
     height: 100%;
@@ -979,11 +974,6 @@ body {
     align-items: flex-start;
     gap: 8px;
     min-width: 0;
-}
-
-.win98-msgbox .win98-dialog-buttons {
-    justify-content: center;
-    padding: 0;
 }
 
 .win98-msgbox-icon {
@@ -1344,4 +1334,95 @@ input[type="radio"]:disabled:checked::after {
     text-shadow: 1px 1px 0 var(--win98-white);
     cursor: default;
     padding: 1px 0 0 1px;
+}
+
+/* ---------- Properties dialog ---------- */
+.props-group {
+    margin: 4px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.props-row {
+    display: flex;
+    margin: 3px 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    word-break: break-all;
+}
+
+.props-row-key {
+    color: var(--win98-dark-gray);
+    flex-shrink: 0;
+    min-width: 110px;
+    margin-right: 6px;
+}
+
+.props-row-value {
+    min-width: 0;
+}
+
+/* ---------- Calendar ---------- */
+.cal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 6px 8px 2px;
+}
+
+.cal-nav {
+    min-width: 26px;
+    padding: 2px 6px;
+}
+
+.cal-title {
+    font-size: 12px;
+    text-align: center;
+    text-transform: capitalize;
+}
+
+.cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    padding: 4px 10px;
+}
+
+.cal-cell {
+    text-align: center;
+    font-size: 11px;
+    padding: 2px 0;
+    border: 1px solid transparent;
+}
+
+.cal-dow {
+    font-weight: bold;
+    color: var(--win98-dark-gray);
+}
+
+.cal-today {
+    border-color: var(--win98-dark-gray);
+    background: var(--win98-white);
+}
+
+/* ---------- Dialog container (buttons always visible) ---------- */
+.win98-dialog-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.win98-dialog-container .win98-dialog {
+    flex: 1;
+    overflow: auto;
+}
+
+.win98-dialog-container .win98-dialog-buttons {
+    flex-shrink: 0;
+}
+
+/* Message box: buttons stay centered under the icon+text */
+.win98-msgbox + .win98-dialog-buttons {
+    justify-content: center;
 }

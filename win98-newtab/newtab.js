@@ -22,6 +22,7 @@
         searchNodes: [],
         selectedDesktopEl: null,
         weatherData: null,
+        clipUrl: null,
     };
 
     /* ---------- Default settings ---------- */
@@ -1348,7 +1349,7 @@
         return {
             id: ALL_ROOT_ID,
             title: "Все закладки",
-            children: ((tree && tree.children) || []).filter(isVisibleNode),
+            children: ((tree && tree.children) || []).filter((n) => isVisibleNode(n)),
         };
     }
 
@@ -1413,7 +1414,7 @@
             contentEl.appendChild(fc);
         }
 
-        const items = (node.children || []).filter(isVisibleNode);
+        const items = (node.children || []).filter((n) => isVisibleNode(n));
         fc.innerHTML = "";
         const viewMode = currentFolderViewMode();
         fc.classList.toggle("folder-view-list", viewMode === "list");
@@ -1738,10 +1739,18 @@
                     action: () => openInNewWindow(node.url, true),
                 },
                 { type: "separator" },
-                { label: "Копировать адрес", action: () => copyText(node.url) },
+                {
+                    label: "Копировать адрес",
+                    action: () => {
+                        copyText(node.url);
+                        state.clipUrl = node.url;
+                    },
+                },
                 { type: "separator" },
                 { label: "Переименовать", action: () => renameNode(node) },
                 { label: "Удалить", action: () => deleteNode(node) },
+                { type: "separator" },
+                { label: "Свойства", action: () => openProperties(node) },
             ];
         }
         return [
@@ -1749,7 +1758,80 @@
             { type: "separator" },
             { label: "Переименовать", action: () => renameNode(node) },
             { label: "Удалить", action: () => deleteNode(node) },
+            { type: "separator" },
+            { label: "Свойства", action: () => openProperties(node) },
         ];
+    }
+
+    /** Win98 «Свойства» dialog for a bookmark or folder */
+    function openProperties(node) {
+        const isFolder = isFolderNode(node);
+        const body = document.createElement("div");
+        body.className = "win98-dialog";
+
+        const gb = document.createElement("div");
+        gb.className = "win98-groupbox props-group";
+        const legend = document.createElement("div");
+        legend.className = "win98-groupbox-legend";
+        legend.textContent = isFolder ? "Папка" : "Интернет-ярлык";
+        gb.appendChild(legend);
+
+        const row = (k, v) => {
+            const r = document.createElement("div");
+            r.className = "props-row";
+            const kEl = document.createElement("span");
+            kEl.className = "props-row-key";
+            kEl.textContent = k + ":";
+            const vEl = document.createElement("span");
+            vEl.className = "props-row-value";
+            vEl.textContent = v || "—";
+            r.append(kEl, vEl);
+            return r;
+        };
+
+        gb.appendChild(row("Тип", isFolder ? "Папка" : "Интернет-ярлык"));
+        if (!isFolder) gb.appendChild(row("Адрес", node.url));
+        gb.appendChild(row("Расположение", getNodePath(node)));
+        if (isFolder) {
+            const kids = (node.children || []).filter(isVisibleNode);
+            gb.appendChild(
+                row(
+                    "Содержит",
+                    `${kids.filter(isFolderNode).length} пап(ок), ` +
+                        `${kids.filter(isBookmarkNode).length} закладк(и)`,
+                ),
+            );
+        }
+        if (node.dateAdded) {
+            gb.appendChild(row("Дата добавления", formatDateTime(node.dateAdded)));
+        }
+        gb.appendChild(row("Идентификатор", node.id));
+        body.appendChild(gb);
+
+        return openDialog({
+            title: "Свойства: " + (node.title || "Без названия"),
+            icon: isFolder
+                ? drawFolderIcon("#c0b060", false, 16)
+                : drawPageIcon(16),
+            width: 380,
+            height: 300,
+            body,
+            buttons: [{ label: "OK" }],
+        });
+    }
+
+    function formatDateTime(ts) {
+        try {
+            return new Date(ts).toLocaleString("ru-RU", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+            });
+        } catch {
+            return String(ts);
+        }
     }
 
     function renameNode(node) {
@@ -1772,8 +1854,8 @@
         openConfirmDialog(
             folder ? "Удалить папку" : "Удалить закладку",
             folder
-                ? `Удалить папку «${node.title}» вместе со всем содержимым?`
-                : `Удалить закладку «${node.title}»?`,
+                ? `Удалить папку «${node.title}» вместе со всем содержимым? Действие необратимо.`
+                : `Удалить закладку «${node.title}»? Действие необратимо.`,
             () => {
                 if (folder)
                     chrome.bookmarks.removeTree(node.id).catch(() => {});
@@ -1805,8 +1887,10 @@
             statusbar: false,
             onCreated: (el) => {
                 const ce = el.querySelector(".win98-window-content");
+                ce.classList.add("win98-dialog-container");
                 ce.style.background = "var(--win98-silver)";
-                ce.appendChild(body);
+                // Buttons go directly into ce (outside the scrollable body)
+                // so they are always visible at the bottom
                 buttons.forEach((b, i) => {
                     const btn = document.createElement("button");
                     btn.type = "button";
@@ -1819,7 +1903,8 @@
                     btnRow.appendChild(btn);
                     if (i === 0) body.okButton = btn;
                 });
-                body.appendChild(btnRow);
+                ce.appendChild(body);
+                ce.appendChild(btnRow);
             },
         });
         return winData;
@@ -2266,6 +2351,132 @@
     }
 
     /* ============================================================
+     CALENDAR (tray clock → month calendar)
+     ============================================================ */
+
+    let calendarYear = new Date().getFullYear();
+    let calendarMonth = new Date().getMonth(); // 0-based
+
+    function openCalendar() {
+        const existing = state.windows.find((w) => w.winType === "calendar");
+        if (existing) {
+            renderCalendar(existing);
+            if (existing.minimized) restoreWindow(existing.id);
+            else bringToFront(existing.id);
+            return;
+        }
+        createWindow({
+            winType: "calendar",
+            title: "Календарь",
+            icon: drawComputerIcon(16),
+            width: 250,
+            height: 262,
+            content: "",
+            statusbar: false,
+            onCreated: (el, winData) => {
+                el.querySelector(".win98-window-content").style.background =
+                    "var(--win98-silver)";
+                renderCalendar(winData);
+            },
+        });
+    }
+
+    function renderCalendar(winData) {
+        const el = winData.el;
+        if (!el) return;
+        const ce = el.querySelector(".win98-window-content");
+        if (!ce) return;
+        ce.innerHTML = "";
+
+        // Header: prev / month-year / next
+        const header = document.createElement("div");
+        header.className = "cal-header";
+        const prev = document.createElement("button");
+        prev.type = "button";
+        prev.className = "win98-btn cal-nav";
+        prev.textContent = "◀";
+        prev.addEventListener("click", () => {
+            calendarMonth--;
+            if (calendarMonth < 0) {
+                calendarMonth = 11;
+                calendarYear--;
+            }
+            renderCalendar(winData);
+        });
+        const title = document.createElement("div");
+        title.className = "cal-title";
+        const now = new Date();
+        title.textContent =
+            new Date(calendarYear, calendarMonth, 1).toLocaleString("ru-RU", {
+                month: "long",
+                year: "numeric",
+            });
+        const next = document.createElement("button");
+        next.type = "button";
+        next.className = "win98-btn cal-nav";
+        next.textContent = "▶";
+        next.addEventListener("click", () => {
+            calendarMonth++;
+            if (calendarMonth > 11) {
+                calendarMonth = 0;
+                calendarYear++;
+            }
+            renderCalendar(winData);
+        });
+        header.append(prev, title, next);
+        ce.appendChild(header);
+
+        // Day-of-week header (Mon..Sun)
+        const grid = document.createElement("div");
+        grid.className = "cal-grid";
+        const dayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+        for (const d of dayNames) {
+            const cell = document.createElement("div");
+            cell.className = "cal-cell cal-dow";
+            cell.textContent = d;
+            grid.appendChild(cell);
+        }
+
+        const firstDow = new Date(calendarYear, calendarMonth, 1).getDay(); // 0=Sun
+        let offset = (firstDow + 6) % 7; // Monday-first
+        const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+        for (let i = 0; i < offset; i++) {
+            const cell = document.createElement("div");
+            cell.className = "cal-cell cal-empty";
+            grid.appendChild(cell);
+        }
+        const today = new Date();
+        for (let d = 1; d <= daysInMonth; d++) {
+            const cell = document.createElement("div");
+            cell.className = "cal-cell" +
+                (d === today.getDate() &&
+                calendarMonth === today.getMonth() &&
+                calendarYear === today.getFullYear()
+                    ? " cal-today"
+                    : "");
+            cell.textContent = String(d);
+            grid.appendChild(cell);
+        }
+        ce.appendChild(grid);
+
+        //«Сегодня» button
+        const btns = document.createElement("div");
+        btns.className = "win98-dialog-buttons";
+        const todayBtn = document.createElement("button");
+        todayBtn.type = "button";
+        todayBtn.className = "win98-btn";
+        todayBtn.textContent = "Сегодня";
+        todayBtn.addEventListener("click", () => {
+            const n = new Date();
+            calendarYear = n.getFullYear();
+            calendarMonth = n.getMonth();
+            renderCalendar(winData);
+        });
+        btns.appendChild(todayBtn);
+        ce.appendChild(btns);
+    }
+
+    /* ============================================================
      EVENT LISTENERS
      ============================================================ */
 
@@ -2285,13 +2496,58 @@
         if (e.target.closest(".desktop-icon")) return;
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
-            { label: "Обновить", action: () => location.reload() },
+            { label: "Обновить", action: () => refreshAllBookmarks() },
+            { type: "separator" },
+            {
+                label: "Создать папку",
+                action: () => {
+                    openPromptDialog(
+                        "Создать папку",
+                        "Имя новой папки:",
+                        "",
+                        (name) => {
+                            if (name)
+                                chrome.bookmarks
+                                    .create({ parentId: "1", title: name })
+                                    .catch(() => {});
+                        },
+                    );
+                },
+            },
+            {
+                label: "Вставить",
+                disabled: !state.clipUrl,
+                action: () => {
+                    if (!state.clipUrl) return;
+                    let title = "";
+                    try {
+                        title = new URL(state.clipUrl).hostname;
+                    } catch {}
+                    chrome.bookmarks
+                        .create({
+                            parentId: "1",
+                            title: title || state.clipUrl,
+                            url: state.clipUrl,
+                        })
+                        .catch(() => {});
+                },
+            },
             { type: "separator" },
             {
                 label: "Открыть все закладки",
                 action: () => openAllBookmarksWindow(),
             },
+            { type: "separator" },
+            {
+                label: "Настройки",
+                action: () => openSettingsWindow(),
+            },
         ]);
+    });
+
+    // Clock click → calendar (single click keeps the 10-click easter egg)
+    $clock.addEventListener("click", () => {
+        openCalendar();
     });
 
     // Start button
@@ -2312,6 +2568,8 @@
         if (clockClicks >= 10) {
             clockClicks = 0;
             clearTimeout(clockClickTimer);
+            const cal = state.windows.find((w) => w.winType === "calendar");
+            if (cal) closeWindow(cal.id);
             openMessageBox("Внимание", "Ты старый", "icons/pc_icon.png");
         }
     });
@@ -2417,6 +2675,12 @@
             openNode(sel._node);
             return;
         }
+        // Alt+Enter — «Свойства» выделенного ярлыка
+        if (e.altKey && e.key === "Enter" && sel && sel._node) {
+            e.preventDefault();
+            openProperties(sel._node);
+            return;
+        }
         if ((e.key === "Delete" || e.key === "Del") && sel && sel._node) {
             e.preventDefault();
             deleteNode(sel._node);
@@ -2433,6 +2697,7 @@
             sel._node.url
         ) {
             copyText(sel._node.url);
+            state.clipUrl = sel._node.url;
         }
     });
 
@@ -3414,9 +3679,7 @@
         setInterval(updateClock, 10000);
         attachBookmarkListeners();
         updateWeather(); // reads cache + refreshes in the background right away
-        loadSettings().then(() => {
-            loadBookmarks();
-        });
+        loadSettings().then(loadBookmarks);
     }
 
     // Start
