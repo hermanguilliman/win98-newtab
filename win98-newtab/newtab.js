@@ -36,6 +36,7 @@
         showClockDate: true,
         showClockWeekday: true,
         iconLabelShadow: true,
+        folderViewMode: "icons",
         wallpaper: {
             type: "color",
             color: "#008080",
@@ -487,6 +488,9 @@
     /** Live-preview override while the settings window is open (cleared on OK/Отмена) */
     let previewFolderStyle = null;
 
+    /** Live-preview override for the folder window view mode (icons / list) */
+    let previewFolderViewMode = null;
+
     /** Currently active folder icon style id */
     function folderIconStyleName() {
         return (
@@ -665,6 +669,7 @@
             maximized: false,
             prevBounds: null,
             winType: opts.winType || null,
+            bookmarkId: opts.bookmarkId || null,
         };
 
         // Build DOM
@@ -1172,6 +1177,42 @@
         return findNodeById(t, node.id) || null;
     }
 
+    /** Current folder-window view mode: "icons" grid or "list" rows */
+    function currentFolderViewMode() {
+        return (
+            previewFolderViewMode ||
+            (state.settings && state.settings.folderViewMode) ||
+            "icons"
+        );
+    }
+
+    /** Set the folder-window view mode globally, persist it and re-render open windows */
+    function setFolderViewMode(mode) {
+        if (mode !== "icons" && mode !== "list") return;
+        state.settings = {
+            ...(state.settings || DEFAULT_SETTINGS),
+            folderViewMode: mode,
+        };
+        previewFolderViewMode = null;
+        saveSettings();
+        applyFolderViewModeToWindows(mode);
+    }
+
+    /** Apply the view-mode class + toolbar label to every open folder window */
+    function applyFolderViewModeToWindows(mode) {
+        state.windows.forEach((w) => {
+            if (!w.el) return;
+            const fc = w.el.querySelector(".folder-content");
+            if (fc) fc.classList.toggle("folder-view-list", mode === "list");
+            const viewBtn = w.el.querySelector('[data-nav="view"]');
+            if (viewBtn) {
+                const target = mode === "list" ? "Значки" : "Список";
+                const sp = viewBtn.querySelector("span");
+                if (sp) sp.textContent = "Вид: " + target;
+            }
+        });
+    }
+
     /**
      * Render the children of `node` into an already-open folder window and keep
      * the title / addressbar / statusbar / nav buttons in sync.
@@ -1191,6 +1232,19 @@
 
         const items = (node.children || []).filter(isVisibleNode);
         fc.innerHTML = "";
+        const viewMode = currentFolderViewMode();
+        fc.classList.toggle("folder-view-list", viewMode === "list");
+        // Toolbar view toggle shows the mode it will switch to
+        const viewBtn = el.querySelector('[data-nav="view"]');
+        if (viewBtn) {
+            const target = viewMode === "list" ? "Значки" : "Список";
+            const sp = viewBtn.querySelector("span");
+            if (sp) sp.textContent = "Вид: " + target;
+            viewBtn.title =
+                target === "Список"
+                    ? "Переключить в режим «Список»"
+                    : "Переключить в режим «Значки»";
+        }
         if (items.length === 0) {
             fc.innerHTML = EMPTY_FOLDER_HTML;
         } else {
@@ -1289,6 +1343,9 @@
       <button class="win98-toolbar-btn" data-nav="up" disabled>
         <span>⬆ Вверх</span>
       </button>
+      <button class="win98-toolbar-btn" data-nav="view">
+        <span>Вид: Список</span>
+      </button>
     `;
 
         createWindow({
@@ -1317,6 +1374,15 @@
                 el.querySelector('[data-nav="up"]')?.addEventListener(
                     "click",
                     () => goUp(winData),
+                );
+                el.querySelector('[data-nav="view"]')?.addEventListener(
+                    "click",
+                    () =>
+                        setFolderViewMode(
+                            currentFolderViewMode() === "list"
+                                ? "icons"
+                                : "list",
+                        ),
                 );
             },
         });
@@ -2206,6 +2272,9 @@
         <button class="win98-toolbar-btn" data-nav="refresh">
           <span>🔄 Обновить</span>
         </button>
+        <button class="win98-toolbar-btn" data-nav="view">
+          <span>Вид: Список</span>
+        </button>
       `;
 
             createWindow({
@@ -2252,6 +2321,15 @@
                             });
                         },
                     );
+                    el.querySelector('[data-nav="view"]')?.addEventListener(
+                        "click",
+                        () =>
+                            setFolderViewMode(
+                                currentFolderViewMode() === "list"
+                                    ? "icons"
+                                    : "list",
+                            ),
+                    );
                 },
             });
         });
@@ -2295,6 +2373,12 @@
         }
         if (typeof partial.iconLabelShadow === "boolean") {
             base.iconLabelShadow = partial.iconLabelShadow;
+        }
+        if (
+            partial.folderViewMode === "icons" ||
+            partial.folderViewMode === "list"
+        ) {
+            base.folderViewMode = partial.folderViewMode;
         }
         if (partial.wallpaper) {
             const wp = partial.wallpaper;
@@ -2499,22 +2583,26 @@
 
         const commit = () => {
             previewFolderStyle = null;
+            previewFolderViewMode = null;
             state.settings = pending;
             applyDesktopStyle();
             saveSettings();
             updateClock();
             updateWeather();
             renderBookmarks(state.treeRoot);
+            refreshOpenFolderWindows(state.treeRoot); // apply new view mode
             const id = getWinId();
             if (id) closeWindow(id);
         };
 
         const cancel = () => {
             previewFolderStyle = null;
+            previewFolderViewMode = null;
             applyWallpaper(state.settings.wallpaper);
             applyDesktopStyle();
             updateClock();
             renderBookmarks(state.treeRoot);
+            refreshOpenFolderWindows(state.treeRoot); // restore saved view mode
             const id = getWinId();
             if (id) closeWindow(id);
         };
@@ -2753,6 +2841,41 @@
             fg.appendChild(lbl);
         });
         vg.appendChild(fg);
+
+        /* ---------- Вид group (folder view mode) ---------- */
+        const fm = document.createElement("div");
+        fm.className = "win98-groupbox";
+        const fmLegend = document.createElement("div");
+        fmLegend.className = "win98-groupbox-legend";
+        fmLegend.textContent = "Ссылки в папках";
+        fm.appendChild(fmLegend);
+
+        const VIEW_MODE_LABELS = [
+            { id: "icons", label: "Значки" },
+            { id: "list", label: "Список" },
+        ];
+        const curViewMode =
+            pending.folderViewMode === "list" ? "list" : "icons";
+        VIEW_MODE_LABELS.forEach((m) => {
+            const lbl = document.createElement("label");
+            lbl.className = "win98-radio";
+            const r = document.createElement("input");
+            r.type = "radio";
+            r.name = "folder-view-mode";
+            r.value = m.id;
+            if (curViewMode === m.id) r.checked = true;
+            const sp = document.createElement("span");
+            sp.textContent = m.label;
+            lbl.append(r, sp);
+            r.addEventListener("change", () => {
+                if (!r.checked) return;
+                pending.folderViewMode = m.id;
+                previewFolderViewMode = m.id; // live preview in open windows
+                refreshOpenFolderWindows(state.treeRoot);
+            });
+            fm.appendChild(lbl);
+        });
+        vg.appendChild(fm);
 
         // Numeric style settings with live preview
         const makeNumRow = (label, key, min, max) => {

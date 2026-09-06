@@ -407,6 +407,43 @@ body {
     padding: 0 1px;
 }
 
+/* Folder window: list view mode (links as rows instead of an icons grid) */
+.folder-content.folder-view-list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 1px;
+    padding: 4px;
+}
+
+.folder-content.folder-view-list .folder-item {
+    flex-direction: row;
+    align-items: center;
+    width: auto;
+    padding: 2px 4px;
+    text-align: left;
+    gap: 6px;
+}
+
+.folder-content.folder-view-list .folder-item img {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.folder-content.folder-view-list .folder-item-label {
+    margin-top: 0;
+    max-width: none;
+    -webkit-line-clamp: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.folder-content.folder-view-list .folder-item.selected .folder-item-label {
+    outline-offset: 2px;
+}
+
 /* ============================================================
    TASKBAR
    ============================================================ */
