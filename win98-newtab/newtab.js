@@ -406,6 +406,54 @@
         return c.toDataURL();
     }
 
+    /** Draw a Win98-style computer (monitor + stand + keyboard) */
+    function drawComputerIcon(size = currentIconSize()) {
+        const c = document.createElement("canvas");
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext("2d");
+        const k = size / 32;
+        const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
+
+        // Monitor outline
+        ctx.fillStyle = "#000000";
+        r(4, 3, 24, 18);
+        // Beige face
+        ctx.fillStyle = "#d9c69a";
+        r(5, 4, 22, 16);
+        // Screen bezel
+        ctx.fillStyle = "#000000";
+        r(7, 6, 18, 12);
+        // Teal screen (like the Win98 desktop)
+        ctx.fillStyle = "#008080";
+        r(8, 7, 16, 10);
+        // A little window on the screen
+        ctx.fillStyle = "#FFFFFF";
+        r(10, 8, 12, 6);
+        ctx.fillStyle = "#000080";
+        r(10, 8, 12, 2);
+        ctx.fillRect(21 * k, 8 * k, 1 * k, 2 * k);
+
+        // Stand
+        ctx.fillStyle = "#000000";
+        r(15, 21, 3, 3);
+        ctx.fillStyle = "#e8e8e8";
+        r(15, 21, 1, 3);
+        // Base
+        ctx.fillStyle = "#000000";
+        r(12, 23, 8, 2);
+        ctx.fillStyle = "#9c8c60";
+        r(13, 24, 6, 1);
+        // Keyboard
+        ctx.fillStyle = "#000000";
+        r(3, 26, 26, 3);
+        ctx.fillStyle = "#808080";
+        r(4, 27, 9, 1);
+        r(15, 27, 12, 1);
+
+        return c.toDataURL();
+    }
+
     /** Generate a favicon URL from bookmark URL */
     function getFaviconUrl(url) {
         try {
@@ -1533,6 +1581,31 @@
         });
     }
 
+    /** Classic Win98 system message box: icon + text, centered OK button */
+    function openMessageBox(title, message, icon) {
+        const body = document.createElement("div");
+        body.className = "win98-dialog win98-msgbox";
+        const main = document.createElement("div");
+        main.className = "win98-msgbox-main";
+        const msgIcon = document.createElement("img");
+        msgIcon.className = "win98-msgbox-icon";
+        msgIcon.src = icon || drawComputerIcon(32);
+        msgIcon.alt = "";
+        const txt = document.createElement("div");
+        txt.className = "win98-dialog-text";
+        txt.textContent = message;
+        main.append(msgIcon, txt);
+        body.appendChild(main);
+        return openDialog({
+            title,
+            icon: icon || drawComputerIcon(16),
+            width: 340,
+            height: 168,
+            body,
+            buttons: [{ label: "OK" }],
+        });
+    }
+
     function openPromptDialog(title, labelText, initialValue, onSubmit) {
         const body = document.createElement("div");
         body.className = "win98-dialog";
@@ -1967,6 +2040,22 @@
     $startBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         toggleStartMenu();
+    });
+
+    /* ---------- Easter egg: 10 clicks on the clock ---------- */
+    let clockClicks = 0;
+    let clockClickTimer = null;
+    $clock.addEventListener("click", () => {
+        clockClicks++;
+        clearTimeout(clockClickTimer);
+        clockClickTimer = setTimeout(() => {
+            clockClicks = 0;
+        }, 2500);
+        if (clockClicks >= 10) {
+            clockClicks = 0;
+            clearTimeout(clockClickTimer);
+            openMessageBox("Внимание", "Ты старый");
+        }
     });
 
     // Start menu: open all bookmarks
