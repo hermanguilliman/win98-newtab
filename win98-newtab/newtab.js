@@ -2545,33 +2545,34 @@
         ]);
     });
 
-    // Clock click → calendar (single click keeps the 10-click easter egg)
+    // Clock click → calendar (single click) or easter egg (10 rapid clicks).
+    // Календарь открывается только после паузы 300 ms: быстрая серия кликов
+    // (пасхалка) не сопровождается появлением окна календаря раньше времени.
+    let clockClicks = 0;
+    let clockCalendarTimer = null;
+
     $clock.addEventListener("click", () => {
-        openCalendar();
+        clockClicks++;
+        clearTimeout(clockCalendarTimer);
+        if (clockClicks >= 10) {
+            clockClicks = 0;
+            clearTimeout(clockCalendarTimer);
+            const cal = state.windows.find((w) => w.winType === "calendar");
+            if (cal) closeWindow(cal.id);
+            openMessageBox("Внимание", "Ты старый", "icons/pc_icon.png");
+            return;
+        }
+        clockCalendarTimer = setTimeout(() => {
+            clockClicks = 0;
+            clockCalendarTimer = null;
+            openCalendar();
+        }, 300);
     });
 
     // Start button
     $startBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         toggleStartMenu();
-    });
-
-    /* ---------- Easter egg: 10 clicks on the clock ---------- */
-    let clockClicks = 0;
-    let clockClickTimer = null;
-    $clock.addEventListener("click", () => {
-        clockClicks++;
-        clearTimeout(clockClickTimer);
-        clockClickTimer = setTimeout(() => {
-            clockClicks = 0;
-        }, 2500);
-        if (clockClicks >= 10) {
-            clockClicks = 0;
-            clearTimeout(clockClickTimer);
-            const cal = state.windows.find((w) => w.winType === "calendar");
-            if (cal) closeWindow(cal.id);
-            openMessageBox("Внимание", "Ты старый", "icons/pc_icon.png");
-        }
     });
 
     // Start menu: open all bookmarks

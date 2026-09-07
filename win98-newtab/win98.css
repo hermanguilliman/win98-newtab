@@ -485,6 +485,8 @@ body {
 
 #start-btn .start-logo {
     image-rendering: pixelated;
+    -webkit-user-drag: none;
+    user-select: none;
 }
 
 /* ---------- Taskbar Window Buttons ---------- */
