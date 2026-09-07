@@ -9,7 +9,7 @@ A single Chrome **Manifest V3** extension (`win98-newtab/`) that replaces the ne
 - After any change: reload the extension at `chrome://extensions/` (Developer mode → Load unpacked → the `win98-newtab` folder), then open a new tab.
 - Syntax check (there is no test runner): `node --check win98-newtab/newtab.js` and validate JSON with `ConvertFrom-Json` / `JSON.parse`.
 - The extension only runs inside the new-tab context; testing navigation/opening behaviors requires bookmark permission to be granted.
-- `newtab.html` loads `win98.css` and `newtab.js` with matching `?v=NN` query params (currently `v=26`). When you change either file, bump BOTH to the next integer, otherwise the new-tab page may serve stale cached assets.
+- `newtab.html` loads `win98.css` and `newtab.js` with matching `?v=NN` query params (currently `v=30`). When you change either file, bump BOTH to the next integer, otherwise the new-tab page may serve stale cached assets.
 
 ## Non-obvious architecture facts
 

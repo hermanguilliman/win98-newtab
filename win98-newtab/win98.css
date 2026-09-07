@@ -469,6 +469,34 @@ body {
     border-right: 1px solid var(--win98-white);
 }
 
+/* ---------- Quick Launch (icons next to Start) ---------- */
+#taskbar-launcher {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.taskbar-launch-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 22px;
+    padding: 2px;
+    box-sizing: border-box;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.taskbar-launch-btn img {
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
 /* ---------- Start Button ---------- */
 #start-btn {
     display: flex;
@@ -848,6 +876,65 @@ body {
     margin: 2px 2px;
     border-top: 1px solid var(--win98-dark-gray);
     border-bottom: 1px solid var(--win98-white);
+}
+
+/* ============================================================
+   NOTEPAD WINDOW
+   ============================================================ */
+.win98-window.notepad-window .win98-window-content {
+    display: flex;
+    flex-direction: column;
+    padding: 3px;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+    overflow: hidden;
+    background: var(--win98-silver);
+}
+
+.notepad-menubar {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 1px 2px 3px;
+    flex-shrink: 0;
+}
+
+.notepad-menu-btn {
+    border: none;
+    background: transparent;
+    font-family: var(--win98-font);
+    font-size: 11px;
+    padding: 3px 7px;
+    cursor: pointer;
+    line-height: 1;
+    color: var(--win98-black);
+}
+
+.notepad-menu-btn:hover,
+.notepad-menu-btn:focus-visible {
+    background: var(--win98-navy);
+    color: var(--win98-white);
+    outline: none;
+}
+
+.notepad-textarea {
+    flex: 1;
+    width: 100%;
+    box-sizing: border-box;
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+    background: var(--win98-white);
+    color: var(--win98-black);
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.35;
+    padding: 4px;
+    resize: none;
+    outline: none;
+    overflow: auto;
 }
 
 /* ============================================================
