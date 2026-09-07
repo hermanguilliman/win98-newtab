@@ -20,6 +20,7 @@
         treeRoot: null,
         bookmarksRefreshTimer: 0,
         searchNodes: [],
+        nodeIndex: null,
         selectedDesktopEl: null,
         weatherData: null,
         clipUrl: null,
@@ -50,6 +51,18 @@
 
     /** Allowed icon sizes */
     const ICON_SIZES = [24, 32, 48];
+
+    /* ---------- Named constants (magic numbers) ---------- */
+    const CLICK_DEBOUNCE_MS = 350;
+    const BOOKMARK_REFRESH_DEBOUNCE_MS = 250;
+    const SEARCH_RESULT_LIMIT = 200;
+    const MIN_WINDOW_W = 200;
+    const MIN_WINDOW_H = 120;
+    const WINDOW_STACK_OFFSET = 28;
+    const CLOCK_INTERVAL_MS = 10000;
+    const SEARCH_DEBOUNCE_MS = 150;
+    const ALL_ROOT_ID = "__root__";
+    const ROOT_ORDER = { 1: 0, 2: 1, 3: 2 };
 
     /* ---------- DOM Refs ---------- */
     const $desktop = document.getElementById("desktop");
@@ -237,11 +250,38 @@
         return c.toDataURL();
     }
 
+    /** Memoization caches for generated icon data URLs (pure per parameters).
+        Cleared whenever an icon-affecting setting changes. */
+    const _iconCache = {
+        folder: new Map(),
+        page: new Map(),
+        computer: new Map(),
+    };
+    function _clearIconCache() {
+        _iconCache.folder.clear();
+        _iconCache.page.clear();
+        _iconCache.computer.clear();
+    }
+
     function drawFolderIcon(
         color = "#d4c044",
         open = false,
         size = currentIconSize(),
         style = folderIconStyleName(),
+    ) {
+        const key = `${color}|${open ? 1 : 0}|${size}|${style}`;
+        const cached = _iconCache.folder.get(key);
+        if (cached !== undefined) return cached;
+        const dataUrl = _drawFolderIcon(color, open, size, style);
+        _iconCache.folder.set(key, dataUrl);
+        return dataUrl;
+    }
+
+    function _drawFolderIcon(
+        color,
+        open,
+        size,
+        style,
     ) {
         if (style === "classic") {
             // Authentic Win98 folder bitmap (gold closed / open with document)
@@ -341,37 +381,17 @@
         return c.toDataURL();
     }
 
-    /** Draw a shortcut overlay arrow */
-    function drawShortcutArrow() {
-        const c = document.createElement("canvas");
-        c.width = 32;
-        c.height = 32;
-        const ctx = c.getContext("2d");
-
-        // White square background for arrow
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(16, 14, 14, 14);
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(16.5, 14.5, 13, 13);
-
-        // Arrow
-        ctx.fillStyle = "#000080";
-        // Arrow body
-        ctx.fillRect(19, 20, 8, 2);
-        // Arrow head
-        ctx.beginPath();
-        ctx.moveTo(25, 17);
-        ctx.lineTo(29, 21);
-        ctx.lineTo(25, 23);
-        ctx.closePath();
-        ctx.fill();
-
-        return c.toDataURL();
-    }
-
     /** Draw a generic webpage icon */
     function drawPageIcon(size = currentIconSize()) {
+        const key = `page|${size}`;
+        const cached = _iconCache.page.get(key);
+        if (cached !== undefined) return cached;
+        const dataUrl = _drawPageIcon(size);
+        _iconCache.page.set(key, dataUrl);
+        return dataUrl;
+    }
+
+    function _drawPageIcon(size) {
         const c = document.createElement("canvas");
         c.width = size;
         c.height = size;
@@ -412,6 +432,15 @@
 
     /** Draw a Win98-style computer (monitor + stand + keyboard) */
     function drawComputerIcon(size = currentIconSize()) {
+        const key = `computer|${size}`;
+        const cached = _iconCache.computer.get(key);
+        if (cached !== undefined) return cached;
+        const dataUrl = _drawComputerIcon(size);
+        _iconCache.computer.set(key, dataUrl);
+        return dataUrl;
+    }
+
+    function _drawComputerIcon(size) {
         const c = document.createElement("canvas");
         c.width = size;
         c.height = size;
@@ -836,15 +865,19 @@
         const freeY = Math.max(0, vh - h);
         const x =
             opts.x ??
-            Math.max(0, Math.min(freeX, Math.round(vw / 2 - w / 2 + (state.windows.length % 6) * 28)));
+            Math.max(0, Math.min(freeX, Math.round(vw / 2 - w / 2 + (state.windows.length % 6) * WINDOW_STACK_OFFSET)));
         const y =
             opts.y ??
-            Math.max(0, Math.min(freeY, Math.round(vh / 2 - h / 2 + (state.windows.length % 6) * 28)));
+            Math.max(0, Math.min(freeY, Math.round(vh / 2 - h / 2 + (state.windows.length % 6) * WINDOW_STACK_OFFSET)));
+
+        // Resolve the window icon once (falling back to a page icon) so we don't
+        // re-generate the same canvas three times below.
+        const resolvedIcon = opts.icon || drawPageIcon();
 
         const winData = {
             id,
             title: opts.title || "Window",
-            icon: opts.icon || drawPageIcon(),
+            icon: resolvedIcon,
             x,
             y,
             w,
@@ -864,7 +897,7 @@
 
         el.innerHTML = `
       <div class="win98-titlebar" data-win-id="${id}">
-        <img class="win98-titlebar-icon" src="${opts.icon || drawPageIcon()}" alt="">
+        <img class="win98-titlebar-icon" src="${resolvedIcon}" alt="">
         <span class="win98-titlebar-text">${escapeHtml(opts.title || "")}</span>
         <div class="win98-titlebar-buttons">
           <button class="win98-titlebar-btn" data-action="minimize" title="Свернуть">_</button>
@@ -925,7 +958,7 @@
         const tbBtn = document.createElement("button");
         tbBtn.className = "taskbar-win-btn win98-btn active";
         tbBtn.id = `tb-${id}`;
-        tbBtn.innerHTML = `<img src="${opts.icon || drawPageIcon()}" alt=""><span>${escapeHtml(opts.title || "")}</span>`;
+        tbBtn.innerHTML = `<img src="${resolvedIcon}" alt=""><span>${escapeHtml(opts.title || "")}</span>`;
         tbBtn.addEventListener("click", () => {
             if (winData.minimized) {
                 restoreWindow(id);
@@ -1060,6 +1093,9 @@
             winData,
             offsetX: e.clientX - rect.left,
             offsetY: e.clientY - rect.top,
+            x: e.clientX,
+            y: e.clientY,
+            raf: null,
         };
         document.addEventListener("mousemove", onDragMove);
         document.addEventListener("mouseup", onDragEnd);
@@ -1068,10 +1104,18 @@
     function onDragMove(e) {
         const d = state.dragState;
         if (!d) return;
-        const x = e.clientX - d.offsetX;
-        const y = e.clientY - d.offsetY;
-        d.winData.el.style.left = x + "px";
-        d.winData.el.style.top = Math.max(0, y) + "px";
+        // Always track the latest cursor position; only coalesce the style write
+        // to one per animation frame (mousemove can fire faster than 60 Hz).
+        d.x = e.clientX;
+        d.y = e.clientY;
+        if (d.raf) return;
+        d.raf = requestAnimationFrame(() => {
+            d.raf = null;
+            const x = d.x - d.offsetX;
+            const y = d.y - d.offsetY;
+            d.winData.el.style.left = x + "px";
+            d.winData.el.style.top = Math.max(0, y) + "px";
+        });
     }
 
     function onDragEnd() {
@@ -1088,6 +1132,9 @@
             startY: e.clientY,
             startW: parseInt(winData.el.style.width),
             startH: parseInt(winData.el.style.height),
+            x: e.clientX,
+            y: e.clientY,
+            raf: null,
         };
         document.addEventListener("mousemove", onResizeMove);
         document.addEventListener("mouseup", onResizeEnd);
@@ -1096,10 +1143,16 @@
     function onResizeMove(e) {
         const r = state.resizeState;
         if (!r) return;
-        const newW = Math.max(200, r.startW + (e.clientX - r.startX));
-        const newH = Math.max(120, r.startH + (e.clientY - r.startY));
-        r.winData.el.style.width = newW + "px";
-        r.winData.el.style.height = newH + "px";
+        r.x = e.clientX;
+        r.y = e.clientY;
+        if (r.raf) return;
+        r.raf = requestAnimationFrame(() => {
+            r.raf = null;
+            const newW = Math.max(MIN_WINDOW_W, r.startW + (r.x - r.startX));
+            const newH = Math.max(MIN_WINDOW_H, r.startH + (r.y - r.startY));
+            r.winData.el.style.width = newW + "px";
+            r.winData.el.style.height = newH + "px";
+        });
     }
 
     function onResizeEnd() {
@@ -1125,6 +1178,7 @@
         }
 
         state.treeRoot = tree;
+        state.nodeIndex = buildNodeIndex(tree);
         renderBookmarks(tree);
     }
 
@@ -1135,15 +1189,15 @@
         if (emptyMsg) emptyMsg.remove();
 
         const children = tree ? tree.children || [] : [];
-        // Chrome root IDs are always: 1=Bar, 2=Other, 3=Mobile
-        const ROOT_ORDER = { 1: 0, 2: 1, 3: 2 };
         const roots = children
             .filter((n) => n.children && n.children.length > 0)
             .sort(
                 (a, b) => (ROOT_ORDER[a.id] ?? 99) - (ROOT_ORDER[b.id] ?? 99),
             );
 
-        if (roots.length === 0 && countAllBookmarks(tree) === 0) {
+        // A bookmark anywhere makes its root have children, so `roots` is empty
+        // only when there are truly no bookmarks at all — no extra full-tree walk.
+        if (roots.length === 0) {
             showEmptyState(
                 "Нет закладок. Добавьте закладки в Chrome и они появятся здесь.",
             );
@@ -1151,17 +1205,6 @@
         }
 
         renderDesktopIcons(roots);
-    }
-
-    function countAllBookmarks(node) {
-        let count = 0;
-        if (node.url) count++;
-        if (node.children) {
-            for (const child of node.children) {
-                count += countAllBookmarks(child);
-            }
-        }
-        return count;
     }
 
     function showEmptyState(msg) {
@@ -1184,17 +1227,21 @@
         return isFolderNode(n) || isBookmarkNode(n);
     }
 
-    /** Recursively find a node in the cached tree by id */
+    /** Build an id→node index for O(1) lookups (rebuilt after every tree refresh) */
+    function buildNodeIndex(root) {
+        const map = new Map();
+        (function walk(n) {
+            if (!n) return;
+            map.set(n.id, n);
+            (n.children || []).forEach(walk);
+        })(root);
+        return map;
+    }
+
+    /** Look up a node by id in the cached tree (O(1) via the index) */
     function findNodeById(node, id) {
-        if (!node) return null;
-        if (node.id === id) return node;
-        if (node.children) {
-            for (const child of node.children) {
-                const hit = findNodeById(child, id);
-                if (hit) return hit;
-            }
-        }
-        return null;
+        void node; // the index is keyed on ids, the tree root only matters at build time
+        return (state.nodeIndex && state.nodeIndex.get(id)) || null;
     }
 
     const EMPTY_FOLDER_HTML =
@@ -1207,7 +1254,7 @@
     let colorIdx = 0;
 
     function renderDesktopIcons(roots) {
-        $desktopIcons.innerHTML = "";
+        // Note: caller (`renderBookmarks`) has already cleared $desktopIcons.
         colorIdx = 0;
 
         roots.forEach((root, rootIdx) => {
@@ -1261,53 +1308,65 @@
         div.appendChild(img);
         div.appendChild(label);
 
-        // Click / Double-click → mode-dependent open
-        div.addEventListener("click", (e) => {
-            e.stopPropagation();
+        // Event handling is delegated on $desktopIcons (see init) — listeners are
+        // attached once on the container rather than once per icon.
+        div._node = node;
+        return div;
+    }
+
+    function selectDesktopIcon(el) {
+        $desktopIcons
+            .querySelectorAll(".desktop-icon.selected")
+            .forEach((d) => d.classList.remove("selected"));
+        if (!el) return;
+        el.classList.add("selected");
+        state.selectedDesktopEl = el;
+    }
+
+    /** Attach delegated click/dblclick/auxclick/contextmenu on the desktop icons
+        container — one listener set total instead of four per desktop icon. */
+    function attachDesktopIconEvents() {
+        $desktopIcons.addEventListener("click", (e) => {
+            const div = e.target.closest(".desktop-icon");
+            if (!div) return;
+            const node = div._node;
+            if (!node) return;
             if (isSingleClickMode()) {
                 const prev = Number(div.dataset.lastClick || 0);
                 const now = Date.now();
                 div.dataset.lastClick = now;
-                if (now - prev < 350) return; // part of a double-click
+                if (now - prev < CLICK_DEBOUNCE_MS) return; // part of a double-click
                 openNode(node);
             } else {
                 selectDesktopIcon(div);
             }
         });
 
-        div.addEventListener("dblclick", (e) => {
-            e.stopPropagation();
-            if (!isSingleClickMode()) {
-                openNode(node);
-            }
+        $desktopIcons.addEventListener("dblclick", (e) => {
+            const div = e.target.closest(".desktop-icon");
+            if (!div || !div._node) return;
+            if (!isSingleClickMode()) openNode(div._node);
         });
 
         // Middle mouse button → open bookmark in a background tab
-        div.addEventListener("auxclick", (e) => handleAuxClick(e, node));
+        $desktopIcons.addEventListener("auxclick", (e) => {
+            const div = e.target.closest(".desktop-icon");
+            if (!div || !div._node) return;
+            handleAuxClick(e, div._node);
+        });
 
         // Right-click context menu
-        div.addEventListener("contextmenu", (e) => {
+        $desktopIcons.addEventListener("contextmenu", (e) => {
+            const div = e.target.closest(".desktop-icon");
+            if (!div || !div._node) return;
             e.preventDefault();
-            e.stopPropagation();
             selectDesktopIcon(div);
             showContextMenu(
                 e.clientX,
                 e.clientY,
-                buildNodeContextMenuItems(node),
+                buildNodeContextMenuItems(div._node),
             );
         });
-
-        div._node = node;
-        return div;
-    }
-
-    function selectDesktopIcon(el) {
-        document
-            .querySelectorAll(".desktop-icon.selected")
-            .forEach((d) => d.classList.remove("selected"));
-        if (!el) return;
-        el.classList.add("selected");
-        state.selectedDesktopEl = el;
     }
 
     /** Open a bookmark node (URL → navigate, folder → window) */
@@ -1340,9 +1399,6 @@
     /* ============================================================
      FOLDER WINDOW
      ============================================================ */
-
-    /* Sentinel id for the synthetic «Все закладки» top-level listing */
-    const ALL_ROOT_ID = "__root__";
 
     /** Build the synthetic top-level node that lists the Chrome root folders */
     function buildAllBookmarksNode(tree) {
@@ -1634,10 +1690,12 @@
                 const prev = Number(div.dataset.lastClick || 0);
                 const now = Date.now();
                 div.dataset.lastClick = now;
-                if (now - prev < 350) return; // part of a double-click
+                if (now - prev < CLICK_DEBOUNCE_MS) return; // part of a double-click
                 openItem();
             } else {
-                document
+                // Scope to this window's list, not every open folder window
+                const scope = div.closest(".folder-content") || document;
+                scope
                     .querySelectorAll(".folder-item.selected")
                     .forEach((d) => d.classList.remove("selected"));
                 div.classList.add("selected");
@@ -1657,7 +1715,8 @@
         div.addEventListener("contextmenu", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            document
+            const scope = div.closest(".folder-content") || document;
+            scope
                 .querySelectorAll(".folder-item.selected")
                 .forEach((d) => d.classList.remove("selected"));
             div.classList.add("selected");
@@ -1679,7 +1738,7 @@
         while (cur && cur.title) {
             parts.unshift(cur.title);
             if (!cur.parentId || cur.parentId === "0") break;
-            const parent = findNodeById(state.treeRoot, cur.parentId);
+            const parent = state.nodeIndex && state.nodeIndex.get(cur.parentId);
             if (!parent) break;
             cur = parent;
         }
@@ -2005,7 +2064,7 @@
 
     function scheduleBookmarksRefresh() {
         clearTimeout(state.bookmarksRefreshTimer);
-        state.bookmarksRefreshTimer = setTimeout(refreshAllBookmarks, 250);
+        state.bookmarksRefreshTimer = setTimeout(refreshAllBookmarks, BOOKMARK_REFRESH_DEBOUNCE_MS);
     }
 
     /** Re-read the whole tree, re-render the desktop and all windows that show a folder */
@@ -2014,6 +2073,7 @@
         try {
             tree = (await chrome.bookmarks.getTree())[0];
             state.treeRoot = tree;
+            state.nodeIndex = buildNodeIndex(tree);
         } catch {
             // Permission revoked or API unavailable — keep showing what we have
             return;
@@ -2061,27 +2121,35 @@
      SEARCH (start menu + Ctrl+F)
      ============================================================ */
 
-    /** Flatten the whole tree into a searchable list of bookmarks and folders */
+    /** Flatten the whole tree into a searchable list of bookmarks and folders.
+        Lowercase copies are precomputed so filtering/sorting never re-lowercases. */
     function buildSearchIndex(tree) {
         const out = [];
         const walk = (node, path) => {
             if (!node) return;
             const p = path ? `${path} > ${node.title}` : node.title;
+            const title = node.title || "";
             if (isBookmarkNode(node)) {
                 out.push({
                     id: node.id,
-                    title: node.title || "",
+                    title,
                     url: node.url,
                     path,
                     isFolder: false,
+                    _tl: title.toLowerCase(),
+                    _ul: node.url.toLowerCase(),
+                    _pl: (path || "").toLowerCase(),
                 });
             } else if (isFolderNode(node)) {
                 out.push({
                     id: node.id,
-                    title: node.title || "",
+                    title,
                     url: null,
                     path,
                     isFolder: true,
+                    _tl: title.toLowerCase(),
+                    _ul: "",
+                    _pl: (path || "").toLowerCase(),
                 });
                 (node.children || []).forEach((c) => walk(c, p));
             }
@@ -2161,31 +2229,28 @@
             if (node) openNode(node);
         }
 
+        function scoreNode(n, q) {
+            if (n._tl.startsWith(q)) return 0;
+            if (n._tl.includes(q)) return 1;
+            if (n._ul.startsWith(q)) return 2;
+            return 3;
+        }
+
         function renderList(filter) {
             const q = (filter || "").toLowerCase().trim();
             let list = state.searchNodes;
             if (q) {
                 list = state.searchNodes.filter(
                     (n) =>
-                        n.title.toLowerCase().includes(q) ||
-                        (n.url || "").toLowerCase().includes(q) ||
-                        (n.path || "").toLowerCase().includes(q),
+                        n._tl.includes(q) || n._ul.includes(q) || n._pl.includes(q),
                 );
-                const score = (n) => {
-                    const t = n.title.toLowerCase();
-                    const u = (n.url || "").toLowerCase();
-                    if (t.startsWith(q)) return 0;
-                    if (t.includes(q)) return 1;
-                    if (u.startsWith(q)) return 2;
-                    return 3;
-                };
                 list = list.sort(
                     (a, b) =>
-                        score(a) - score(b) ||
+                        scoreNode(a, q) - scoreNode(b, q) ||
                         a.title.localeCompare(b.title, "ru"),
                 );
             }
-            list = list.slice(0, 200);
+            list = list.slice(0, SEARCH_RESULT_LIMIT);
 
             results.innerHTML = "";
             current = list;
@@ -2234,16 +2299,21 @@
             selectRow(results.querySelector(".search-result-row"));
             const st = statusEl();
             if (st)
-                st.textContent = `Найдено: ${list.length}${list.length >= 200 ? "+" : ""}`;
+                st.textContent = `Найдено: ${list.length}${list.length >= SEARCH_RESULT_LIMIT ? "+" : ""}`;
         }
 
         function currentRowIndex() {
-            return Array.from(
-                results.querySelectorAll(".search-result-row"),
-            ).indexOf(selectedRow);
+            // selectedRow is a direct child of `results`; indexInto children (no array alloc)
+            return selectedRow ? Array.prototype.indexOf.call(results.children, selectedRow) : -1;
         }
 
-        input.addEventListener("input", () => renderList(input.value));
+        // Debounce keystrokes so rapid typing only re-renders once (search can be
+        // heavy on large trees); first render below runs immediately.
+        let searchTimer = null;
+        input.addEventListener("input", () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => renderList(input.value), SEARCH_DEBOUNCE_MS);
+        });
         input.addEventListener("keydown", (e) => {
             const rows = results.querySelectorAll(".search-result-row");
             const idx = currentRowIndex();
@@ -2719,6 +2789,7 @@
 
         chrome.bookmarks.getTree((tree) => {
             state.treeRoot = tree[0];
+            state.nodeIndex = buildNodeIndex(tree[0]);
 
             const toolbarHtml = `
         <button class="win98-toolbar-btn" data-nav="back" disabled>
@@ -2767,6 +2838,7 @@
                         () => {
                             chrome.bookmarks.getTree((t) => {
                                 state.treeRoot = t[0];
+                                state.nodeIndex = buildNodeIndex(t[0]);
                                 const target = resolveNavNode(
                                     winData.currentNode,
                                     t[0],
@@ -2896,16 +2968,6 @@
             "--win98-label-shadow",
             s.iconLabelShadow ? "1px 1px 1px rgba(0,0,0,0.7)" : "none",
         );
-    }
-
-    /** Apply the icon size as CSS variables on the desktop + windows (back-compat) */
-    function applyIconSize(size) {
-        if (size)
-            state.settings = {
-                ...(state.settings || DEFAULT_SETTINGS),
-                iconSize: size,
-            };
-        applyDesktopStyle();
     }
 
     function saveSettings() {
@@ -3056,6 +3118,7 @@
             previewFolderStyle = null;
             previewFolderViewMode = null;
             state.settings = pending;
+            _clearIconCache(); // new settings may change icon size/style
             applyDesktopStyle();
             saveSettings();
             updateClock();
@@ -3069,6 +3132,7 @@
         const cancel = () => {
             previewFolderStyle = null;
             previewFolderViewMode = null;
+            _clearIconCache(); // restore memoized icons under the saved style
             applyWallpaper(state.settings.wallpaper);
             applyDesktopStyle();
             updateClock();
@@ -3309,6 +3373,7 @@
                 if (!rad.checked) return;
                 pending.folderIconStyle = s.id;
                 previewFolderStyle = s.id;
+                _clearIconCache(); // icons were memoized under the old style
                 renderBookmarks(state.treeRoot); // live preview on the desktop
             });
             lbl.append(rad, prev, sp);
@@ -3656,10 +3721,16 @@
      UTILITIES
      ============================================================ */
 
+    const _ESCAPE_RE = /[&<>"']/g;
+    const _ESCAPE_MAP = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+    };
     function escapeHtml(str) {
-        const div = document.createElement("div");
-        div.textContent = str;
-        return div.innerHTML;
+        return String(str).replace(_ESCAPE_RE, (ch) => _ESCAPE_MAP[ch]);
     }
 
     /** Clamp an integer to [min,max]; returns null if not a finite number */
@@ -3677,7 +3748,13 @@
         // Render bare time immediately; date/weekday appear only after settings
         // are loaded, so disabled toggles never flash back on at startup.
         updateClock({});
-        setInterval(updateClock, 10000);
+        // Align the first tick to the next 10s boundary so the minute never
+        // appears to "jump" right after the tab opens.
+        setTimeout(() => {
+            updateClock();
+            setInterval(updateClock, CLOCK_INTERVAL_MS);
+        }, CLOCK_INTERVAL_MS - (Date.now() % CLOCK_INTERVAL_MS));
+        attachDesktopIconEvents();
         attachBookmarkListeners();
         updateWeather(); // reads cache + refreshes in the background right away
         loadSettings().then(loadBookmarks);
