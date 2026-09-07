@@ -1055,6 +1055,12 @@ body {
     gap: 0;
     padding: 8px 10px 6px;
     height: 100%;
+    overflow: hidden;
+}
+
+/* Msgboxes («О программе» и др.) никогда не скроллятся — контент короткий */
+.win98-dialog-container:has(.win98-msgbox) {
+    overflow: hidden;
 }
 
 .win98-msgbox-main {
