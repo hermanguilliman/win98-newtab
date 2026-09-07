@@ -40,6 +40,7 @@
         showClockWeekday: true,
         iconLabelShadow: true,
         folderViewMode: "icons",
+        uiFont: "Tahoma, 'MS Sans Serif', 'Segoe UI', sans-serif",
         wallpaper: {
             type: "color",
             color: "#008080",
@@ -516,6 +517,21 @@
         { id: "classic", label: "Классические" },
         { id: "glossy", label: "Объёмные" },
         { id: "outlined", label: "С контуром" },
+    ];
+
+    /** UI font choices (Настройки → Вид). `value` is the full CSS family stack. */
+    const UI_FONTS = [
+        {
+            label: "Tahoma",
+            value: "Tahoma, 'MS Sans Serif', 'Segoe UI', sans-serif",
+        },
+        {
+            label: "MS Sans Serif",
+            value: "'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif",
+        },
+        { label: "Segoe UI", value: "'Segoe UI', Tahoma, sans-serif" },
+        { label: "Courier New", value: "'Courier New', monospace" },
+        { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
     ];
 
     /** Live-preview override while the settings window is open (cleared on OK/Отмена) */
@@ -2920,6 +2936,9 @@
         ) {
             base.folderViewMode = partial.folderViewMode;
         }
+        if (UI_FONTS.some((f) => f.value === partial.uiFont)) {
+            base.uiFont = partial.uiFont;
+        }
         if (partial.wallpaper) {
             const wp = partial.wallpaper;
             if (wp.type === "color" || wp.type === "image")
@@ -2977,6 +2996,10 @@
         el.style.setProperty(
             "--win98-label-shadow",
             s.iconLabelShadow ? "1px 1px 1px rgba(0,0,0,0.7)" : "none",
+        );
+        el.style.setProperty(
+            "--win98-font",
+            s.uiFont || DEFAULT_SETTINGS.uiFont,
         );
     }
 
@@ -3425,6 +3448,38 @@
             fm.appendChild(lbl);
         });
         vg.appendChild(fm);
+
+        /* ---------- Вид group (UI font) ---------- */
+        const ufg = document.createElement("div");
+        ufg.className = "win98-groupbox";
+        const ufgLegend = document.createElement("div");
+        ufgLegend.className = "win98-groupbox-legend";
+        ufgLegend.textContent = "Шрифт интерфейса";
+        ufg.appendChild(ufgLegend);
+
+        const curFont = UI_FONTS.some((f) => f.value === pending.uiFont)
+            ? pending.uiFont
+            : DEFAULT_SETTINGS.uiFont;
+        UI_FONTS.forEach((f) => {
+            const lbl = document.createElement("label");
+            lbl.className = "win98-radio";
+            const rad = document.createElement("input");
+            rad.type = "radio";
+            rad.name = "ui-font";
+            rad.value = f.value;
+            if (curFont === f.value) rad.checked = true;
+            const sp = document.createElement("span");
+            sp.style.fontFamily = f.value; // каждый вариант набран своим шрифтом
+            sp.textContent = f.label;
+            rad.addEventListener("change", () => {
+                if (!rad.checked) return;
+                pending.uiFont = f.value;
+                applyDesktopStyle(pending); // live preview
+            });
+            lbl.append(rad, sp);
+            ufg.appendChild(lbl);
+        });
+        vg.appendChild(ufg);
 
         // Numeric style settings with live preview
         const makeNumRow = (label, key, min, max) => {
