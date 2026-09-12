@@ -442,6 +442,34 @@ body {
     outline-offset: 2px;
 }
 
+/* Drag & drop between folder windows: source + drop-target feedback */
+.folder-item.dragging {
+    opacity: 0.4;
+}
+
+/* Dropping onto a folder → move into it */
+.folder-item.drop-into {
+    background: var(--win98-hover);
+    outline: 1px dotted var(--win98-navy);
+    outline-offset: -1px;
+}
+
+/* Dropping onto a bookmark → insertion caret above/below it */
+.folder-item.drop-before {
+    box-shadow: 0 -3px 0 0 var(--win98-navy);
+}
+
+.folder-item.drop-after {
+    box-shadow: 0 3px 0 0 var(--win98-navy);
+}
+
+/* Dropping onto empty space → append to the displayed folder */
+.folder-content.drop-append {
+    background: var(--win98-hover);
+    outline: 1px dotted var(--win98-navy);
+    outline-offset: -3px;
+}
+
 /* ============================================================
    TASKBAR
    ============================================================ */

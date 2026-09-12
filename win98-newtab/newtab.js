@@ -1417,6 +1417,10 @@
 
     let colorIdx = 0;
 
+    // Bookmark/folder currently being dragged between folder windows
+    // ({ id, sourceEl } or null)
+    let nodeDragState = null;
+
     function renderDesktopIcons(roots) {
         // Note: caller (`renderBookmarks`) has already cleared $desktopIcons.
         colorIdx = 0;
@@ -1633,6 +1637,8 @@
             fc.className = "folder-content";
             contentEl.appendChild(fc);
         }
+        // Empty area drops append to the folder currently shown in this window
+        wireFolderBackgroundDrop(fc, winData);
 
         const items = (node.children || []).filter((n) => isVisibleNode(n));
         fc.innerHTML = "";
@@ -1903,8 +1909,236 @@
             );
         });
 
+        // ---------- Drag & drop: move this node between folder windows ----------
+        // Chrome root folders (parentId "0") are fixed and cannot be moved, but
+        // they stay valid drop targets (as folders) below.
+        if (!isRootFolder(node)) {
+            div.draggable = true;
+
+            div.addEventListener("dragstart", (e) => {
+                nodeDragState = { id: String(node.id), sourceEl: div };
+                e.dataTransfer.effectAllowed = "move";
+                try {
+                    e.dataTransfer.setData("text/plain", String(node.id));
+                } catch {
+                    /* module state is the source of truth */
+                }
+                div.classList.add("dragging");
+            });
+
+            div.addEventListener("dragend", () => {
+                nodeDragState = null;
+                clearDropHighlights();
+                div.classList.remove("dragging");
+            });
+        }
+
+        div.addEventListener("dragover", (e) => {
+            const drag = nodeDragState;
+            if (!drag || drag.id === String(node.id)) return;
+            const into = isFolderNode(node) && canDropIntoFolder(drag.id, node.id);
+            const nextTo =
+                !isFolderNode(node) && canDropNextTo(drag.id, node.id);
+            if (!into && !nextTo) return; // no preventDefault → «нельзя» cursor
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            clearDropTargets();
+            if (into) {
+                div.classList.add("drop-into");
+            } else {
+                div.classList.add(
+                    isAfterMidpoint(div, e) ? "drop-after" : "drop-before",
+                );
+            }
+        });
+
+        div.addEventListener("drop", (e) => {
+            const drag = nodeDragState;
+            if (!drag) return;
+            e.preventDefault();
+            e.stopPropagation();
+            clearDropHighlights();
+            nodeDragState = null;
+
+            // Drop onto a folder → move into it (append at the end)
+            if (isFolderNode(node)) {
+                if (!canDropIntoFolder(drag.id, node.id)) return;
+                moveBookmarkTo(drag.id, node.id, -1);
+                return;
+            }
+            // Drop onto a bookmark → insert before/after it (reorder)
+            if (!canDropNextTo(drag.id, node.id)) return;
+            const parent = findNodeById(state.treeRoot, node.parentId);
+            const idx = insertionIndex(
+                parent,
+                node.id,
+                isAfterMidpoint(div, e),
+                drag.id,
+            );
+            if (idx < 0) return;
+            moveBookmarkTo(drag.id, node.parentId, idx);
+        });
+
         div._node = node;
         return div;
+    }
+
+    /* ============================================================
+     NODE DRAG & DROP (move bookmarks/folders between folder windows)
+     ============================================================ */
+
+    /** Clear drop-target highlights only (keeps the dragged source faded) */
+    function clearDropTargets() {
+        document
+            .querySelectorAll(
+                ".folder-item.drop-into, .folder-item.drop-before, .folder-item.drop-after, .folder-content.drop-append",
+            )
+            .forEach((el) =>
+                el.classList.remove(
+                    "drop-into",
+                    "drop-before",
+                    "drop-after",
+                    "drop-append",
+                ),
+            );
+    }
+
+    /** Clear every drag highlight (drop targets + dragged source) */
+    function clearDropHighlights() {
+        clearDropTargets();
+        document
+            .querySelectorAll(".folder-item.dragging")
+            .forEach((el) => el.classList.remove("dragging"));
+    }
+
+    /** Is `node` the given node itself or one of its descendants? */
+    function isNodeWithin(node, ancestorId) {
+        let cur = node;
+        while (cur && cur.id !== ALL_ROOT_ID) {
+            if (String(cur.id) === String(ancestorId)) return true;
+            cur = cur.parentId
+                ? findNodeById(state.treeRoot, cur.parentId)
+                : null;
+        }
+        return false;
+    }
+
+    /** Chrome root folders sit directly under "0" and can never be moved */
+    function isRootFolder(node) {
+        return !!node && node.parentId === "0";
+    }
+
+    /** Can `draggedId` be moved INTO the folder `targetId`? */
+    function canDropIntoFolder(draggedId, targetId) {
+        const dragged = findNodeById(state.treeRoot, draggedId);
+        const target = findNodeById(state.treeRoot, targetId);
+        if (!dragged || !target || !isFolderNode(target)) return false;
+        if (isRootFolder(dragged)) return false;
+        if (String(dragged.id) === String(target.id)) return false;
+        // A folder must never be moved into itself or its own descendants.
+        if (isNodeWithin(target, dragged.id)) return false;
+        return true;
+    }
+
+    /** Can `draggedId` be reordered next to the bookmark `targetId`? */
+    function canDropNextTo(draggedId, targetId) {
+        const dragged = findNodeById(state.treeRoot, draggedId);
+        const target = findNodeById(state.treeRoot, targetId);
+        if (!dragged || !target) return false;
+        if (isRootFolder(dragged) || isRootFolder(target)) return false;
+        if (String(dragged.id) === String(target.id)) return false;
+        // Inserting into a node that lives inside the dragged folder → cycle.
+        if (isNodeWithin(target, dragged.id)) return false;
+        return true;
+    }
+
+    /** Pointer below the vertical middle of an item → insert after it */
+    function isAfterMidpoint(el, e) {
+        const r = el.getBoundingClientRect();
+        return e.clientY >= r.top + r.height / 2;
+    }
+
+    /** Insertion index for `draggedId` before/after `targetId`, computed on the
+        sibling list WITHOUT the dragged node — matching how chrome.bookmarks.move
+        places a node after it has been removed from its old position. */
+    function insertionIndex(parent, targetId, after, draggedId) {
+        const siblings = ((parent && parent.children) || []).filter(
+            (k) => String(k.id) !== String(draggedId),
+        );
+        const pos = siblings.findIndex(
+            (k) => String(k.id) === String(targetId),
+        );
+        if (pos < 0) return -1;
+        return pos + (after ? 1 : 0);
+    }
+
+    /** Move a node into `parentId` (index < 0 → append) and refresh the UI */
+    function moveBookmarkTo(id, parentId, index) {
+        if (!id || !parentId) return;
+        const opts = { parentId: String(parentId) };
+        if (typeof index === "number" && index >= 0) opts.index = index;
+        chrome.bookmarks
+            .move(String(id), opts)
+            .then(() => scheduleBookmarksRefresh())
+            .catch(() => {
+                openMessageBox(
+                    "Перемещение",
+                    "Не удалось переместить объект.",
+                );
+            });
+    }
+
+    /** Make the empty area of a folder window a drop zone that appends the
+        dragged node to the folder currently displayed in that window. */
+    function wireFolderBackgroundDrop(fc, winData) {
+        if (fc._dropWired) return;
+        fc._dropWired = true;
+
+        const targetParentId = () => {
+            const cur = winData.currentNode;
+            if (!cur || cur.id === ALL_ROOT_ID) return null;
+            return cur.id;
+        };
+
+        fc.addEventListener("dragover", (e) => {
+            const drag = nodeDragState;
+            if (!drag) return;
+            const parentId = targetParentId();
+            if (!parentId || !canDropIntoFolder(drag.id, parentId)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            clearDropTargets();
+            fc.classList.add("drop-append");
+        });
+
+        fc.addEventListener("dragleave", (e) => {
+            // Ignore transitions onto child items inside the same container.
+            if (!fc.contains(e.relatedTarget)) {
+                fc.classList.remove("drop-append");
+            }
+        });
+
+        fc.addEventListener("drop", (e) => {
+            const drag = nodeDragState;
+            fc.classList.remove("drop-append");
+            if (!drag) return;
+            const parentId = targetParentId();
+            e.preventDefault();
+            e.stopPropagation();
+            nodeDragState = null;
+            if (!parentId || !canDropIntoFolder(drag.id, parentId)) return;
+            moveBookmarkTo(drag.id, parentId, -1);
+        });
+    }
+
+    /** Safety net: whenever a drag ends anywhere, reset highlights and state */
+    function attachNodeDragGlobals() {
+        document.addEventListener("dragend", () => {
+            nodeDragState = null;
+            clearDropHighlights();
+        });
     }
 
     function getNodePath(node) {
@@ -4684,6 +4918,7 @@
         }, CLOCK_INTERVAL_MS - (Date.now() % CLOCK_INTERVAL_MS));
         attachDesktopIconEvents();
         attachBookmarkListeners();
+        attachNodeDragGlobals();
         updateWeather(); // reads cache + refreshes in the background right away
         loadSettings().then(loadBookmarks);
     }
