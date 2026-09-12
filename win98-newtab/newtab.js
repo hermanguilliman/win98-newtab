@@ -935,7 +935,8 @@
     function createWindow(opts) {
         const id = ++state.windowIdCounter;
         const w = opts.width || 500;
-        const h = opts.height || 400;
+        const h = opts.height != null ? opts.height : 400;
+        const isDialog = !!opts.dialog;
         // Windows appear centered on the desktop; each new window is nudged
         // down-right by 28px so stacked windows stay distinguishable.
         const vw = window.innerWidth;
@@ -966,11 +967,12 @@
             prevBounds: null,
             winType: opts.winType || null,
             bookmarkId: opts.bookmarkId || null,
+            dialog: isDialog,
         };
 
         // Build DOM
         const el = document.createElement("div");
-        el.className = "win98-window";
+        el.className = "win98-window" + (isDialog ? " win98-window--dialog" : "");
         el.id = `win-${id}`;
         el.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;z-index:${++state.zCounter};`;
 
@@ -979,16 +981,18 @@
         <img class="win98-titlebar-icon" src="${resolvedIcon}" alt="">
         <span class="win98-titlebar-text">${escapeHtml(opts.title || "")}</span>
         <div class="win98-titlebar-buttons">
-          <button class="win98-titlebar-btn" data-action="minimize" title="Свернуть">_</button>
-          <button class="win98-titlebar-btn" data-action="maximize" title="Развернуть">□</button>
-          <button class="win98-titlebar-btn" data-action="close" title="Закрыть">✕</button>
+          ${isDialog
+            ? `<button class="win98-titlebar-btn" data-action="close" title="Закрыть">✕</button>`
+            : `<button class="win98-titlebar-btn" data-action="minimize" title="Свернуть">_</button>
+               <button class="win98-titlebar-btn" data-action="maximize" title="Развернуть">□</button>
+               <button class="win98-titlebar-btn" data-action="close" title="Закрыть">✕</button>`}
         </div>
       </div>
       ${opts.toolbar ? `<div class="win98-toolbar">${opts.toolbar}</div>` : ""}
       ${opts.addressbar ? `<div class="win98-addressbar"><label>Адрес:</label><input class="win98-addressbar-input" type="text" value="${escapeHtml(opts.addressbarValue || "")}" readonly></div>` : ""}
       <div class="win98-window-content">${opts.content || ""}</div>
       ${opts.statusbar !== false ? `<div class="win98-statusbar"><div class="win98-statusbar-field">${escapeHtml(opts.statusText || "")}</div>${opts.statusText2 != null ? `<div class="win98-statusbar-field win98-statusbar-field2">${escapeHtml(opts.statusText2)}</div>` : ""}</div>` : ""}
-      <div class="win98-resize-handle"></div>
+      ${isDialog ? "" : `<div class="win98-resize-handle"></div>`}
     `;
 
         $windowsContainer.appendChild(el);
@@ -1004,27 +1008,28 @@
             startDrag(e, winData);
         });
         titlebar.addEventListener("dblclick", (e) => {
+            if (isDialog) return;
             if (e.target.closest(".win98-titlebar-btn")) return;
             toggleMaximize(id);
         });
 
         // Title bar buttons
-        el.querySelector('[data-action="minimize"]').addEventListener(
+        el.querySelector('[data-action="minimize"]')?.addEventListener(
             "click",
             () => minimizeWindow(id),
         );
-        el.querySelector('[data-action="maximize"]').addEventListener(
+        el.querySelector('[data-action="maximize"]')?.addEventListener(
             "click",
             () => toggleMaximize(id),
         );
-        el.querySelector('[data-action="close"]').addEventListener(
+        el.querySelector('[data-action="close"]')?.addEventListener(
             "click",
             () => closeWindow(id),
         );
 
         // Resize handle
         const resizeHandle = el.querySelector(".win98-resize-handle");
-        resizeHandle.addEventListener("mousedown", (e) => {
+        resizeHandle?.addEventListener("mousedown", (e) => {
             e.stopPropagation();
             bringToFront(id);
             startResize(e, winData);
@@ -2044,7 +2049,6 @@
                 ? drawFolderIcon("#c0b060", false, 16)
                 : drawPageIcon(16),
             width: 380,
-            height: 300,
             body,
             buttons: [{ label: "OK" }],
         });
@@ -2110,9 +2114,10 @@
 
         const winData = createWindow({
             title: opts.title || "",
-            icon: opts.icon || "icons/settings.svg",
+            icon: opts.icon || drawComputerIcon(16),
             width: opts.width || 340,
-            height: opts.height || 140,
+            height: 0,
+            dialog: true,
             content: "",
             statusbar: false,
             onCreated: (el) => {
@@ -2137,8 +2142,49 @@
                 ce.appendChild(btnRow);
             },
         });
+
+        // Win98 dialogs size to their content — no empty space, no needless
+        // scrollbars. Cap at the viewport so small screens still work, and
+        // recenter vertically after the real height is known.
+        requestAnimationFrame(() => {
+            const el = winData.el;
+            if (!el.isConnected) return;
+            el.style.height = "auto";
+            const natural = el.offsetHeight;
+            const maxH = Math.max(160, window.innerHeight - 56);
+            const h = Math.min(natural, maxH);
+            el.style.height = h + "px";
+            el.style.minHeight = h + "px";
+            if (natural > maxH) {
+                el.classList.add("win98-window--dialog-scroll");
+            }
+            const y = Math.max(4, Math.round((window.innerHeight - h) / 2));
+            el.style.top = y + "px";
+        });
+
         return winData;
     }
+
+    /** Enter = default button, Esc = close, for whichever dialog is active */
+    document.addEventListener("keydown", (e) => {
+        const winData = state.windows.find(
+            (w) => w.dialog && !w.minimized && w.id === state.activeWindowId,
+        );
+        if (!winData) return;
+        if (
+            e.key === "Enter" &&
+            !e.target.closest("input,textarea,select,button")
+        ) {
+            e.preventDefault();
+            const ok = winData.el.querySelector(
+                ".win98-dialog-buttons .win98-btn",
+            );
+            if (ok) ok.click();
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            closeWindow(winData.id);
+        }
+    });
 
     function openConfirmDialog(title, message, onConfirm) {
         const body = document.createElement("div");
@@ -2173,7 +2219,6 @@
             title,
             icon: icon || drawComputerIcon(16),
             width: 270,
-            height: 168,
             body,
             buttons: [{ label: "OK" }],
         });
@@ -2970,7 +3015,6 @@
         openDialog({
             title: "Свойства панели задач",
             width: 320,
-            height: 240,
             body,
             buttons: [
                 {

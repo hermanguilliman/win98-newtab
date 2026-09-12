@@ -1029,12 +1029,25 @@ body {
 /* ============================================================
    WIN98 DIALOGS (child windows: prompt / confirm)
    ============================================================ */
+.win98-window--dialog {
+    min-height: 0;
+}
+
+/* Dialogs have a plain silver body — no white insert with an inset frame */
+.win98-window--dialog .win98-window-content,
+.win98-window--dialog .win98-window-content.win98-dialog-container {
+    background: var(--win98-silver);
+    border: none;
+    box-shadow: none;
+    margin: 0;
+}
+
 .win98-dialog {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 14px 16px;
-    font-size: 16px;
+    gap: 8px;
+    padding: 12px 14px;
+    font-size: 11px;
     box-sizing: border-box;
 }
 
@@ -1052,12 +1065,12 @@ body {
     flex-direction: column;
     justify-content: center;
     gap: 0;
-    padding: 8px 10px 6px;
-    height: 100%;
-    overflow: hidden;
+    padding: 8px 12px 4px;
+    flex: 1;
+    min-height: 0;
 }
 
-/* Msgboxes («О программе» и др.) никогда не скроллятся — контент короткий */
+/* Msgboxes («О программе» и др.) содержат короткий текст — без скролла */
 .win98-dialog-container:has(.win98-msgbox) {
     overflow: hidden;
 }
@@ -1066,7 +1079,7 @@ body {
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
 }
 
