@@ -1238,7 +1238,9 @@ body {
 
 .win98-tabpanel {
     display: none;
-    height: 100%;
+    /* auto height + cap: lets tall panels scroll instead of clipping */
+    height: auto;
+    max-height: 100%;
     overflow: auto;
 }
 
@@ -1395,6 +1397,73 @@ input[type="radio"]:disabled:checked::after {
     gap: 12px;
     margin-left: 18px;
     padding: 4px 0;
+}
+
+/* ---------- Wallpaper scale slider ---------- */
+.wp-scale-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 18px;
+    padding: 4px 0;
+}
+
+.wp-scale-label {
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.wp-scale-value {
+    font-size: 11px;
+    min-width: 42px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.win98-range {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    flex: 1;
+    min-width: 120px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+    background: repeating-conic-gradient(
+            var(--win98-silver) 0% 25%,
+            var(--win98-white) 0% 50%
+        )
+        50% / 2px 2px;
+    border: 2px solid;
+    border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
+        var(--win98-dark-gray);
+    box-shadow: inset 1px 1px 0 var(--win98-black);
+}
+
+.win98-range:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.win98-range::-webkit-slider-runnable-track {
+    background: transparent;
+    height: 12px;
+}
+
+.win98-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -1px;
+    border-radius: 0;
+    background: var(--win98-silver);
+    border: 2px solid;
+    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+        var(--win98-white);
+    box-shadow: inset -1px 0 0 var(--win98-dark-gray);
 }
 
 /* ---------- Color picker swatch ---------- */

@@ -49,6 +49,7 @@
             color: "#008080",
             imageData: null,
             imageStyle: "tile",
+            scale: 100,
             uiType: "color",
         },
     };
@@ -3886,6 +3887,8 @@
                 base.wallpaper.imageData = wp.imageData;
             if (["stretch", "tile", "center"].includes(wp.imageStyle))
                 base.wallpaper.imageStyle = wp.imageStyle;
+            if (typeof wp.scale === "number")
+                base.wallpaper.scale = clampInt(Math.round(wp.scale), 10, 500);
             if (["color", "file", "url"].includes(wp.uiType))
                 base.wallpaper.uiType = wp.uiType;
         }
@@ -3961,6 +3964,23 @@
         }
     }
 
+    /** Natural pixel size of a wallpaper image (data URL), cached per URL */
+    function resolveImageSize(dataUrl) {
+        if (!state.wallpaperSizeCache) state.wallpaperSizeCache = new Map();
+        let pending = state.wallpaperSizeCache.get(dataUrl);
+        if (!pending) {
+            pending = new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () =>
+                    resolve({ w: img.naturalWidth, h: img.naturalHeight });
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+            });
+            state.wallpaperSizeCache.set(dataUrl, pending);
+        }
+        return pending;
+    }
+
     /** Apply wallpaper to the desktop background */
     function applyWallpaper(wp) {
         wp =
@@ -3974,16 +3994,31 @@
             desk.style.backgroundImage = `url(${wp.imageData})`;
             desk.style.backgroundColor = wp.color || "#008080";
             const sty = wp.imageStyle || "tile";
+            const scale = clampInt(Math.round(wp.scale || 100), 10, 500) / 100;
+
+            const applyTileOrCenter = (size) => {
+                if (size && scale !== 1) {
+                    const w = Math.max(1, Math.round(size.w * scale));
+                    const h = Math.max(1, Math.round(size.h * scale));
+                    desk.style.backgroundSize = `${w}px ${h}px`;
+                } else {
+                    desk.style.backgroundSize = "auto";
+                }
+                desk.style.backgroundRepeat =
+                    sty === "tile" ? "repeat" : "no-repeat";
+                desk.style.backgroundPosition =
+                    sty === "center" ? "center center" : "0 0";
+            };
+
             if (sty === "stretch") {
                 desk.style.backgroundSize = "100% 100%";
                 desk.style.backgroundRepeat = "no-repeat";
-            } else if (sty === "center") {
+            } else if (scale !== 1) {
+                // Need the natural size to scale; resolve asynchronously
                 desk.style.backgroundSize = "auto";
-                desk.style.backgroundRepeat = "no-repeat";
-                desk.style.backgroundPosition = "center center";
+                resolveImageSize(wp.imageData).then(applyTileOrCenter);
             } else {
-                desk.style.backgroundSize = "auto";
-                desk.style.backgroundRepeat = "repeat";
+                applyTileOrCenter(null);
             }
         } else {
             desk.style.backgroundImage = "none";
@@ -4212,6 +4247,28 @@
             styleRow.appendChild(lbl);
         });
         wg.appendChild(styleRow);
+
+        // -- Масштаб (slider) --
+        const scaleRow = document.createElement("div");
+        scaleRow.className = "wp-scale-row";
+        const scaleLabel = document.createElement("label");
+        scaleLabel.className = "wp-scale-label";
+        scaleLabel.textContent = "Масштаб:";
+        const scaleSlider = document.createElement("input");
+        scaleSlider.type = "range";
+        scaleSlider.min = "10";
+        scaleSlider.max = "500";
+        scaleSlider.step = "10";
+        scaleSlider.className = "win98-range";
+        scaleSlider.value = String(
+            clampInt(Math.round(pending.wallpaper.scale || 100), 10, 500),
+        );
+        scaleSlider.disabled = uiType === "color";
+        const scaleValue = document.createElement("span");
+        scaleValue.className = "wp-scale-value";
+        scaleValue.textContent = scaleSlider.value + "%";
+        scaleRow.append(scaleLabel, scaleSlider, scaleValue);
+        wg.appendChild(scaleRow);
 
         // -- Preview --
         const preview = document.createElement("div");
@@ -4584,6 +4641,7 @@
             styleRow
                 .querySelectorAll("input")
                 .forEach((r) => (r.disabled = uiType === "color"));
+            scaleSlider.disabled = uiType === "color";
         };
 
         const renderPreview = () => {
@@ -4594,17 +4652,31 @@
             previewImg.style.backgroundColor =
                 pending.wallpaper.color || "#008080";
             const sty = pending.wallpaper.imageStyle || "tile";
-            if (sty === "stretch") {
-                previewImg.style.backgroundSize = "100% 100%";
-                previewImg.style.backgroundRepeat = "no-repeat";
-            } else if (sty === "center") {
-                previewImg.style.backgroundSize = "auto";
-                previewImg.style.backgroundRepeat = "no-repeat";
-                previewImg.style.backgroundPosition = "center center";
+            const scale =
+                clampInt(Math.round(pending.wallpaper.scale || 100), 10, 500) /
+                100;
+            const applyStyle = (size) => {
+                if (sty === "stretch") {
+                    previewImg.style.backgroundSize = "100% 100%";
+                    previewImg.style.backgroundRepeat = "no-repeat";
+                    previewImg.style.backgroundPosition = "0 0";
+                    return;
+                }
+                if (size && scale !== 1) {
+                    previewImg.style.backgroundSize = `${Math.max(1, Math.round(size.w * scale))}px ${Math.max(1, Math.round(size.h * scale))}px`;
+                } else {
+                    previewImg.style.backgroundSize = "auto";
+                }
+                previewImg.style.backgroundRepeat =
+                    sty === "tile" ? "repeat" : "no-repeat";
+                previewImg.style.backgroundPosition =
+                    sty === "center" ? "center center" : "0 0";
+            };
+            if (isImg && scale !== 1) {
+                applyStyle(null);
+                resolveImageSize(pending.wallpaper.imageData).then(applyStyle);
             } else {
-                previewImg.style.backgroundSize = "auto";
-                previewImg.style.backgroundRepeat = "repeat";
-                previewImg.style.backgroundPosition = "0 0";
+                applyStyle(null);
             }
         };
 
@@ -4701,6 +4773,17 @@
                     liveApply();
                 }
             });
+        });
+
+        scaleSlider.addEventListener("input", () => {
+            pending.wallpaper.scale = clampInt(
+                Math.round(+scaleSlider.value || 100),
+                10,
+                500,
+            );
+            scaleValue.textContent = scaleSlider.value + "%";
+            renderPreview();
+            liveApply();
         });
 
         singleRadio.addEventListener("change", () => {
