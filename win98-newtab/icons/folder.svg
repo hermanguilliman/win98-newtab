@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <!-- Win98 Folder -->
-  <path d="M2 8 L2 26 L30 26 L30 10 L14 10 L12 8 Z" fill="#d4c044"/>
-  <path d="M2 10 L30 10 L30 26 L2 26 Z" fill="#c8a032"/>
-  <path d="M4 12 L28 12 L28 24 L4 24 Z" fill="#d4c044"/>
-  <path d="M4 12 L28 12 L28 14 L4 14 Z" fill="#e0d060"/>
-  <path d="M4 22 L28 22 L28 24 L4 24 Z" fill="#a08020"/>
-</svg>
