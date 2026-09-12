@@ -1607,6 +1607,17 @@ input[type="radio"]:disabled:checked::after {
     transform: translateY(0);
 }
 
+/* While the auto-hidden taskbar is off-screen, the desktop stretches over its
+   area — otherwise a bare strip (body background) shows at the bottom. */
+body:has(#taskbar.taskbar-autohide:not(:hover):not(.taskbar-force-show))
+    #desktop {
+    bottom: 0;
+}
+
+body:has(#taskbar.taskbar-autohide) #desktop {
+    transition: bottom 0.2s ease-out;
+}
+
 /* ---------- Taskbar: small icons mode ---------- */
 #taskbar.taskbar-small .taskbar-launch-btn {
     width: 20px;
