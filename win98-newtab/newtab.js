@@ -1,1315 +1,1150 @@
-/* ============================================================
-   Win98 Bookmarks Desktop — newtab.js
-   Chrome Extension that replaces new tab with Win98 desktop
-   showing all bookmarks as desktop icons & folders.
-   ============================================================ */
-
 (() => {
-    "use strict";
+  // src/lib/format.ts
+  var _ESCAPE_MAP = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  };
+  var _ESCAPE_RE = /[&<>"']/g;
+  function escapeHtml(str) {
+    return String(str).replace(_ESCAPE_RE, (ch) => _ESCAPE_MAP[ch] || ch);
+  }
+  function clampInt(v, min, max) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  }
 
-    /* ============================================================
-       Types (JSDoc — checked by `tsc --noEmit`, see tsconfig.json)
-       ============================================================ */
-
-    /** Chrome bookmarks tree node (also used for the synthetic «Все закладки» root). */
-    /** @typedef {chrome.bookmarks.BookmarkTreeNode} BookmarkNode */
-
-    /**
-     * @typedef {object} WallpaperSettings
-     * @property {"color"|"image"} type
-     * @property {string} color
-     * @property {string|null} imageData
-     * @property {"stretch"|"tile"|"center"} imageStyle
-     * @property {number} scale
-     * @property {"color"|"file"|"url"} uiType
-     */
-
-    /**
-     * @typedef {object} Settings
-     * @property {"single"|"double"} clickMode
-     * @property {number} iconSize
-     * @property {number} labelSize
-     * @property {number} iconGap
-     * @property {number} desktopPadX
-     * @property {number} desktopPadY
-     * @property {"classic"|"glossy"|"outlined"} folderIconStyle
-     * @property {string} weatherCity
-     * @property {boolean} showClockDate
-     * @property {boolean} showClockWeekday
-     * @property {boolean} iconLabelShadow
-     * @property {"icons"|"list"} folderViewMode
-     * @property {string} uiFont
-     * @property {boolean} taskbarAutoHide
-     * @property {boolean} taskbarSmallIcons
-     * @property {boolean} showClock
-     * @property {WallpaperSettings} wallpaper
-     * @property {"classic"|"olive"|"high-contrast"|"custom"} theme
-     * @property {Object<string, string>} customColors
-     */
-
-    /**
-     * A single open window (folder windows, dialogs, apps, …).
-     * `el` lives only after createWindow() builds the DOM.
-     * @typedef {object} WinData
-     * @property {number} id
-     * @property {string} title
-     * @property {string} icon
-     * @property {number} x
-     * @property {number} y
-     * @property {number} w
-     * @property {number} h
-     * @property {HTMLDivElement} [el]
-     * @property {boolean} minimized
-     * @property {boolean} maximized
-     * @property {{x: number, y: number, w: number, h: number}|null} prevBounds
-     * @property {string|null} winType
-     * @property {string|null} bookmarkId
-     * @property {boolean} dialog
-     * @property {BookmarkNode|null} [currentNode]
-     * @property {(BookmarkNode|null)[]} [navStack]
-     * @property {() => void} [searchFilter]
-     * @property {HTMLButtonElement} [okButton]
-     * @property {number} [_savedIndex]
-     */
-
-    /** Desktop icon / folder item div carrying its bookmark node. */
-    /** @typedef {HTMLDivElement & { _node?: BookmarkNode }} IconEl */
-
-    /** Search window UI (div + its expando fields). */
-    /** @typedef {HTMLDivElement & { filter: () => void, input: HTMLInputElement }} SearchUI */
-
-    /** Search index entry: bookmark node with precomputed lowercased search fields. */
-    /** @typedef {BookmarkNode & { _tl?: string, _ul?: string, _pl?: string, isFolder?: boolean, path?: string }} SearchNode */
-
-    /**
-     * Resolve an event target to an Element. TS types `EventTarget` without
-     * `closest`; all listeners in this file attach to element targets, so the
-     * runtime result is identical to the original direct call.
-     * @param {Event} e
-     * @returns {Element | null}
-     */
-    function eventTargetElement(e) {
-        return e.target instanceof Element ? e.target : null;
-    }
-
-    /* ---------- State ---------- */
-    const state = {
-        /** @type {WinData[]} */
-        windows: [],
-        windowIdCounter: 0,
-        zCounter: 100,
-        activeWindowId: null,
-        startMenuOpen: false,
-        dragState: null,
-        resizeState: null,
-        /** @type {Settings | null} */
-        settings: null,
-        /** @type {BookmarkNode | null} */
-        treeRoot: null,
-        bookmarksRefreshTimer: 0,
-        /** @type {SearchNode[]} */
-        searchNodes: [],
-        /** @type {Map<string, BookmarkNode> | null} */
-        nodeIndex: null,
-        /** @type {IconEl | null} */
-        selectedDesktopEl: null,
-        weatherData: null,
-        clipUrl: null,
+  // src/lib/bookmarks.ts
+  var ALL_ROOT_ID = "__root__";
+  var ROOT_ORDER = { 1: 0, 2: 1, 3: 2 };
+  function isFolderNode(n) {
+    return !!n && !n.url && Array.isArray(n.children);
+  }
+  function isBookmarkNode(n) {
+    return !!n && !!n.url;
+  }
+  function isVisibleNode(n) {
+    return isFolderNode(n) || isBookmarkNode(n);
+  }
+  function buildNodeIndex(root) {
+    const map = /* @__PURE__ */ new Map();
+    const walk = (n) => {
+      if (!n) return;
+      map.set(n.id, n);
+      (n.children || []).forEach(walk);
     };
+    walk(root);
+    return map;
+  }
+  function isRootFolder(node) {
+    return !!node && node.parentId === "0";
+  }
+  function getNodePath(node, nodeIndex) {
+    const parts = [];
+    let cur = node;
+    while (cur && cur.title) {
+      parts.unshift(cur.title);
+      if (!cur.parentId || cur.parentId === "0") break;
+      const parent = nodeIndex && nodeIndex.get(cur.parentId);
+      if (!parent) break;
+      cur = parent;
+    }
+    return parts.join(" > ") || "/";
+  }
 
-    /* ---------- Default settings ---------- */
-    /** @type {Settings} */
-    const DEFAULT_SETTINGS = {
-        clickMode: "double",
-        iconSize: 32,
-        labelSize: 11,
-        iconGap: 4,
-        desktopPadX: 8,
-        desktopPadY: 8,
-        folderIconStyle: "classic",
-        weatherCity: "Москва",
-        showClockDate: true,
-        showClockWeekday: true,
-        iconLabelShadow: true,
-        folderViewMode: "icons",
-        uiFont: "Tahoma, 'MS Sans Serif', 'Segoe UI', sans-serif",
-        taskbarAutoHide: false,
-        taskbarSmallIcons: false,
-        showClock: true,
-        theme: "classic",
-        customColors: /** @type {Object<string, string>} */ ({}),
-        wallpaper: {
-            type: "color",
-            color: "#008080",
-            imageData: null,
-            imageStyle: "tile",
-            scale: 100,
-            uiType: "color",
-        },
+  // src/lib/theme.ts
+  var THEME_OPTIONS = [
+    {
+      id: "classic",
+      label: "Классическая",
+      desc: "Стандартные серые цвета Windows 98"
+    },
+    {
+      id: "olive",
+      label: "Оливковая",
+      desc: "Тёплые зелёно-оливковые тона"
+    },
+    {
+      id: "high-contrast",
+      label: "Высокий контраст",
+      desc: "Чёрные окна, белый текст, синяя подсветка"
+    },
+    {
+      id: "dracula",
+      label: "Дракула",
+      desc: "Тёмная тема с фиолетовыми и зелёными акцентами"
+    },
+    { id: "custom", label: "Пользовательская", desc: "Свои цвета" }
+  ];
+  var THEME_COLORS = {
+    olive: {
+      "--win98-silver": "#b5b5a1",
+      "--win98-btn-face": "#b5b5a1",
+      "--win98-hover": "#d5d5c1",
+      "--win98-inset-bg": "#d0d0b8",
+      "--win98-input-bg": "#fffff0",
+      "--win98-navy": "#404000",
+      "--win98-highlight": "#808000",
+      "--win98-shadow": "#505040",
+      "--win98-dark-gray": "#606050",
+      "--win98-radio-edge2": "#a0a090",
+      "--win98-wp-preview": "#408040",
+      "--win98-title-active": "linear-gradient(90deg, #404000, #808040)",
+      "--win98-title-inactive": "linear-gradient(90deg, #808040, #a0a080)"
+    },
+    "high-contrast": {
+      "--win98-silver": "#000000",
+      "--win98-btn-face": "#000000",
+      "--win98-hover": "#000080",
+      "--win98-inset-bg": "#000000",
+      "--win98-input-bg": "#000000",
+      "--win98-content-bg": "#000000",
+      "--win98-navy": "#0000ff",
+      "--win98-highlight": "#0000ff",
+      "--win98-black": "#ffffff",
+      "--win98-shadow": "#808080",
+      "--win98-dark-gray": "#808080",
+      "--win98-radio-check": "#00ff00",
+      "--win98-radio-edge1": "#ffffff",
+      "--win98-radio-edge2": "#808080",
+      "--win98-radio-shadow": "#000000",
+      "--win98-wp-preview": "#000000",
+      "--win98-title-active": "linear-gradient(90deg, #000080, #0000ff)",
+      "--win98-title-inactive": "linear-gradient(90deg, #808080, #808080)"
+    },
+    dracula: {
+      "--win98-silver": "#282a36",
+      "--win98-btn-face": "#44475a",
+      "--win98-hover": "#44475a",
+      "--win98-inset-bg": "#21222c",
+      "--win98-input-bg": "#191a21",
+      "--win98-content-bg": "#282a36",
+      "--win98-navy": "#bd93f9",
+      "--win98-highlight": "#ff79c6",
+      "--win98-black": "#f8f8f2",
+      "--win98-shadow": "#191a21",
+      "--win98-dark-gray": "#6272a4",
+      "--win98-radio-check": "#50fa7b",
+      "--win98-radio-edge1": "#f8f8f2",
+      "--win98-radio-edge2": "#6272a4",
+      "--win98-radio-shadow": "#191a21",
+      "--win98-wp-preview": "#282a36",
+      "--win98-title-active": "linear-gradient(90deg, #44475a, #bd93f9)",
+      "--win98-title-inactive": "linear-gradient(90deg, #282a36, #44475a)"
+    }
+  };
+  var CUSTOM_THEME_KEYS = [
+    { css: "--win98-silver", label: "Цвет окон", def: "#c0c0c0" },
+    { css: "--win98-content-bg", label: "Фон содержимого окон", def: "#ffffff" },
+    { css: "--win98-btn-face", label: "Цвет кнопок", def: "#c0c0c0" },
+    { css: "--win98-navy", label: "Цвет выделения", def: "#000080" },
+    { css: "--win98-black", label: "Цвет текста", def: "#000000" },
+    { css: "--win98-highlight", label: "Цвет подсветки", def: "#0000aa" },
+    { css: "--win98-shadow", label: "Цвет теней", def: "#606060" }
+  ];
+  function shadeColor(color, percent) {
+    let R = parseInt(color.substring(1, 3), 16);
+    let G = parseInt(color.substring(3, 5), 16);
+    let B = parseInt(color.substring(5, 7), 16);
+    R = Math.min(255, Math.max(0, R + Math.round(R * percent / 100)));
+    G = Math.min(255, Math.max(0, G + Math.round(G * percent / 100)));
+    B = Math.min(255, Math.max(0, B + Math.round(B * percent / 100)));
+    return `#${R.toString(16).padStart(2, "0")}${G.toString(16).padStart(2, "0")}${B.toString(16).padStart(2, "0")}`;
+  }
+  function themeResetKeys() {
+    const keys = /* @__PURE__ */ new Set();
+    Object.values(THEME_COLORS).forEach(
+      (palette) => Object.keys(palette).forEach((k) => keys.add(k))
+    );
+    CUSTOM_THEME_KEYS.forEach((k) => keys.add(k.css));
+    return [...keys];
+  }
+  function themeColorsFor(themeId, customColors) {
+    if (themeId === "custom") {
+      const sel = customColors["--win98-navy"] || "#000080";
+      const inactive = customColors["--win98-shadow"] || "#808080";
+      return {
+        ...customColors,
+        "--win98-title-active": `linear-gradient(90deg, ${sel}, ${shadeColor(sel, 35)})`,
+        "--win98-title-inactive": `linear-gradient(90deg, ${inactive}, ${shadeColor(inactive, 35)})`
+      };
+    }
+    if (THEME_COLORS[themeId]) return THEME_COLORS[themeId];
+    return null;
+  }
+
+  // src/lib/settings.ts
+  var ICON_SIZES = [24, 32, 48];
+  var FOLDER_STYLES = [
+    { id: "classic", label: "Классические" },
+    { id: "glossy", label: "Объёмные" },
+    { id: "outlined", label: "С контуром" }
+  ];
+  var UI_FONTS = [
+    { label: "Tahoma", value: "Tahoma, 'MS Sans Serif', 'Segoe UI', sans-serif" },
+    { label: "MS Sans Serif", value: "'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif" },
+    { label: "Segoe UI", value: "'Segoe UI', Tahoma, sans-serif" },
+    { label: "Courier New", value: "'Courier New', monospace" },
+    { label: "Times New Roman", value: "'Times New Roman', Times, serif" }
+  ];
+  var DEFAULT_SETTINGS = {
+    clickMode: "double",
+    iconSize: 32,
+    labelSize: 11,
+    iconGap: 4,
+    desktopPadX: 8,
+    desktopPadY: 8,
+    folderIconStyle: "classic",
+    weatherCity: "Москва",
+    showClockDate: true,
+    showClockWeekday: true,
+    iconLabelShadow: true,
+    folderViewMode: "icons",
+    uiFont: "Tahoma, 'MS Sans Serif', 'Segoe UI', sans-serif",
+    taskbarAutoHide: false,
+    taskbarSmallIcons: false,
+    showClock: true,
+    theme: "classic",
+    customColors: {},
+    wallpaper: {
+      type: "color",
+      color: "#008080",
+      imageData: null,
+      imageStyle: "tile",
+      scale: 100,
+      uiType: "color"
+    }
+  };
+  var HEX6_RE = /^#[0-9a-fA-F]{6}$/;
+  function mergeSettings(partial) {
+    const base = structuredClone(DEFAULT_SETTINGS);
+    if (!partial) return base;
+    if (partial.clickMode === "single" || partial.clickMode === "double") {
+      base.clickMode = partial.clickMode;
+    }
+    if (typeof partial.iconSize === "number" && ICON_SIZES.includes(partial.iconSize)) {
+      base.iconSize = partial.iconSize;
+    }
+    const labelSize = clampInt(partial.labelSize, 9, 18);
+    if (labelSize !== null) base.labelSize = labelSize;
+    const iconGap = clampInt(partial.iconGap, 0, 32);
+    if (iconGap !== null) base.iconGap = iconGap;
+    const desktopPadX = clampInt(partial.desktopPadX, 0, 64);
+    if (desktopPadX !== null) base.desktopPadX = desktopPadX;
+    const desktopPadY = clampInt(partial.desktopPadY, 0, 64);
+    if (desktopPadY !== null) base.desktopPadY = desktopPadY;
+    const folderStyle = partial.folderIconStyle;
+    if (folderStyle && FOLDER_STYLES.some((s) => s.id === folderStyle)) {
+      base.folderIconStyle = folderStyle;
+    }
+    if (typeof partial.weatherCity === "string" && partial.weatherCity.trim()) {
+      base.weatherCity = partial.weatherCity.trim();
+    }
+    if (typeof partial.showClockDate === "boolean") {
+      base.showClockDate = partial.showClockDate;
+    }
+    if (typeof partial.showClockWeekday === "boolean") {
+      base.showClockWeekday = partial.showClockWeekday;
+    }
+    if (typeof partial.iconLabelShadow === "boolean") {
+      base.iconLabelShadow = partial.iconLabelShadow;
+    }
+    if (partial.folderViewMode === "icons" || partial.folderViewMode === "list") {
+      base.folderViewMode = partial.folderViewMode;
+    }
+    const uiFont = partial.uiFont;
+    if (uiFont && UI_FONTS.some((f) => f.value === uiFont)) {
+      base.uiFont = uiFont;
+    }
+    if (typeof partial.taskbarAutoHide === "boolean") {
+      base.taskbarAutoHide = partial.taskbarAutoHide;
+    }
+    if (typeof partial.taskbarSmallIcons === "boolean") {
+      base.taskbarSmallIcons = partial.taskbarSmallIcons;
+    }
+    if (typeof partial.showClock === "boolean") {
+      base.showClock = partial.showClock;
+    }
+    const theme = partial.theme;
+    if (theme && THEME_OPTIONS.some((t) => t.id === theme)) {
+      base.theme = theme;
+    }
+    if (partial.customColors && typeof partial.customColors === "object" && !Array.isArray(partial.customColors)) {
+      const colors = {};
+      CUSTOM_THEME_KEYS.forEach((k) => {
+        const v = partial.customColors[k.css];
+        if (typeof v === "string" && HEX6_RE.test(v)) {
+          colors[k.css] = v;
+        }
+      });
+      base.customColors = colors;
+    }
+    if (partial.wallpaper) {
+      const wp = partial.wallpaper;
+      if (wp.type === "color" || wp.type === "image") {
+        base.wallpaper.type = wp.type;
+      }
+      if (typeof wp.color === "string") base.wallpaper.color = wp.color;
+      if (typeof wp.imageData === "string") base.wallpaper.imageData = wp.imageData;
+      if (wp.imageStyle === "stretch" || wp.imageStyle === "tile" || wp.imageStyle === "center") {
+        base.wallpaper.imageStyle = wp.imageStyle;
+      }
+      const scale = clampInt(Math.round(wp.scale), 10, 500);
+      if (typeof wp.scale === "number" && scale !== null) {
+        base.wallpaper.scale = scale;
+      }
+      if (wp.uiType === "color" || wp.uiType === "file" || wp.uiType === "url") {
+        base.wallpaper.uiType = wp.uiType;
+      }
+    }
+    return base;
+  }
+
+  // src/lib/search.ts
+  function buildSearchIndex(tree) {
+    const out = [];
+    const walk = (node, path) => {
+      if (!node) return;
+      const p = path ? `${path} > ${node.title}` : node.title;
+      const title = node.title || "";
+      if (isBookmarkNode(node)) {
+        out.push({
+          id: node.id,
+          title,
+          url: node.url,
+          path,
+          isFolder: false,
+          _tl: title.toLowerCase(),
+          _ul: (node.url || "").toLowerCase(),
+          _pl: (path || "").toLowerCase()
+        });
+      } else if (isFolderNode(node)) {
+        out.push({
+          id: node.id,
+          title,
+          url: null,
+          path,
+          isFolder: true,
+          _tl: title.toLowerCase(),
+          _ul: "",
+          _pl: (path || "").toLowerCase()
+        });
+        (node.children || []).forEach((c) => walk(c, p));
+      }
     };
-
-    /** Allowed icon sizes */
-    const ICON_SIZES = [24, 32, 48];
-
-    /* ---------- Named constants (magic numbers) ---------- */
-    const CLICK_DEBOUNCE_MS = 350;
-    const BOOKMARK_REFRESH_DEBOUNCE_MS = 250;
-    const SEARCH_RESULT_LIMIT = 200;
-    const MIN_WINDOW_W = 200;
-    const MIN_WINDOW_H = 120;
-    const WINDOW_STACK_OFFSET = 28;
-    const CLOCK_INTERVAL_MS = 10000;
-    const SEARCH_DEBOUNCE_MS = 150;
-    const ALL_ROOT_ID = "__root__";
-    const ROOT_ORDER = { 1: 0, 2: 1, 3: 2 };
-
-    /* ---------- DOM Refs ---------- */
-    const $desktop = document.getElementById("desktop");
-    const $desktopIcons = document.getElementById("desktop-icons");
-    const $windowsContainer = document.getElementById("windows-container");
-    const $taskbarWindows = document.getElementById("taskbar-windows");
-    const $startBtn = document.getElementById("start-btn");
-    const $startMenu = document.getElementById("start-menu");
-    const $clock = document.getElementById("clock");
-    const $weather = document.getElementById("weather");
-    const $menuAllBookmarks = document.getElementById("menu-all-bookmarks");
-    const $launcherNotepad = document.getElementById("launcher-notepad");
-    /** @type {HTMLElement & { _hideTimer?: number }} */
-    const $taskbar = document.getElementById("taskbar");
-
-    /* ============================================================
-     ICON GENERATION (Canvas → DataURL)
-     ============================================================ */
-
-    /** Draw a folder icon in the given style: "classic" (flat), "glossy" (gradient + shine) or "outlined" (dark contour) */
-    function currentIconSize() {
-        return (
-            (state.settings && state.settings.iconSize) ||
-            DEFAULT_SETTINGS.iconSize
-        );
+    (tree ? tree.children || [] : []).forEach((r) => walk(r, ""));
+    return out;
+  }
+  function scoreNode(n, q) {
+    if (n._tl.startsWith(q)) return 0;
+    if (n._tl.includes(q)) return 1;
+    if (n._ul.startsWith(q)) return 2;
+    return 3;
+  }
+  function filterSearchNodes(nodes, filter, limit) {
+    const q = (filter || "").toLowerCase().trim();
+    let list = nodes;
+    if (q) {
+      list = nodes.filter(
+        (n) => n._tl.includes(q) || n._ul.includes(q) || n._pl.includes(q)
+      );
+      list = list.sort(
+        (a, b) => scoreNode(a, q) - scoreNode(b, q) || a.title.localeCompare(b.title, "ru")
+      );
     }
+    return list.slice(0, limit);
+  }
 
-    /* Pixel-perfect recreations of the original Windows 98 folder icons
-       (shell32.dll: closed gold folder 48x48 256-color, classic open folder
-       32x32 with the blue document sheet). Row digits: "0" = transparent,
-       otherwise 1-based index into the palette. */
-    const FOLDER_BITMAPS = {
-        closed: {
-            w: 48,
-            h: 48,
-            ox: 0,
-            oy: 1,
-            ow: 48,
-            oh: 40,
-            palette: [
-                "#999900",
-                "#000000",
-                "#F8F8F8",
-                "#FFFF99",
-                "#CCCC66",
-                "#FFCC99",
-            ],
-            rows: [
-                "000000000000000000000000000000000000000000000000",
-                "000000111111111111120000000000000000000000000000",
-                "000001333333333333312000000000000000000000000000",
-                "000013444444444444441200000000000000000000000000",
-                "000134444444444444444120000000000000000000000000",
-                "001344444444444444444412000000000000000000000000",
-                "013444444444444444444441200000000000000000000000",
-                "134444444444444444444444120000000000000000000000",
-                "155555555555555555555555511111111111111111111200",
-                "133333333333333333333333333333333333333333333320",
-                "134444444444444444444444444444444444446446464612",
-                "134444444444444444444444444444644646464464446412",
-                "134444444444444444444444444464446444444644664612",
-                "134444444444444444444444646444464464646464646412",
-                "134444444444444444444444444446444446464464464612",
-                "134444444444444444444444444644646464444646646412",
-                "134444444444444444444646464444444446466464464612",
-                "134444444444444444444444444646464644644646646412",
-                "134444444444444444464444644444446464464644646612",
-                "134444444444444444444464464646464446646464646412",
-                "134444444444444446444444444444644664464646464612",
-                "134444444444444444464646464646446446464646646612",
-                "134444444444444644444444444464646464646464664612",
-                "134444444444444446444646464644464646464664646412",
-                "134444444444444444446444446446646446464646466612",
-                "134444444444646446464464644644464664646466646412",
-                "134444444444444444444446464466446446466644666612",
-                "134444444444444464464644444644664664646466464612",
-                "134444444464464644646446466464644646664664666612",
-                "134444444444444446444464644646466464466466646412",
-                "134444464446446444464644464646446646646646466612",
-                "134444444644644646446446646464664466464666664612",
-                "134444444444446444464464446464646664666646466612",
-                "134446446446444464646464664646464646464666666612",
-                "134444444444646446444646446464666466666464664612",
-                "134444446464444464466464664646644664646666466612",
-                "134464644444464644644646446646466646666466666612",
-                "134444446464646446464464664466464666464664666612",
-                "134644644446444646466464466646646466666666664612",
-                "151111111111111111111111111111111111111111111112",
-                "222222222222222222222222222222222222222222222220",
-                "000000000000000000000000000000000000000000000000",
-                "000000000000000000000000000000000000000000000000",
-                "000000000000000000000000000000000000000000000000",
-                "000000000000000000000000000000000000000000000000",
-                "000000000000000000000000000000000000000000000000",
-                "000000000000000000000000000000000000000000000000",
-                "000000000000000000000000000000000000000000000000",
-            ],
-        },
-        open: {
-            w: 32,
-            h: 32,
-            ox: 1,
-            oy: 1,
-            ow: 30,
-            oh: 29,
-            palette: [
-                "#999900",
-                "#CCCC66",
-                "#000000",
-                "#F8F8F8",
-                "#FFFF99",
-                "#999900",
-                "#0000FF",
-                "#000080",
-            ],
-            rows: [
-                "00000000000000000000000000000000",
-                "00000000000000010000000000000000",
-                "00000000000000123000000000000000",
-                "00000000000001442300000000000000",
-                "00000011111114444230000000000000",
-                "00000144444144444423000000000000",
-                "00001425251444444442300000000000",
-                "00014252514444444444231111110000",
-                "00014525144444444444423444443000",
-                "00014251444444444444442325256300",
-                "00014514444444444444444232526300",
-                "00014144444444444444444423256300",
-                "01122222222222222222222222326300",
-                "14444444444444444444444443236300",
-                "12525252525252525252525251323300",
-                "15252525252525257775252521342300",
-                "12525252525257777257525252344230",
-                "15252525252885777825252525314423",
-                "01525252528657887782525252134230",
-                "01252525286578253778252525132300",
-                "01525252565777777778525252533300",
-                "01252525628778888888252525236300",
-                "00125252668771525252525252513300",
-                "00152525673877113778252525213300",
-                "00125252675337777882525252523300",
-                "00152525272573333525252525253300",
-                "00015252527752525252525252526300",
-                "00012525252525252525252525256300",
-                "00016666666666666666666666666300",
-                "00003333333333333333333333333000",
-                "00000000000000000000000000000000",
-                "00000000000000000000000000000000",
-            ],
-        },
+  // src/app.js
+  function eventTargetElement(e) {
+    return e.target instanceof Element ? e.target : null;
+  }
+  var state = {
+    /** @type {WinData[]} */
+    windows: [],
+    windowIdCounter: 0,
+    zCounter: 100,
+    activeWindowId: null,
+    startMenuOpen: false,
+    dragState: null,
+    resizeState: null,
+    /** @type {Settings | null} */
+    settings: null,
+    /** @type {BookmarkNode | null} */
+    treeRoot: null,
+    bookmarksRefreshTimer: 0,
+    /** @type {SearchNode[]} */
+    searchNodes: [],
+    /** @type {Map<string, BookmarkNode> | null} */
+    nodeIndex: null,
+    /** @type {IconEl | null} */
+    selectedDesktopEl: null,
+    weatherData: null,
+    clipUrl: null
+  };
+  var CLICK_DEBOUNCE_MS = 350;
+  var BOOKMARK_REFRESH_DEBOUNCE_MS = 250;
+  var SEARCH_RESULT_LIMIT = 200;
+  var MIN_WINDOW_W = 200;
+  var MIN_WINDOW_H = 120;
+  var WINDOW_STACK_OFFSET = 28;
+  var CLOCK_INTERVAL_MS = 1e4;
+  var SEARCH_DEBOUNCE_MS = 150;
+  var $desktop = document.getElementById("desktop");
+  var $desktopIcons = document.getElementById("desktop-icons");
+  var $windowsContainer = document.getElementById("windows-container");
+  var $taskbarWindows = document.getElementById("taskbar-windows");
+  var $startBtn = document.getElementById("start-btn");
+  var $startMenu = document.getElementById("start-menu");
+  var $clock = document.getElementById("clock");
+  var $weather = document.getElementById("weather");
+  var $menuAllBookmarks = document.getElementById("menu-all-bookmarks");
+  var $launcherNotepad = document.getElementById("launcher-notepad");
+  var $taskbar = document.getElementById("taskbar");
+  function currentIconSize() {
+    return state.settings && state.settings.iconSize || DEFAULT_SETTINGS.iconSize;
+  }
+  var FOLDER_BITMAPS = {
+    closed: {
+      w: 48,
+      h: 48,
+      ox: 0,
+      oy: 1,
+      ow: 48,
+      oh: 40,
+      palette: [
+        "#999900",
+        "#000000",
+        "#F8F8F8",
+        "#FFFF99",
+        "#CCCC66",
+        "#FFCC99"
+      ],
+      rows: [
+        "000000000000000000000000000000000000000000000000",
+        "000000111111111111120000000000000000000000000000",
+        "000001333333333333312000000000000000000000000000",
+        "000013444444444444441200000000000000000000000000",
+        "000134444444444444444120000000000000000000000000",
+        "001344444444444444444412000000000000000000000000",
+        "013444444444444444444441200000000000000000000000",
+        "134444444444444444444444120000000000000000000000",
+        "155555555555555555555555511111111111111111111200",
+        "133333333333333333333333333333333333333333333320",
+        "134444444444444444444444444444444444446446464612",
+        "134444444444444444444444444444644646464464446412",
+        "134444444444444444444444444464446444444644664612",
+        "134444444444444444444444646444464464646464646412",
+        "134444444444444444444444444446444446464464464612",
+        "134444444444444444444444444644646464444646646412",
+        "134444444444444444444646464444444446466464464612",
+        "134444444444444444444444444646464644644646646412",
+        "134444444444444444464444644444446464464644646612",
+        "134444444444444444444464464646464446646464646412",
+        "134444444444444446444444444444644664464646464612",
+        "134444444444444444464646464646446446464646646612",
+        "134444444444444644444444444464646464646464664612",
+        "134444444444444446444646464644464646464664646412",
+        "134444444444444444446444446446646446464646466612",
+        "134444444444646446464464644644464664646466646412",
+        "134444444444444444444446464466446446466644666612",
+        "134444444444444464464644444644664664646466464612",
+        "134444444464464644646446466464644646664664666612",
+        "134444444444444446444464644646466464466466646412",
+        "134444464446446444464644464646446646646646466612",
+        "134444444644644646446446646464664466464666664612",
+        "134444444444446444464464446464646664666646466612",
+        "134446446446444464646464664646464646464666666612",
+        "134444444444646446444646446464666466666464664612",
+        "134444446464444464466464664646644664646666466612",
+        "134464644444464644644646446646466646666466666612",
+        "134444446464646446464464664466464666464664666612",
+        "134644644446444646466464466646646466666666664612",
+        "151111111111111111111111111111111111111111111112",
+        "222222222222222222222222222222222222222222222220",
+        "000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000"
+      ]
+    },
+    open: {
+      w: 32,
+      h: 32,
+      ox: 1,
+      oy: 1,
+      ow: 30,
+      oh: 29,
+      palette: [
+        "#999900",
+        "#CCCC66",
+        "#000000",
+        "#F8F8F8",
+        "#FFFF99",
+        "#999900",
+        "#0000FF",
+        "#000080"
+      ],
+      rows: [
+        "00000000000000000000000000000000",
+        "00000000000000010000000000000000",
+        "00000000000000123000000000000000",
+        "00000000000001442300000000000000",
+        "00000011111114444230000000000000",
+        "00000144444144444423000000000000",
+        "00001425251444444442300000000000",
+        "00014252514444444444231111110000",
+        "00014525144444444444423444443000",
+        "00014251444444444444442325256300",
+        "00014514444444444444444232526300",
+        "00014144444444444444444423256300",
+        "01122222222222222222222222326300",
+        "14444444444444444444444443236300",
+        "12525252525252525252525251323300",
+        "15252525252525257775252521342300",
+        "12525252525257777257525252344230",
+        "15252525252885777825252525314423",
+        "01525252528657887782525252134230",
+        "01252525286578253778252525132300",
+        "01525252565777777778525252533300",
+        "01252525628778888888252525236300",
+        "00125252668771525252525252513300",
+        "00152525673877113778252525213300",
+        "00125252675337777882525252523300",
+        "00152525272573333525252525253300",
+        "00015252527752525252525252526300",
+        "00012525252525252525252525256300",
+        "00016666666666666666666666666300",
+        "00003333333333333333333333333000",
+        "00000000000000000000000000000000",
+        "00000000000000000000000000000000"
+      ]
+    }
+  };
+  function drawFolderBitmap(map, size) {
+    const sprite = document.createElement("canvas");
+    sprite.width = map.w;
+    sprite.height = map.h;
+    const sctx = sprite.getContext("2d");
+    for (let y = 0; y < map.h; y++) {
+      const row = map.rows[y];
+      for (let x = 0; x < map.w; x++) {
+        const ix = row.charCodeAt(x) - 48;
+        if (ix > 0) {
+          sctx.fillStyle = map.palette[ix - 1];
+          sctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    const scale = size / Math.max(map.ow, map.oh);
+    const dw = map.ow * scale;
+    const dh = map.oh * scale;
+    ctx.drawImage(
+      sprite,
+      map.ox,
+      map.oy,
+      map.ow,
+      map.oh,
+      (size - dw) / 2,
+      (size - dh) / 2,
+      dw,
+      dh
+    );
+    return c.toDataURL();
+  }
+  var _iconCache = {
+    folder: /* @__PURE__ */ new Map(),
+    page: /* @__PURE__ */ new Map(),
+    computer: /* @__PURE__ */ new Map(),
+    calc: /* @__PURE__ */ new Map()
+  };
+  function _clearIconCache() {
+    _iconCache.folder.clear();
+    _iconCache.page.clear();
+    _iconCache.computer.clear();
+    _iconCache.calc.clear();
+  }
+  function drawFolderIcon(color = "#d4c044", open = false, size = currentIconSize(), style = folderIconStyleName()) {
+    const key = `${color}|${open ? 1 : 0}|${size}|${style}`;
+    const cached = _iconCache.folder.get(key);
+    if (cached !== void 0) return cached;
+    const dataUrl = _drawFolderIcon(color, open, size, style);
+    _iconCache.folder.set(key, dataUrl);
+    return dataUrl;
+  }
+  function _drawFolderIcon(color, open, size, style) {
+    if (style === "classic") {
+      return drawFolderBitmap(
+        open ? FOLDER_BITMAPS.open : FOLDER_BITMAPS.closed,
+        size
+      );
+    }
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    const k = size / 32;
+    const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
+    const light = shadeColor(color, 30);
+    const dark = shadeColor(color, -45);
+    const outlineRect = (x, y, w, h) => {
+      ctx.strokeStyle = shadeColor(color, -55);
+      ctx.lineWidth = Math.max(1, k);
+      ctx.strokeRect(
+        (x + 0.5) * k,
+        (y + 0.5) * k,
+        (w - 1) * k,
+        (h - 1) * k
+      );
     };
-
-    /** Render a bitmap folder icon, keeping pixel-art crispness at any size */
-    function drawFolderBitmap(map, size) {
-        const sprite = document.createElement("canvas");
-        sprite.width = map.w;
-        sprite.height = map.h;
-        const sctx = sprite.getContext("2d");
-        for (let y = 0; y < map.h; y++) {
-            const row = map.rows[y];
-            for (let x = 0; x < map.w; x++) {
-                const ix = row.charCodeAt(x) - 48;
-                if (ix > 0) {
-                    sctx.fillStyle = map.palette[ix - 1];
-                    sctx.fillRect(x, y, 1, 1);
-                }
-            }
-        }
-        const c = document.createElement("canvas");
-        c.width = size;
-        c.height = size;
-        const ctx = c.getContext("2d");
-        ctx.imageSmoothingEnabled = false;
-        const scale = size / Math.max(map.ow, map.oh);
-        const dw = map.ow * scale;
-        const dh = map.oh * scale;
-        ctx.drawImage(
-            sprite,
-            map.ox,
-            map.oy,
-            map.ow,
-            map.oh,
-            (size - dw) / 2,
-            (size - dh) / 2,
-            dw,
-            dh,
-        );
-        return c.toDataURL();
+    if (open) {
+      ctx.fillStyle = dark;
+      r(2, 8, 28, 22);
+      ctx.fillStyle = color;
+      r(2, 6, 14, 5);
+      ctx.fillStyle = color;
+      r(2, 10, 28, 20);
+      ctx.fillStyle = light;
+      r(4, 12, 24, 2);
+      ctx.fillStyle = shadeColor(color, -40);
+      r(4, 28, 24, 2);
+      r(28, 12, 2, 18);
+    } else {
+      ctx.fillStyle = color;
+      r(2, 4, 14, 5);
+      ctx.fillStyle = dark;
+      r(2, 8, 28, 22);
+      if (style === "glossy") {
+        const grad = ctx.createLinearGradient(0, 9 * k, 0, 30 * k);
+        grad.addColorStop(0, shadeColor(color, 20));
+        grad.addColorStop(0.55, color);
+        grad.addColorStop(1, shadeColor(color, -30));
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = color;
+      }
+      r(2, 9, 28, 21);
+      ctx.fillStyle = light;
+      r(4, 10, 24, 2);
+      ctx.fillStyle = shadeColor(color, -20);
+      r(4, 28, 24, 2);
+      r(28, 11, 2, 19);
     }
-
-    /** Memoization caches for generated icon data URLs (pure per parameters).
-        Cleared whenever an icon-affecting setting changes. */
-    const _iconCache = {
-        folder: new Map(),
-        page: new Map(),
-        computer: new Map(),
-        calc: new Map(),
-    };
-    function _clearIconCache() {
-        _iconCache.folder.clear();
-        _iconCache.page.clear();
-        _iconCache.computer.clear();
-        _iconCache.calc.clear();
+    if (style === "glossy") {
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.beginPath();
+      ctx.moveTo(5 * k, 11 * k);
+      ctx.lineTo(14 * k, 11 * k);
+      ctx.lineTo(9 * k, 19 * k);
+      ctx.lineTo(5 * k, 19 * k);
+      ctx.closePath();
+      ctx.fill();
+    } else if (style === "outlined") {
+      if (open) {
+        outlineRect(2, 6, 14, 5);
+        outlineRect(2, 8, 28, 22);
+        outlineRect(2, 10, 28, 20);
+      } else {
+        outlineRect(2, 4, 14, 5);
+        outlineRect(2, 8, 28, 22);
+        outlineRect(2, 9, 28, 21);
+      }
     }
-
-    function drawFolderIcon(
-        color = "#d4c044",
-        open = false,
-        size = currentIconSize(),
-        style = folderIconStyleName(),
-    ) {
-        const key = `${color}|${open ? 1 : 0}|${size}|${style}`;
-        const cached = _iconCache.folder.get(key);
-        if (cached !== undefined) return cached;
-        const dataUrl = _drawFolderIcon(color, open, size, style);
-        _iconCache.folder.set(key, dataUrl);
-        return dataUrl;
+    return c.toDataURL();
+  }
+  function drawPageIcon(size = currentIconSize()) {
+    const key = `page|${size}`;
+    const cached = _iconCache.page.get(key);
+    if (cached !== void 0) return cached;
+    const dataUrl = _drawPageIcon(size);
+    _iconCache.page.set(key, dataUrl);
+    return dataUrl;
+  }
+  function _drawPageIcon(size) {
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    const k = size / 32;
+    const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
+    ctx.fillStyle = "#ffffff";
+    r(4, 2, 22, 28);
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = Math.max(1, k);
+    ctx.strokeRect(4.5 * k, 2.5 * k, 21 * k, 27 * k);
+    ctx.fillStyle = "#c0c0c0";
+    ctx.beginPath();
+    ctx.moveTo(20 * k, 2 * k);
+    ctx.lineTo(26 * k, 8 * k);
+    ctx.lineTo(20 * k, 8 * k);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#000000";
+    ctx.beginPath();
+    ctx.moveTo(20 * k, 2 * k);
+    ctx.lineTo(20 * k, 8 * k);
+    ctx.lineTo(26 * k, 8 * k);
+    ctx.stroke();
+    ctx.fillStyle = "#000000";
+    for (let i = 0; i < 4; i++) {
+      const w = i === 3 ? 12 : 16;
+      r(7, 12 + i * 4, w, 1.5);
     }
-
-    function _drawFolderIcon(
-        color,
-        open,
-        size,
-        style,
-    ) {
-        if (style === "classic") {
-            // Authentic Win98 folder bitmap (gold closed / open with document)
-            return drawFolderBitmap(
-                open ? FOLDER_BITMAPS.open : FOLDER_BITMAPS.closed,
-                size,
-            );
-        }
-        const c = document.createElement("canvas");
-        c.width = size;
-        c.height = size;
-        const ctx = c.getContext("2d");
-        const k = size / 32;
-        const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
-
-        const light = shadeColor(color, 30);
-        const dark = shadeColor(color, -45);
-
-        const outlineRect = (x, y, w, h) => {
-            ctx.strokeStyle = shadeColor(color, -55);
-            ctx.lineWidth = Math.max(1, k);
-            ctx.strokeRect(
-                (x + 0.5) * k,
-                (y + 0.5) * k,
-                (w - 1) * k,
-                (h - 1) * k,
-            );
-        };
-
-        if (open) {
-            // Back flap
-            ctx.fillStyle = dark;
-            r(2, 8, 28, 22);
-            // Tab
-            ctx.fillStyle = color;
-            r(2, 6, 14, 5);
-            // Front
-            ctx.fillStyle = color;
-            r(2, 10, 28, 20);
-            // Highlight
-            ctx.fillStyle = light;
-            r(4, 12, 24, 2);
-            // Shadow
-            ctx.fillStyle = shadeColor(color, -40);
-            r(4, 28, 24, 2);
-            r(28, 12, 2, 18);
-        } else {
-            // Tab
-            ctx.fillStyle = color;
-            r(2, 4, 14, 5);
-            // Back
-            ctx.fillStyle = dark;
-            r(2, 8, 28, 22);
-            // Front (glossy gets a vertical gradient)
-            if (style === "glossy") {
-                const grad = ctx.createLinearGradient(0, 9 * k, 0, 30 * k);
-                grad.addColorStop(0, shadeColor(color, 20));
-                grad.addColorStop(0.55, color);
-                grad.addColorStop(1, shadeColor(color, -30));
-                ctx.fillStyle = grad;
-            } else {
-                ctx.fillStyle = color;
-            }
-            r(2, 9, 28, 21);
-            // Highlight
-            ctx.fillStyle = light;
-            r(4, 10, 24, 2);
-            // Inner shadow
-            ctx.fillStyle = shadeColor(color, -20);
-            r(4, 28, 24, 2);
-            r(28, 11, 2, 19);
-        }
-
-        if (style === "glossy") {
-            // Diagonal shine stripe across the front
-            ctx.fillStyle = "rgba(255,255,255,0.35)";
-            ctx.beginPath();
-            ctx.moveTo(5 * k, 11 * k);
-            ctx.lineTo(14 * k, 11 * k);
-            ctx.lineTo(9 * k, 19 * k);
-            ctx.lineTo(5 * k, 19 * k);
-            ctx.closePath();
-            ctx.fill();
-        } else if (style === "outlined") {
-            // Crisp dark outline around every part of the folder
-            if (open) {
-                outlineRect(2, 6, 14, 5);
-                outlineRect(2, 8, 28, 22);
-                outlineRect(2, 10, 28, 20);
-            } else {
-                outlineRect(2, 4, 14, 5);
-                outlineRect(2, 8, 28, 22);
-                outlineRect(2, 9, 28, 21);
-            }
-        }
-
-        return c.toDataURL();
-    }
-
-    /** Draw a generic webpage icon */
-    function drawPageIcon(size = currentIconSize()) {
-        const key = `page|${size}`;
-        const cached = _iconCache.page.get(key);
-        if (cached !== undefined) return cached;
-        const dataUrl = _drawPageIcon(size);
-        _iconCache.page.set(key, dataUrl);
-        return dataUrl;
-    }
-
-    function _drawPageIcon(size) {
-        const c = document.createElement("canvas");
-        c.width = size;
-        c.height = size;
-        const ctx = c.getContext("2d");
-        const k = size / 32;
-        const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
-
-        // Page background
-        ctx.fillStyle = "#ffffff";
-        r(4, 2, 22, 28);
-        // Page border
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = Math.max(1, k);
-        ctx.strokeRect(4.5 * k, 2.5 * k, 21 * k, 27 * k);
-        // Corner fold
-        ctx.fillStyle = "#c0c0c0";
-        ctx.beginPath();
-        ctx.moveTo(20 * k, 2 * k);
-        ctx.lineTo(26 * k, 8 * k);
-        ctx.lineTo(20 * k, 8 * k);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "#000000";
-        ctx.beginPath();
-        ctx.moveTo(20 * k, 2 * k);
-        ctx.lineTo(20 * k, 8 * k);
-        ctx.lineTo(26 * k, 8 * k);
-        ctx.stroke();
-        // Text lines
-        ctx.fillStyle = "#000000";
-        for (let i = 0; i < 4; i++) {
-            const w = i === 3 ? 12 : 16;
-            r(7, 12 + i * 4, w, 1.5);
-        }
-
-        return c.toDataURL();
-    }
-
-    /** Draw a Win98-style computer (monitor + stand + keyboard) */
-    function drawComputerIcon(size = currentIconSize()) {
-        const key = `computer|${size}`;
-        const cached = _iconCache.computer.get(key);
-        if (cached !== undefined) return cached;
-        const dataUrl = _drawComputerIcon(size);
-        _iconCache.computer.set(key, dataUrl);
-        return dataUrl;
-    }
-
-    function _drawComputerIcon(size) {
-        const c = document.createElement("canvas");
-        c.width = size;
-        c.height = size;
-        const ctx = c.getContext("2d");
-        const k = size / 32;
-        const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
-
-        // Monitor outline
-        ctx.fillStyle = "#000000";
-        r(4, 3, 24, 18);
-        // Beige face
-        ctx.fillStyle = "#d9c69a";
-        r(5, 4, 22, 16);
-        // Screen bezel
-        ctx.fillStyle = "#000000";
-        r(7, 6, 18, 12);
-        // Teal screen (like the Win98 desktop)
-        ctx.fillStyle = "#008080";
-        r(8, 7, 16, 10);
-        // A little window on the screen
-        ctx.fillStyle = "#FFFFFF";
-        r(10, 8, 12, 6);
-        ctx.fillStyle = "#000080";
-        r(10, 8, 12, 2);
-        ctx.fillRect(21 * k, 8 * k, 1 * k, 2 * k);
-
-        // Stand
-        ctx.fillStyle = "#000000";
-        r(15, 21, 3, 3);
-        ctx.fillStyle = "#e8e8e8";
-        r(15, 21, 1, 3);
-        // Base
-        ctx.fillStyle = "#000000";
-        r(12, 23, 8, 2);
-        ctx.fillStyle = "#9c8c60";
-        r(13, 24, 6, 1);
-        // Keyboard
-        ctx.fillStyle = "#000000";
-        r(3, 26, 26, 3);
+    return c.toDataURL();
+  }
+  function drawComputerIcon(size = currentIconSize()) {
+    const key = `computer|${size}`;
+    const cached = _iconCache.computer.get(key);
+    if (cached !== void 0) return cached;
+    const dataUrl = _drawComputerIcon(size);
+    _iconCache.computer.set(key, dataUrl);
+    return dataUrl;
+  }
+  function _drawComputerIcon(size) {
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    const k = size / 32;
+    const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
+    ctx.fillStyle = "#000000";
+    r(4, 3, 24, 18);
+    ctx.fillStyle = "#d9c69a";
+    r(5, 4, 22, 16);
+    ctx.fillStyle = "#000000";
+    r(7, 6, 18, 12);
+    ctx.fillStyle = "#008080";
+    r(8, 7, 16, 10);
+    ctx.fillStyle = "#FFFFFF";
+    r(10, 8, 12, 6);
+    ctx.fillStyle = "#000080";
+    r(10, 8, 12, 2);
+    ctx.fillRect(21 * k, 8 * k, 1 * k, 2 * k);
+    ctx.fillStyle = "#000000";
+    r(15, 21, 3, 3);
+    ctx.fillStyle = "#e8e8e8";
+    r(15, 21, 1, 3);
+    ctx.fillStyle = "#000000";
+    r(12, 23, 8, 2);
+    ctx.fillStyle = "#9c8c60";
+    r(13, 24, 6, 1);
+    ctx.fillStyle = "#000000";
+    r(3, 26, 26, 3);
+    ctx.fillStyle = "#808080";
+    r(4, 27, 9, 1);
+    r(15, 27, 12, 1);
+    return c.toDataURL();
+  }
+  function drawCalcIcon(size = currentIconSize()) {
+    const key = `calc|${size}`;
+    const cached = _iconCache.calc.get(key);
+    if (cached !== void 0) return cached;
+    const dataUrl = _drawCalcIcon(size);
+    _iconCache.calc.set(key, dataUrl);
+    return dataUrl;
+  }
+  function _drawCalcIcon(size) {
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    const k = size / 32;
+    const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
+    ctx.fillStyle = "#000000";
+    r(3, 2, 26, 28);
+    ctx.fillStyle = "#c0c0c0";
+    r(4, 3, 24, 26);
+    ctx.fillStyle = "#ffffff";
+    r(4, 3, 24, 1);
+    r(4, 3, 1, 26);
+    ctx.fillStyle = "#848484";
+    r(27, 3, 1, 26);
+    r(4, 28, 24, 1);
+    ctx.fillStyle = "#6a8c96";
+    r(6, 4, 20, 6);
+    ctx.fillStyle = "#cde3e8";
+    r(7, 5, 18, 4);
+    for (let row = 0; row < 6; row++) {
+      for (let col = 0; col < 4; col++) {
+        const bx = 5 + col * 6;
+        const by = 12 + row * 3;
         ctx.fillStyle = "#808080";
-        r(4, 27, 9, 1);
-        r(15, 27, 12, 1);
-
-        return c.toDataURL();
+        ctx.fillRect(bx * k, by * k, 5 * k, 2 * k);
+        ctx.fillRect((bx + 1) * k, (by + 1) * k, 4 * k, 1 * k);
+        ctx.fillStyle = "#e8e8e8";
+        ctx.fillRect(bx * k, by * k, 5 * k, 1 * k);
+        ctx.fillRect(bx * k, by * k, 1 * k, 2 * k);
+        ctx.fillStyle = "#a0a0a0";
+        ctx.fillRect(bx * k, (by + 1) * k, 3 * k, 1 * k);
+      }
     }
-
-    /** Generate a calculator icon (gray body, LCD, key grid) on canvas */
-    function drawCalcIcon(size = currentIconSize()) {
-        const key = `calc|${size}`;
-        const cached = _iconCache.calc.get(key);
-        if (cached !== undefined) return cached;
-        const dataUrl = _drawCalcIcon(size);
-        _iconCache.calc.set(key, dataUrl);
-        return dataUrl;
+    return c.toDataURL();
+  }
+  function getFaviconUrl(url) {
+    try {
+      const u = new URL(url);
+      return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=${currentIconSize()}`;
+    } catch {
+      return null;
     }
-
-    function _drawCalcIcon(size) {
-        const c = document.createElement("canvas");
-        c.width = size;
-        c.height = size;
-        const ctx = c.getContext("2d");
-        const k = size / 32;
-        const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
-
-        // Body outline
-        ctx.fillStyle = "#000000";
-        r(3, 2, 26, 28);
-        // Silver face
-        ctx.fillStyle = "#c0c0c0";
-        r(4, 3, 24, 26);
-        ctx.fillStyle = "#ffffff";
-        r(4, 3, 24, 1);
-        r(4, 3, 1, 26);
-        ctx.fillStyle = "#848484";
-        r(27, 3, 1, 26);
-        r(4, 28, 24, 1);
-
-        // Display (green LCD)
-        ctx.fillStyle = "#6a8c96";
-        r(6, 4, 20, 6);
-        ctx.fillStyle = "#cde3e8";
-        r(7, 5, 18, 4);
-
-        // Key grid: 6 rows × 4 columns
-        for (let row = 0; row < 6; row++) {
-            for (let col = 0; col < 4; col++) {
-                const bx = 5 + col * 6;
-                const by = 12 + row * 3;
-                ctx.fillStyle = "#808080";
-                ctx.fillRect(bx * k, by * k, 5 * k, 2 * k);
-                ctx.fillRect((bx + 1) * k, (by + 1) * k, 4 * k, 1 * k);
-                ctx.fillStyle = "#e8e8e8";
-                ctx.fillRect(bx * k, by * k, 5 * k, 1 * k);
-                ctx.fillRect(bx * k, by * k, 1 * k, 2 * k);
-                ctx.fillStyle = "#a0a0a0";
-                ctx.fillRect(bx * k, (by + 1) * k, 3 * k, 1 * k);
-            }
+  }
+  async function faviconDataUrl(url, size) {
+    const resp = await fetch(url, { mode: "cors" });
+    if (!resp.ok) throw new Error("favicon HTTP " + resp.status);
+    const blob = await resp.blob();
+    const bmp = await createImageBitmap(blob);
+    const w = bmp.width;
+    const h = bmp.height;
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(bmp, 0, 0);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const isBg = (i) => d[i + 3] >= 248 && d[i] >= 242 && d[i + 1] >= 242 && d[i + 2] >= 242;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (d[i + 3] >= 24 && !isBg(i)) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
         }
-
-        return c.toDataURL();
+      }
     }
-
-    /** Generate a favicon URL from bookmark URL */
-    function getFaviconUrl(url) {
-        try {
-            const u = new URL(url);
-            return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=${currentIconSize()}`;
-        } catch {
-            return null;
-        }
+    let sx = 0, sy = 0, sw = w, sh = h;
+    if (maxX >= 0 && (minX > 0 || minY > 0 || maxX < w - 1 || maxY < h - 1)) {
+      sx = minX;
+      sy = minY;
+      sw = maxX - minX + 1;
+      sh = maxY - minY + 1;
     }
-
-    /**
-     * Fetch a favicon and re-render it with a transparent background.
-     * Google's favicon service returns opaque white PNGs when the site's icon
-     * is a framed/square image; we trim near-white opaque margins so the icon
-     * blends into the wallpaper like a real Win98 shortcut (no white box).
-     * Resolves with a data URL, rejects when the fetch/decode fails.
-     * @param {string} url
-     * @param {number} size
-     * @returns {Promise<string>}
-     */
-    async function faviconDataUrl(url, size) {
-        const resp = await fetch(url, { mode: "cors" });
-        if (!resp.ok) throw new Error("favicon HTTP " + resp.status);
-        const blob = await resp.blob();
-        const bmp = await createImageBitmap(blob);
-        const w = bmp.width;
-        const h = bmp.height;
-        const c = document.createElement("canvas");
-        c.width = w;
-        c.height = h;
-        const ctx = c.getContext("2d");
-        ctx.drawImage(bmp, 0, 0);
-        const d = ctx.getImageData(0, 0, w, h).data;
-
-        // Near-white opaque pixels are treated as background (a white canvas
-        // the site drew around its icon). Everything else is content.
-        const isBg = (i) =>
-            d[i + 3] >= 248 &&
-            d[i] >= 242 &&
-            d[i + 1] >= 242 &&
-            d[i + 2] >= 242;
-        let minX = w,
-            minY = h,
-            maxX = -1,
-            maxY = -1;
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                const i = (y * w + x) * 4;
-                if (d[i + 3] >= 24 && !isBg(i)) {
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
-                }
-            }
-        }
-
-        // Nothing trimmed when the content already fills the canvas (or the
-        // icon is entirely white — return it as-is rather than a transparent blank).
-        let sx = 0,
-            sy = 0,
-            sw = w,
-            sh = h;
-        if (
-            maxX >= 0 &&
-            (minX > 0 || minY > 0 || maxX < w - 1 || maxY < h - 1)
-        ) {
-            sx = minX;
-            sy = minY;
-            sw = maxX - minX + 1;
-            sh = maxY - minY + 1;
-        }
-
-        const out = document.createElement("canvas");
-        out.width = size;
-        out.height = size;
-        const octx = out.getContext("2d");
-        octx.imageSmoothingEnabled = true;
-        const scale = size / Math.max(sw, sh);
-        const dw = sw * scale;
-        const dh = sh * scale;
-        octx.drawImage(
-            c,
-            sx,
-            sy,
-            sw,
-            sh,
-            (size - dw) / 2,
-            (size - dh) / 2,
-            dw,
-            dh,
-        );
-        return out.toDataURL();
+    const out = document.createElement("canvas");
+    out.width = size;
+    out.height = size;
+    const octx = out.getContext("2d");
+    octx.imageSmoothingEnabled = true;
+    const scale = size / Math.max(sw, sh);
+    const dw = sw * scale;
+    const dh = sh * scale;
+    octx.drawImage(
+      c,
+      sx,
+      sy,
+      sw,
+      sh,
+      (size - dw) / 2,
+      (size - dh) / 2,
+      dw,
+      dh
+    );
+    return out.toDataURL();
+  }
+  var FOLDER_COLORS = [
+    "#d4c044",
+    "#c8a032",
+    "#a0c844",
+    "#64a0c8",
+    "#c86464",
+    "#64c864",
+    "#c89644",
+    "#9664c8",
+    "#c864a0"
+  ];
+  var previewFolderStyle = null;
+  var previewFolderViewMode = null;
+  function folderIconStyleName() {
+    return previewFolderStyle || state.settings && state.settings.folderIconStyle || DEFAULT_SETTINGS.folderIconStyle;
+  }
+  function updateClock(src) {
+    const s = src || state.settings || DEFAULT_SETTINGS;
+    const now = /* @__PURE__ */ new Date();
+    const h = now.getHours().toString().padStart(2, "0");
+    const m = now.getMinutes().toString().padStart(2, "0");
+    const parts = [];
+    if (s.showClockWeekday) {
+      const wd = now.toLocaleDateString("ru-RU", { weekday: "short" });
+      parts.push(wd.endsWith(".") ? wd : wd + ".");
     }
-
-    /** Color palette for folders */
-    const FOLDER_COLORS = [
-        "#d4c044",
-        "#c8a032",
-        "#a0c844",
-        "#64a0c8",
-        "#c86464",
-        "#64c864",
-        "#c89644",
-        "#9664c8",
-        "#c864a0",
+    if (s.showClockDate) {
+      const d = now.getDate().toString().padStart(2, "0");
+      const mo = (now.getMonth() + 1).toString().padStart(2, "0");
+      parts.push(`${d}.${mo}.${now.getFullYear()}`);
+    }
+    parts.push(`${h}:${m}`);
+    $clock.textContent = parts.join(" ");
+  }
+  function weatherIcon(code) {
+    if (code === 0) return "☀️";
+    if (code === 1) return "🌤️";
+    if (code === 2) return "⛅";
+    if (code === 3) return "☁️";
+    if (code === 45 || code === 48) return "🌫️";
+    if (code >= 51 && code <= 67) return "🌧️";
+    if (code >= 71 && code <= 77) return "❄️";
+    if (code >= 80 && code <= 82) return "🌦️";
+    if (code === 85 || code === 86) return "🌨️";
+    if (code >= 95) return "⛈️";
+    return "🌡️";
+  }
+  function hideWeather() {
+    $weather.classList.remove("visible");
+    $weather.replaceChildren();
+  }
+  function renderWeather(temp, code) {
+    const icon = document.createElement("span");
+    icon.className = "weather-icon";
+    icon.textContent = weatherIcon(code);
+    const tempEl = document.createElement("span");
+    tempEl.className = "weather-temp";
+    tempEl.textContent = `${Math.round(temp)}°`;
+    $weather.replaceChildren(icon, tempEl);
+    $weather.classList.add("visible");
+  }
+  function windDirName(deg) {
+    const dirs = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"];
+    return dirs[Math.round(deg % 360 / 45) % 8];
+  }
+  function weatherCityName() {
+    return state.settings && state.settings.weatherCity || DEFAULT_SETTINGS.weatherCity;
+  }
+  function weatherEmojiDataUrl(code) {
+    try {
+      const c = document.createElement("canvas");
+      c.width = 32;
+      c.height = 32;
+      const ctx = c.getContext("2d");
+      ctx.font = "24px 'Segoe UI Emoji', 'Noto Color Emoji', serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(weatherIcon(code), 16, 18);
+      return c.toDataURL();
+    } catch {
+      return "icons/search.svg";
+    }
+  }
+  function saveWeatherCache(city, data) {
+    const payload = { city, ts: Date.now(), ...data };
+    return chrome.storage.local.set({ weather: payload }).catch(() => {
+    });
+  }
+  async function refreshWeather(city) {
+    const currentCity = city || state.settings && state.settings.weatherCity || DEFAULT_SETTINGS.weatherCity;
+    try {
+      const geoResp = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(currentCity)}&count=1&language=ru&format=json`,
+        { mode: "cors" }
+      );
+      const geo = await geoResp.json();
+      const hit = geo && geo.results && geo.results[0];
+      if (!hit) {
+        hideWeather();
+        return;
+      }
+      const wxResp = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&current=temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,cloud_cover`,
+        { mode: "cors" }
+      );
+      const wx = await wxResp.json();
+      if (!wx || !wx.current) {
+        hideWeather();
+        return;
+      }
+      const cur = wx.current;
+      state.weatherData = {
+        city: currentCity,
+        temp: cur.temperature_2m,
+        code: cur.weather_code,
+        feelsLike: cur.apparent_temperature,
+        humidity: cur.relative_humidity_2m,
+        precipitation: cur.precipitation,
+        windSpeed: cur.wind_speed_10m,
+        windDirection: cur.wind_direction_10m,
+        cloudCover: cur.cloud_cover,
+        updated: (/* @__PURE__ */ new Date()).toLocaleTimeString("ru-RU")
+      };
+      renderWeather(cur.temperature_2m, cur.weather_code);
+      saveWeatherCache(currentCity, state.weatherData);
+      renderOpenWeatherWindow();
+    } catch {
+    }
+  }
+  async function readCityAndCache() {
+    let city = state.settings && state.settings.weatherCity || DEFAULT_SETTINGS.weatherCity;
+    let cache = {};
+    try {
+      const [settings, stored] = await Promise.all([
+        chrome.storage.local.get("settings"),
+        chrome.storage.local.get("weather")
+      ]);
+      if (settings.settings && settings.settings.weatherCity) {
+        city = settings.settings.weatherCity;
+      }
+      cache = stored || {};
+    } catch {
+    }
+    return { city, cache };
+  }
+  async function updateWeather() {
+    const { city, cache } = await readCityAndCache();
+    if (cache && typeof cache.temp === "number" && cache.city === city) {
+      state.weatherData = cache;
+      renderWeather(cache.temp, cache.code);
+    } else {
+      state.weatherData = null;
+      hideWeather();
+    }
+    refreshWeather(city);
+  }
+  function renderOpenWeatherWindow() {
+    const win = state.windows.find((w) => w.winType === "weather");
+    if (win) renderWeatherWindow(win);
+  }
+  function renderWeatherWindow(winData) {
+    const el = winData.el;
+    const ce = el.querySelector(".win98-window-content");
+    const d = state.weatherData;
+    ce.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.className = "weather-details";
+    const hero = document.createElement("div");
+    hero.className = "weather-hero";
+    const icon = document.createElement("span");
+    icon.className = "weather-hero-icon";
+    icon.textContent = d ? weatherIcon(d.code) : "🌡️";
+    const heroInfo = document.createElement("div");
+    heroInfo.className = "weather-hero-info";
+    const heroTemp = document.createElement("div");
+    heroTemp.className = "weather-hero-temp";
+    heroTemp.textContent = d ? `${Math.round(d.temp)}°` : "—";
+    const heroCity = document.createElement("div");
+    heroCity.className = "weather-hero-city";
+    heroCity.textContent = d && d.city ? d.city : weatherCityName();
+    heroInfo.append(heroTemp, heroCity);
+    hero.append(icon, heroInfo);
+    wrap.appendChild(hero);
+    const box = document.createElement("div");
+    box.className = "win98-groupbox";
+    const legend = document.createElement("span");
+    legend.className = "win98-groupbox-legend";
+    legend.textContent = "Подробнее";
+    box.appendChild(legend);
+    const rows = [
+      [
+        "Ощущается как",
+        d && d.feelsLike != null ? `${Math.round(d.feelsLike)}°` : "—"
+      ],
+      [
+        "Влажность",
+        d && d.humidity != null ? `${Math.round(d.humidity)}%` : "—"
+      ],
+      [
+        "Осадки",
+        d && d.precipitation != null ? `${d.precipitation} мм` : "—"
+      ],
+      [
+        "Ветер",
+        d && d.windSpeed != null ? `${Math.round(d.windSpeed)} км/ч${d.windDirection != null ? ", " + windDirName(d.windDirection) : ""}` : "—"
+      ],
+      [
+        "Облачность",
+        d && d.cloudCover != null ? `${d.cloudCover}%` : "—"
+      ]
     ];
-
-    /** Folder icon appearance styles (selectable in Настройки → Вид) */
-    const FOLDER_STYLES = [
-        { id: "classic", label: "Классические" },
-        { id: "glossy", label: "Объёмные" },
-        { id: "outlined", label: "С контуром" },
-    ];
-
-    /* ---------- Appearance themes (Настройки → Вид → Тема) ----------
-       Each theme maps a set of --win98-* CSS variables to new values.
-       `classic` has no overrides — the default :root palette in win98.css
-       is used as-is. Custom colors (theme: "custom") are user-defined and
-       stored in Settings.customColors (validated against CUSTOM_THEME_KEYS). */
-
-    /**
-     * Theme radio options shown in the settings window.
-     * @type {{ id: string, label: string, desc: string }[]}
-     */
-    const THEME_OPTIONS = [
-        {
-            id: "classic",
-            label: "Классическая",
-            desc: "Стандартные серые цвета Windows 98",
-        },
-        {
-            id: "olive",
-            label: "Оливковая",
-            desc: "Тёплые зелёно-оливковые тона",
-        },
-        {
-            id: "high-contrast",
-            label: "Высокий контраст",
-            desc: "Чёрные окна, белый текст, синяя подсветка",
-        },
-        {
-            id: "dracula",
-            label: "Дракула",
-            desc: "Тёмная тема с фиолетовыми и зелёными акцентами",
-        },
-        { id: "custom", label: "Пользовательская", desc: "Свои цвета" },
-    ];
-
-    /**
-     * CSS variables overridden per theme. Keys in quotes so the object
-     * also serves as a "custom picker" definition list.
-     * @type {Object<string, Object<string, string>>}
-     */
-    const THEME_COLORS = {
-        olive: {
-            "--win98-silver": "#b5b5a1",
-            "--win98-btn-face": "#b5b5a1",
-            "--win98-hover": "#d5d5c1",
-            "--win98-inset-bg": "#d0d0b8",
-            "--win98-input-bg": "#fffff0",
-            "--win98-navy": "#404000",
-            "--win98-highlight": "#808000",
-            "--win98-shadow": "#505040",
-            "--win98-dark-gray": "#606050",
-            "--win98-radio-edge2": "#a0a090",
-            "--win98-wp-preview": "#408040",
-            "--win98-title-active": "linear-gradient(90deg, #404000, #808040)",
-            "--win98-title-inactive":
-                "linear-gradient(90deg, #808040, #a0a080)",
-        },
-        "high-contrast": {
-            "--win98-silver": "#000000",
-            "--win98-btn-face": "#000000",
-            "--win98-hover": "#000080",
-            "--win98-inset-bg": "#000000",
-            "--win98-input-bg": "#000000",
-            "--win98-content-bg": "#000000",
-            "--win98-navy": "#0000ff",
-            "--win98-highlight": "#0000ff",
-            "--win98-black": "#ffffff",
-            "--win98-shadow": "#808080",
-            "--win98-dark-gray": "#808080",
-            "--win98-radio-check": "#00ff00",
-            "--win98-radio-edge1": "#ffffff",
-            "--win98-radio-edge2": "#808080",
-            "--win98-radio-shadow": "#000000",
-            "--win98-wp-preview": "#000000",
-            "--win98-title-active": "linear-gradient(90deg, #000080, #0000ff)",
-            "--win98-title-inactive":
-                "linear-gradient(90deg, #808080, #808080)",
-        },
-        dracula: {
-            "--win98-silver": "#282a36",
-            "--win98-btn-face": "#44475a",
-            "--win98-hover": "#44475a",
-            "--win98-inset-bg": "#21222c",
-            "--win98-input-bg": "#191a21",
-            "--win98-content-bg": "#282a36",
-            "--win98-navy": "#bd93f9",
-            "--win98-highlight": "#ff79c6",
-            "--win98-black": "#f8f8f2",
-            "--win98-shadow": "#191a21",
-            "--win98-dark-gray": "#6272a4",
-            "--win98-radio-check": "#50fa7b",
-            "--win98-radio-edge1": "#f8f8f2",
-            "--win98-radio-edge2": "#6272a4",
-            "--win98-radio-shadow": "#191a21",
-            "--win98-wp-preview": "#282a36",
-            "--win98-title-active":
-                "linear-gradient(90deg, #44475a, #bd93f9)",
-            "--win98-title-inactive":
-                "linear-gradient(90deg, #282a36, #44475a)",
-        },
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.className = "weather-stat-row";
+      const l = document.createElement("span");
+      l.className = "weather-stat-label";
+      l.textContent = label;
+      const v = document.createElement("span");
+      v.className = "weather-stat-value";
+      v.textContent = value;
+      row.append(l, v);
+      box.appendChild(row);
+    });
+    wrap.appendChild(box);
+    ce.appendChild(wrap);
+    const sb = el.querySelector(".win98-statusbar-field");
+    if (sb) {
+      sb.textContent = d && d.updated ? `Обновлено: ${d.updated}` : "Загрузка данных...";
+    }
+  }
+  function openWeatherWindow() {
+    const existing = state.windows.find((w) => w.winType === "weather");
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+    createWindow({
+      winType: "weather",
+      title: "Погода",
+      icon: state.weatherData ? weatherEmojiDataUrl(state.weatherData.code) : "icons/search.svg",
+      width: 360,
+      height: 290,
+      content: "",
+      statusbar: true,
+      statusText: "Загрузка данных...",
+      onCreated: (el, winData) => {
+        el.querySelector(".win98-window-content").style.background = "var(--win98-silver)";
+        renderWeatherWindow(winData);
+      }
+    });
+    if (!state.weatherData) refreshWeather();
+  }
+  $weather.title = "Двойное нажатие — подробная информация о погоде";
+  $weather.addEventListener("dblclick", () => openWeatherWindow());
+  function createWindow(opts) {
+    const id = ++state.windowIdCounter;
+    const w = opts.width || 500;
+    const h = opts.height != null ? opts.height : 400;
+    const isDialog = !!opts.dialog;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const freeX = Math.max(0, vw - w);
+    const freeY = Math.max(0, vh - h);
+    const x = opts.x ?? Math.max(0, Math.min(freeX, Math.round(vw / 2 - w / 2 + state.windows.length % 6 * WINDOW_STACK_OFFSET)));
+    const y = opts.y ?? Math.max(0, Math.min(freeY, Math.round(vh / 2 - h / 2 + state.windows.length % 6 * WINDOW_STACK_OFFSET)));
+    const resolvedIcon = opts.icon || drawPageIcon();
+    const winData = {
+      id,
+      title: opts.title || "Window",
+      icon: resolvedIcon,
+      x,
+      y,
+      w,
+      h,
+      minimized: false,
+      maximized: false,
+      prevBounds: null,
+      winType: opts.winType || null,
+      bookmarkId: opts.bookmarkId || null,
+      dialog: isDialog
     };
-
-    /**
-     * Color pickers exposed in the «Пользовательская» theme. `def` is the
-     * value the picker falls back to before the user touches anything.
-     * @type {{ css: string, label: string, def: string }[]}
-     */
-    const CUSTOM_THEME_KEYS = [
-        { css: "--win98-silver", label: "Цвет окон", def: "#c0c0c0" },
-        {
-            css: "--win98-content-bg",
-            label: "Фон содержимого окон",
-            def: "#ffffff",
-        },
-        { css: "--win98-btn-face", label: "Цвет кнопок", def: "#c0c0c0" },
-        { css: "--win98-navy", label: "Цвет выделения", def: "#000080" },
-        { css: "--win98-black", label: "Цвет текста", def: "#000000" },
-        { css: "--win98-highlight", label: "Цвет подсветки", def: "#0000aa" },
-        { css: "--win98-shadow", label: "Цвет теней", def: "#606060" },
-    ];
-
-    /** UI font choices (Настройки → Вид). `value` is the full CSS family stack. */
-    const UI_FONTS = [
-        {
-            label: "Tahoma",
-            value: "Tahoma, 'MS Sans Serif', 'Segoe UI', sans-serif",
-        },
-        {
-            label: "MS Sans Serif",
-            value: "'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif",
-        },
-        { label: "Segoe UI", value: "'Segoe UI', Tahoma, sans-serif" },
-        { label: "Courier New", value: "'Courier New', monospace" },
-        { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
-    ];
-
-    /** Live-preview override while the settings window is open (cleared on OK/Отмена) */
-    let previewFolderStyle = null;
-
-    /** Live-preview override for the folder window view mode (icons / list) */
-    let previewFolderViewMode = null;
-
-    /** Currently active folder icon style id */
-    function folderIconStyleName() {
-        return (
-            previewFolderStyle ||
-            (state.settings && state.settings.folderIconStyle) ||
-            DEFAULT_SETTINGS.folderIconStyle
-        );
-    }
-
-    function shadeColor(color, percent) {
-        let R = parseInt(color.substring(1, 3), 16);
-        let G = parseInt(color.substring(3, 5), 16);
-        let B = parseInt(color.substring(5, 7), 16);
-        R = Math.min(255, Math.max(0, R + Math.round((R * percent) / 100)));
-        G = Math.min(255, Math.max(0, G + Math.round((G * percent) / 100)));
-        B = Math.min(255, Math.max(0, B + Math.round((B * percent) / 100)));
-        return `#${R.toString(16).padStart(2, "0")}${G.toString(16).padStart(2, "0")}${B.toString(16).padStart(2, "0")}`;
-    }
-
-    /* ============================================================
-     CLOCK
-     ============================================================ */
-    function updateClock(src) {
-        const s = src || state.settings || DEFAULT_SETTINGS;
-        const now = new Date();
-        const h = now.getHours().toString().padStart(2, "0");
-        const m = now.getMinutes().toString().padStart(2, "0");
-        const parts = [];
-        if (s.showClockWeekday) {
-            const wd = now.toLocaleDateString("ru-RU", { weekday: "short" });
-            parts.push(wd.endsWith(".") ? wd : wd + ".");
-        }
-        if (s.showClockDate) {
-            const d = now.getDate().toString().padStart(2, "0");
-            const mo = (now.getMonth() + 1).toString().padStart(2, "0");
-            parts.push(`${d}.${mo}.${now.getFullYear()}`);
-        }
-        parts.push(`${h}:${m}`);
-        $clock.textContent = parts.join(" ");
-    }
-
-    /* ============================================================
-     WEATHER (Open-Meteo, no API key)
-     ============================================================ */
-
-    /** Map WMO weather code → emoji icon */
-    function weatherIcon(code) {
-        if (code === 0) return "☀️";
-        if (code === 1) return "🌤️";
-        if (code === 2) return "⛅";
-        if (code === 3) return "☁️";
-        if (code === 45 || code === 48) return "🌫️";
-        if (code >= 51 && code <= 67) return "🌧️";
-        if (code >= 71 && code <= 77) return "❄️";
-        if (code >= 80 && code <= 82) return "🌦️";
-        if (code === 85 || code === 86) return "🌨️";
-        if (code >= 95) return "⛈️";
-        return "🌡️";
-    }
-
-    function hideWeather() {
-        $weather.classList.remove("visible");
-        $weather.replaceChildren();
-    }
-
-    function renderWeather(temp, code) {
-        const icon = document.createElement("span");
-        icon.className = "weather-icon";
-        icon.textContent = weatherIcon(code);
-        const tempEl = document.createElement("span");
-        tempEl.className = "weather-temp";
-        tempEl.textContent = `${Math.round(temp)}°`;
-        $weather.replaceChildren(icon, tempEl);
-        $weather.classList.add("visible");
-    }
-
-    /** Map wind bearing (deg) → Russian compass direction */
-    function windDirName(deg) {
-        const dirs = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"];
-        return dirs[Math.round(((deg % 360) / 45)) % 8];
-    }
-
-    function weatherCityName() {
-        return (
-            (state.settings && state.settings.weatherCity) ||
-            DEFAULT_SETTINGS.weatherCity
-        );
-    }
-
-    /** Render the weather emoji as a transparent 32×32 PNG (for the window icon) */
-    function weatherEmojiDataUrl(code) {
-        try {
-            const c = document.createElement("canvas");
-            c.width = 32;
-            c.height = 32;
-            const ctx = c.getContext("2d");
-            ctx.font = "24px 'Segoe UI Emoji', 'Noto Color Emoji', serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(weatherIcon(code), 16, 18);
-            return c.toDataURL();
-        } catch {
-            return "icons/search.svg";
-        }
-    }
-
-    function saveWeatherCache(city, data) {
-        const payload = { city, ts: Date.now(), ...data };
-        return chrome.storage.local.set({ weather: payload }).catch(() => {});
-    }
-
-    async function refreshWeather(city) {
-        const currentCity =
-            city ||
-            (state.settings && state.settings.weatherCity) ||
-            DEFAULT_SETTINGS.weatherCity;
-        try {
-            // Resolve city → coordinates
-            const geoResp = await fetch(
-                `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(currentCity)}&count=1&language=ru&format=json`,
-                { mode: "cors" },
-            );
-            const geo = await geoResp.json();
-            const hit = geo && geo.results && geo.results[0];
-            if (!hit) {
-                hideWeather();
-                return;
-            }
-            // Current weather (full set of fields for the details window)
-            const wxResp = await fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&current=temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,cloud_cover`,
-                { mode: "cors" },
-            );
-            const wx = await wxResp.json();
-            if (!wx || !wx.current) {
-                hideWeather();
-                return;
-            }
-            const cur = wx.current;
-            state.weatherData = {
-                city: currentCity,
-                temp: cur.temperature_2m,
-                code: cur.weather_code,
-                feelsLike: cur.apparent_temperature,
-                humidity: cur.relative_humidity_2m,
-                precipitation: cur.precipitation,
-                windSpeed: cur.wind_speed_10m,
-                windDirection: cur.wind_direction_10m,
-                cloudCover: cur.cloud_cover,
-                updated: new Date().toLocaleTimeString("ru-RU"),
-            };
-            renderWeather(cur.temperature_2m, cur.weather_code);
-            saveWeatherCache(currentCity, state.weatherData);
-            renderOpenWeatherWindow();
-        } catch {
-            // Offline or blocked — keep showing cached value if any, else nothing
-        }
-    }
-
-    /** Read the stored settings + weather cache in parallel (used at startup so
-     *  the tray renders the cached value without waiting on anything else) */
-    async function readCityAndCache() {
-        let city =
-            (state.settings && state.settings.weatherCity) ||
-            DEFAULT_SETTINGS.weatherCity;
-        let cache = {};
-        try {
-            const [settings, stored] = await Promise.all([
-                chrome.storage.local.get("settings"),
-                chrome.storage.local.get("weather"),
-            ]);
-            if (settings.settings && settings.settings.weatherCity) {
-                city = settings.settings.weatherCity;
-            }
-            cache = stored || {};
-        } catch {
-            // keep defaults on failure
-        }
-        return { city, cache };
-    }
-
-    async function updateWeather() {
-        const { city, cache } = await readCityAndCache();
-        // Always show the last saved value immediately (if it matches the
-        // current city) so the tray never flicks/clears on load — then refresh
-        // in the background so the stale value is replaced as soon as the
-        // network responds. If there is no cache for this city yet, fall back
-        // to the remote value with nothing shown in the meantime.
-        if (cache && typeof cache.temp === "number" && cache.city === city) {
-            state.weatherData = cache;
-            renderWeather(cache.temp, cache.code);
-        } else {
-            state.weatherData = null;
-            hideWeather();
-        }
-        refreshWeather(city);
-    }
-
-    /** Re-render the open weather details window (no-op if it is closed) */
-    function renderOpenWeatherWindow() {
-        const win = state.windows.find((w) => w.winType === "weather");
-        if (win) renderWeatherWindow(win);
-    }
-
-    /** Fill the weather details window content from state.weatherData */
-    /** @param {WinData} winData */
-    function renderWeatherWindow(winData) {
-        const el = winData.el;
-        const ce = el.querySelector(".win98-window-content");
-        const d = state.weatherData;
-        ce.replaceChildren();
-
-        const wrap = document.createElement("div");
-        wrap.className = "weather-details";
-
-        // Hero panel
-        const hero = document.createElement("div");
-        hero.className = "weather-hero";
-        const icon = document.createElement("span");
-        icon.className = "weather-hero-icon";
-        icon.textContent = d ? weatherIcon(d.code) : "🌡️";
-        const heroInfo = document.createElement("div");
-        heroInfo.className = "weather-hero-info";
-        const heroTemp = document.createElement("div");
-        heroTemp.className = "weather-hero-temp";
-        heroTemp.textContent = d ? `${Math.round(d.temp)}°` : "—";
-        const heroCity = document.createElement("div");
-        heroCity.className = "weather-hero-city";
-        heroCity.textContent = d && d.city ? d.city : weatherCityName();
-        heroInfo.append(heroTemp, heroCity);
-        hero.append(icon, heroInfo);
-        wrap.appendChild(hero);
-
-        // Details group box
-        const box = document.createElement("div");
-        box.className = "win98-groupbox";
-        const legend = document.createElement("span");
-        legend.className = "win98-groupbox-legend";
-        legend.textContent = "Подробнее";
-        box.appendChild(legend);
-
-        const rows = [
-            [
-                "Ощущается как",
-                d && d.feelsLike != null ? `${Math.round(d.feelsLike)}°` : "—",
-            ],
-            [
-                "Влажность",
-                d && d.humidity != null ? `${Math.round(d.humidity)}%` : "—",
-            ],
-            [
-                "Осадки",
-                d && d.precipitation != null
-                    ? `${d.precipitation} мм`
-                    : "—",
-            ],
-            [
-                "Ветер",
-                d && d.windSpeed != null
-                    ? `${Math.round(d.windSpeed)} км/ч${
-                          d.windDirection != null
-                              ? ", " + windDirName(d.windDirection)
-                              : ""
-                      }`
-                    : "—",
-            ],
-            [
-                "Облачность",
-                d && d.cloudCover != null ? `${d.cloudCover}%` : "—",
-            ],
-        ];
-        rows.forEach(([label, value]) => {
-            const row = document.createElement("div");
-            row.className = "weather-stat-row";
-            const l = document.createElement("span");
-            l.className = "weather-stat-label";
-            l.textContent = label;
-            const v = document.createElement("span");
-            v.className = "weather-stat-value";
-            v.textContent = value;
-            row.append(l, v);
-            box.appendChild(row);
-        });
-        wrap.appendChild(box);
-        ce.appendChild(wrap);
-
-        // Status bar
-        const sb = el.querySelector(".win98-statusbar-field");
-        if (sb) {
-            sb.textContent = d && d.updated
-                ? `Обновлено: ${d.updated}`
-                : "Загрузка данных...";
-        }
-    }
-
-    /** Open the single-instance weather details window */
-    function openWeatherWindow() {
-        const existing = state.windows.find((w) => w.winType === "weather");
-        if (existing) {
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return;
-        }
-        createWindow({
-            winType: "weather",
-            title: "Погода",
-            icon: state.weatherData
-                ? weatherEmojiDataUrl(state.weatherData.code)
-                : "icons/search.svg",
-            width: 360,
-            height: 290,
-            content: "",
-            statusbar: true,
-            statusText: "Загрузка данных...",
-            onCreated: (el, winData) => {
-                /** @type {HTMLElement} */
-                (el.querySelector(".win98-window-content")).style.background =
-                    "var(--win98-silver)";
-                renderWeatherWindow(winData);
-            },
-        });
-        if (!state.weatherData) refreshWeather();
-    }
-
-    // Tray weather: hint + double-click opens the details window
-    $weather.title = "Двойное нажатие — подробная информация о погоде";
-    $weather.addEventListener("dblclick", () => openWeatherWindow());
-
-    /* ============================================================
-     WINDOW MANAGEMENT
-     ============================================================ */
-
-    /**
-     * @typedef {object} CreateWindowOpts
-     * @property {string} [title]
-     * @property {string} [icon]
-     * @property {number} [x]
-     * @property {number} [y]
-     * @property {number} [width]
-     * @property {number} [height]
-     * @property {boolean} [dialog]
-     * @property {string} [content]
-     * @property {string} [toolbar]
-     * @property {boolean} [addressbar]
-     * @property {string} [addressbarValue]
-     * @property {boolean} [statusbar]
-     * @property {string} [statusText]
-     * @property {string} [statusText2]
-     * @property {string} [winType]
-     * @property {string} [bookmarkId]
-     * @property {(el: HTMLDivElement, winData: WinData) => void} [onCreated]
-     */
-
-    /** @param {CreateWindowOpts} opts @returns {WinData} */
-    function createWindow(opts) {
-        const id = ++state.windowIdCounter;
-        const w = opts.width || 500;
-        const h = opts.height != null ? opts.height : 400;
-        const isDialog = !!opts.dialog;
-        // Windows appear centered on the desktop; each new window is nudged
-        // down-right by 28px so stacked windows stay distinguishable.
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const freeX = Math.max(0, vw - w);
-        const freeY = Math.max(0, vh - h);
-        const x =
-            opts.x ??
-            Math.max(0, Math.min(freeX, Math.round(vw / 2 - w / 2 + (state.windows.length % 6) * WINDOW_STACK_OFFSET)));
-        const y =
-            opts.y ??
-            Math.max(0, Math.min(freeY, Math.round(vh / 2 - h / 2 + (state.windows.length % 6) * WINDOW_STACK_OFFSET)));
-
-        // Resolve the window icon once (falling back to a page icon) so we don't
-        // re-generate the same canvas three times below.
-        const resolvedIcon = opts.icon || drawPageIcon();
-
-        /** @type {WinData} */
-        const winData = {
-            id,
-            title: opts.title || "Window",
-            icon: resolvedIcon,
-            x,
-            y,
-            w,
-            h,
-            minimized: false,
-            maximized: false,
-            prevBounds: null,
-            winType: opts.winType || null,
-            bookmarkId: opts.bookmarkId || null,
-            dialog: isDialog,
-        };
-
-        // Build DOM
-        const el = document.createElement("div");
-        el.className = "win98-window" + (isDialog ? " win98-window--dialog" : "");
-        el.id = `win-${id}`;
-        el.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;z-index:${++state.zCounter};`;
-
-        el.innerHTML = `
+    const el = document.createElement("div");
+    el.className = "win98-window" + (isDialog ? " win98-window--dialog" : "");
+    el.id = `win-${id}`;
+    el.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;z-index:${++state.zCounter};`;
+    el.innerHTML = `
       <div class="win98-titlebar" data-win-id="${id}">
         <img class="win98-titlebar-icon" src="${resolvedIcon}" alt="">
         <span class="win98-titlebar-text">${escapeHtml(opts.title || "")}</span>
         <div class="win98-titlebar-buttons">
-          ${isDialog
-            ? `<button class="win98-titlebar-btn" data-action="close" title="Закрыть">✕</button>`
-            : `<button class="win98-titlebar-btn" data-action="minimize" title="Свернуть">_</button>
+          ${isDialog ? `<button class="win98-titlebar-btn" data-action="close" title="Закрыть">✕</button>` : `<button class="win98-titlebar-btn" data-action="minimize" title="Свернуть">_</button>
                <button class="win98-titlebar-btn" data-action="maximize" title="Развернуть">□</button>
                <button class="win98-titlebar-btn" data-action="close" title="Закрыть">✕</button>`}
         </div>
@@ -1320,1031 +1155,804 @@
       ${opts.statusbar !== false ? `<div class="win98-statusbar"><div class="win98-statusbar-field">${escapeHtml(opts.statusText || "")}</div>${opts.statusText2 != null ? `<div class="win98-statusbar-field win98-statusbar-field2">${escapeHtml(opts.statusText2)}</div>` : ""}</div>` : ""}
       ${isDialog ? "" : `<div class="win98-resize-handle"></div>`}
     `;
-
-        $windowsContainer.appendChild(el);
-
-        winData.el = el;
-        state.windows.push(winData);
-
-        // Title bar events
-        const titlebar = el.querySelector(".win98-titlebar");
-        titlebar.addEventListener("mousedown", (e) => {
-            if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
-            bringToFront(id);
-            startDrag(/** @type {MouseEvent} */ (e), winData);
-        });
-        titlebar.addEventListener("dblclick", (e) => {
-            if (isDialog) return;
-            if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
-            toggleMaximize(id);
-        });
-
-        // Title bar buttons
-        el.querySelector('[data-action="minimize"]')?.addEventListener(
-            "click",
-            () => minimizeWindow(id),
-        );
-        el.querySelector('[data-action="maximize"]')?.addEventListener(
-            "click",
-            () => toggleMaximize(id),
-        );
-        el.querySelector('[data-action="close"]')?.addEventListener(
-            "click",
-            () => closeWindow(id),
-        );
-
-        // Resize handle
-        const resizeHandle = el.querySelector(".win98-resize-handle");
-        resizeHandle?.addEventListener("mousedown", (e) => {
-            e.stopPropagation();
-            bringToFront(id);
-            startResize(/** @type {MouseEvent} */ (e), winData);
-        });
-
-        // Click to focus
-        el.addEventListener("mousedown", () => bringToFront(id));
-
-        // Taskbar button
-        const tbBtn = document.createElement("button");
-        tbBtn.className = "taskbar-win-btn win98-btn active";
-        tbBtn.id = `tb-${id}`;
-        tbBtn.innerHTML = `<img src="${resolvedIcon}" alt=""><span>${escapeHtml(opts.title || "")}</span>`;
-        tbBtn.addEventListener("click", () => {
-            if (winData.minimized) {
-                restoreWindow(id);
-            } else if (state.activeWindowId === id) {
-                minimizeWindow(id);
-            } else {
-                bringToFront(id);
-            }
-        });
-        // Right-click a taskbar button → per-window menu + generic panel actions
-        tbBtn.addEventListener("contextmenu", (e) => {
-            e.preventDefault();
-            e.stopPropagation(); // don't show the generic taskbar menu separately
-            const visible = state.windows.filter((w) => !w.minimized);
-            const items = [];
-            if (winData.minimized) {
-                items.push({
-                    label: "Восстановить",
-                    action: () => restoreWindow(id),
-                });
-            } else {
-                items.push({
-                    label: "Свернуть",
-                    action: () => minimizeWindow(id),
-                });
-            }
-            items.push({ label: "Закрыть", action: () => closeWindow(id) });
-            items.push({ type: "separator" });
-            items.push({
-                label: "Каскад окон",
-                disabled: visible.length === 0,
-                action: () => cascadeWindows(visible),
-            });
-            items.push({
-                label: "Стопкой",
-                disabled: visible.length === 0,
-                action: () => tileWindows(visible),
-            });
-            items.push({ type: "separator" });
-            items.push({
-                label: "Свойства панели задач",
-                action: openTaskbarProperties,
-            });
-            showContextMenu(e.clientX, e.clientY, items);
-        });
-        $taskbarWindows.appendChild(tbBtn);
-
+    $windowsContainer.appendChild(el);
+    winData.el = el;
+    state.windows.push(winData);
+    const titlebar = el.querySelector(".win98-titlebar");
+    titlebar.addEventListener("mousedown", (e) => {
+      if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
+      bringToFront(id);
+      startDrag(
+        /** @type {MouseEvent} */
+        e,
+        winData
+      );
+    });
+    titlebar.addEventListener("dblclick", (e) => {
+      if (isDialog) return;
+      if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
+      toggleMaximize(id);
+    });
+    el.querySelector('[data-action="minimize"]')?.addEventListener(
+      "click",
+      () => minimizeWindow(id)
+    );
+    el.querySelector('[data-action="maximize"]')?.addEventListener(
+      "click",
+      () => toggleMaximize(id)
+    );
+    el.querySelector('[data-action="close"]')?.addEventListener(
+      "click",
+      () => closeWindow(id)
+    );
+    const resizeHandle = el.querySelector(".win98-resize-handle");
+    resizeHandle?.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      bringToFront(id);
+      startResize(
+        /** @type {MouseEvent} */
+        e,
+        winData
+      );
+    });
+    el.addEventListener("mousedown", () => bringToFront(id));
+    const tbBtn = document.createElement("button");
+    tbBtn.className = "taskbar-win-btn win98-btn active";
+    tbBtn.id = `tb-${id}`;
+    tbBtn.innerHTML = `<img src="${resolvedIcon}" alt=""><span>${escapeHtml(opts.title || "")}</span>`;
+    tbBtn.addEventListener("click", () => {
+      if (winData.minimized) {
+        restoreWindow(id);
+      } else if (state.activeWindowId === id) {
+        minimizeWindow(id);
+      } else {
         bringToFront(id);
-
-        if (opts.onCreated) opts.onCreated(el, winData);
-
-        scheduleWindowStateSave();
-
-        return winData;
-    }
-
-    function bringToFront(id) {
-        if (state.activeWindowId === id) return;
-        state.activeWindowId = id;
-        const winData = state.windows.find((w) => w.id === id);
-        if (!winData) return;
-
-        winData.el.style.zIndex = String(++state.zCounter);
-
-        // Update titlebar active state
-        state.windows.forEach((w) => {
-            const tb = w.el.querySelector(".win98-titlebar");
-            if (w.id === id) {
-                tb.classList.remove("inactive");
-            } else {
-                tb.classList.add("inactive");
-            }
+      }
+    });
+    tbBtn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const visible = state.windows.filter((w2) => !w2.minimized);
+      const items = [];
+      if (winData.minimized) {
+        items.push({
+          label: "Восстановить",
+          action: () => restoreWindow(id)
         });
-
-        // Update taskbar active
-        document
-            .querySelectorAll(".taskbar-win-btn")
-            .forEach((b) => b.classList.remove("active"));
-        const tbBtn = document.getElementById(`tb-${id}`);
-        if (tbBtn) tbBtn.classList.add("active");
-    }
-
-    /** Animate a window shrinking into its taskbar button (Win98 minimize). */
-    function animateWindowToButton(el, btn, onEnd) {
-        const reduced =
-            window.matchMedia &&
-            window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        if (!btn || reduced) {
-            onEnd();
-            return;
-        }
-        const wRect = el.getBoundingClientRect();
-        const bRect = btn.getBoundingClientRect();
-        if (!wRect.width || !wRect.height) {
-            onEnd();
-            return;
-        }
-        const dx =
-            bRect.left + bRect.width / 2 - (wRect.left + wRect.width / 2);
-        const dy =
-            bRect.top + bRect.height / 2 - (wRect.top + wRect.height / 2);
-        el.style.transition = "transform 0.18s ease-in";
-        el.style.transformOrigin = "center center";
-        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.06)`;
-        const handler = () => {
-            el.removeEventListener("transitionend", handler);
-            el.style.transition = "";
-            el.style.transform = "";
-            el.style.transformOrigin = "";
-            onEnd();
-        };
-        el.addEventListener("transitionend", handler);
-        // Fallback in case the transition never fires
-        setTimeout(() => {
-            if (el.style.transform) handler();
-        }, 250);
-    }
-
-    /** Animate a window growing back from its taskbar button (Win98 restore). */
-    function animateWindowFromButton(el, btn) {
-        const reduced =
-            window.matchMedia &&
-            window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        if (!btn || reduced) return;
-        const wRect = el.getBoundingClientRect();
-        const bRect = btn.getBoundingClientRect();
-        if (!wRect.width || !wRect.height) return;
-        const dx =
-            bRect.left + bRect.width / 2 - (wRect.left + wRect.width / 2);
-        const dy =
-            bRect.top + bRect.height / 2 - (wRect.top + wRect.height / 2);
-        el.style.transition = "none";
-        el.style.transformOrigin = "center center";
-        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.06)`;
-        void el.offsetWidth; // force reflow so the start position applies
-        el.style.transition = "transform 0.18s ease-out";
-        el.style.transform = "";
-        const handler = () => {
-            el.removeEventListener("transitionend", handler);
-            el.style.transition = "";
-            el.style.transformOrigin = "";
-        };
-        el.addEventListener("transitionend", handler);
-    }
-
-    function minimizeWindow(id) {
-        const winData = state.windows.find((w) => w.id === id);
-        if (!winData || winData.minimized) return;
-        winData.minimized = true;
-        if (state.activeWindowId === id) {
-            state.activeWindowId = null;
-            // Focus next visible
-            const visible = state.windows.filter((w) => !w.minimized);
-            if (visible.length) bringToFront(visible[visible.length - 1].id);
-        }
-        const btn = document.getElementById(`tb-${id}`);
-        animateWindowToButton(winData.el, btn, () => {
-            // Only hide if still minimized — a restore mid-animation wins
-            if (winData.minimized) winData.el.style.display = "none";
+      } else {
+        items.push({
+          label: "Свернуть",
+          action: () => minimizeWindow(id)
         });
-        updateTaskbarButtons();
-        scheduleWindowStateSave();
+      }
+      items.push({ label: "Закрыть", action: () => closeWindow(id) });
+      items.push({ type: "separator" });
+      items.push({
+        label: "Каскад окон",
+        disabled: visible.length === 0,
+        action: () => cascadeWindows(visible)
+      });
+      items.push({
+        label: "Стопкой",
+        disabled: visible.length === 0,
+        action: () => tileWindows(visible)
+      });
+      items.push({ type: "separator" });
+      items.push({
+        label: "Свойства панели задач",
+        action: openTaskbarProperties
+      });
+      showContextMenu(e.clientX, e.clientY, items);
+    });
+    $taskbarWindows.appendChild(tbBtn);
+    bringToFront(id);
+    if (opts.onCreated) opts.onCreated(el, winData);
+    scheduleWindowStateSave();
+    return winData;
+  }
+  function bringToFront(id) {
+    if (state.activeWindowId === id) return;
+    state.activeWindowId = id;
+    const winData = state.windows.find((w) => w.id === id);
+    if (!winData) return;
+    winData.el.style.zIndex = String(++state.zCounter);
+    state.windows.forEach((w) => {
+      const tb = w.el.querySelector(".win98-titlebar");
+      if (w.id === id) {
+        tb.classList.remove("inactive");
+      } else {
+        tb.classList.add("inactive");
+      }
+    });
+    document.querySelectorAll(".taskbar-win-btn").forEach((b) => b.classList.remove("active"));
+    const tbBtn = document.getElementById(`tb-${id}`);
+    if (tbBtn) tbBtn.classList.add("active");
+  }
+  function animateWindowToButton(el, btn, onEnd) {
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!btn || reduced) {
+      onEnd();
+      return;
     }
-
-    function restoreWindow(id) {
-        const winData = state.windows.find((w) => w.id === id);
-        if (!winData) return;
-        winData.minimized = false;
-        winData.el.style.display = "";
-        const btn = document.getElementById(`tb-${id}`);
-        animateWindowFromButton(winData.el, btn);
-        bringToFront(id);
-        updateTaskbarButtons();
-        scheduleWindowStateSave();
+    const wRect = el.getBoundingClientRect();
+    const bRect = btn.getBoundingClientRect();
+    if (!wRect.width || !wRect.height) {
+      onEnd();
+      return;
     }
-
-    function toggleMaximize(id) {
-        const winData = state.windows.find((w) => w.id === id);
-        if (!winData) return;
-
-        if (winData.maximized) {
-            // Restore
-            winData.maximized = false;
-            const b = winData.prevBounds;
-            winData.el.style.left = b.x + "px";
-            winData.el.style.top = b.y + "px";
-            winData.el.style.width = b.w + "px";
-            winData.el.style.height = b.h + "px";
-            winData.el.classList.remove("maximized");
+    const dx = bRect.left + bRect.width / 2 - (wRect.left + wRect.width / 2);
+    const dy = bRect.top + bRect.height / 2 - (wRect.top + wRect.height / 2);
+    el.style.transition = "transform 0.18s ease-in";
+    el.style.transformOrigin = "center center";
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(0.06)`;
+    const handler = () => {
+      el.removeEventListener("transitionend", handler);
+      el.style.transition = "";
+      el.style.transform = "";
+      el.style.transformOrigin = "";
+      onEnd();
+    };
+    el.addEventListener("transitionend", handler);
+    setTimeout(() => {
+      if (el.style.transform) handler();
+    }, 250);
+  }
+  function animateWindowFromButton(el, btn) {
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!btn || reduced) return;
+    const wRect = el.getBoundingClientRect();
+    const bRect = btn.getBoundingClientRect();
+    if (!wRect.width || !wRect.height) return;
+    const dx = bRect.left + bRect.width / 2 - (wRect.left + wRect.width / 2);
+    const dy = bRect.top + bRect.height / 2 - (wRect.top + wRect.height / 2);
+    el.style.transition = "none";
+    el.style.transformOrigin = "center center";
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(0.06)`;
+    void el.offsetWidth;
+    el.style.transition = "transform 0.18s ease-out";
+    el.style.transform = "";
+    const handler = () => {
+      el.removeEventListener("transitionend", handler);
+      el.style.transition = "";
+      el.style.transformOrigin = "";
+    };
+    el.addEventListener("transitionend", handler);
+  }
+  function minimizeWindow(id) {
+    const winData = state.windows.find((w) => w.id === id);
+    if (!winData || winData.minimized) return;
+    winData.minimized = true;
+    if (state.activeWindowId === id) {
+      state.activeWindowId = null;
+      const visible = state.windows.filter((w) => !w.minimized);
+      if (visible.length) bringToFront(visible[visible.length - 1].id);
+    }
+    const btn = document.getElementById(`tb-${id}`);
+    animateWindowToButton(winData.el, btn, () => {
+      if (winData.minimized) winData.el.style.display = "none";
+    });
+    updateTaskbarButtons();
+    scheduleWindowStateSave();
+  }
+  function restoreWindow(id) {
+    const winData = state.windows.find((w) => w.id === id);
+    if (!winData) return;
+    winData.minimized = false;
+    winData.el.style.display = "";
+    const btn = document.getElementById(`tb-${id}`);
+    animateWindowFromButton(winData.el, btn);
+    bringToFront(id);
+    updateTaskbarButtons();
+    scheduleWindowStateSave();
+  }
+  function toggleMaximize(id) {
+    const winData = state.windows.find((w) => w.id === id);
+    if (!winData) return;
+    if (winData.maximized) {
+      winData.maximized = false;
+      const b = winData.prevBounds;
+      winData.el.style.left = b.x + "px";
+      winData.el.style.top = b.y + "px";
+      winData.el.style.width = b.w + "px";
+      winData.el.style.height = b.h + "px";
+      winData.el.classList.remove("maximized");
+    } else {
+      winData.prevBounds = {
+        x: parseInt(winData.el.style.left),
+        y: parseInt(winData.el.style.top),
+        w: parseInt(winData.el.style.width),
+        h: parseInt(winData.el.style.height)
+      };
+      winData.el.classList.add("maximized");
+      winData.maximized = true;
+    }
+    scheduleWindowStateSave();
+  }
+  function closeWindow(id) {
+    const idx = state.windows.findIndex((w) => w.id === id);
+    if (idx === -1) return;
+    const winData = state.windows[idx];
+    winData.el.remove();
+    state.windows.splice(idx, 1);
+    if (winData.winType === "notepad") {
+      flushNotepadSave();
+      notepadTextarea = null;
+    }
+    const calcEl = (
+      /** @type {HTMLDivElement & { _calcKeyHandler?: (e: Event) => void }} */
+      winData.el
+    );
+    if (calcEl && calcEl._calcKeyHandler) {
+      document.removeEventListener("keydown", calcEl._calcKeyHandler);
+    }
+    const tbBtn = document.getElementById(`tb-${id}`);
+    if (tbBtn) tbBtn.remove();
+    if (state.activeWindowId === id) {
+      state.activeWindowId = null;
+      const visible = state.windows.filter((w) => !w.minimized);
+      if (visible.length) bringToFront(visible[visible.length - 1].id);
+    }
+    scheduleWindowStateSave();
+  }
+  function updateTaskbarButtons() {
+    state.windows.forEach((w) => {
+      const tbBtn = document.getElementById(`tb-${w.id}`);
+      if (tbBtn) {
+        if (w.id === state.activeWindowId && !w.minimized) {
+          tbBtn.classList.add("active");
         } else {
-            // Maximize
-            winData.prevBounds = {
-                x: parseInt(winData.el.style.left),
-                y: parseInt(winData.el.style.top),
-                w: parseInt(winData.el.style.width),
-                h: parseInt(winData.el.style.height),
-            };
-            winData.el.classList.add("maximized");
-            winData.maximized = true;
+          tbBtn.classList.remove("active");
         }
-        scheduleWindowStateSave();
-    }
-
-    function closeWindow(id) {
-        const idx = state.windows.findIndex((w) => w.id === id);
-        if (idx === -1) return;
-        const winData = state.windows[idx];
-        winData.el.remove();
-        state.windows.splice(idx, 1);
-
-        // Flush any pending notepad autosave before the window is destroyed
-        if (winData.winType === "notepad") {
-            flushNotepadSave();
-            notepadTextarea = null;
+      }
+    });
+  }
+  var STORAGE_WINDOWS_KEY = "openWindows";
+  function collectWindowState() {
+    return state.windows.filter((w) => !w.dialog && w.title !== "Настройки").map((w) => {
+      const d = {
+        winType: w.winType || null,
+        title: w.title || "",
+        bookmarkId: w.bookmarkId || null,
+        x: parseInt(w.el.style.left) || 0,
+        y: parseInt(w.el.style.top) || 0,
+        w: parseInt(w.el.style.width) || w.w || 400,
+        h: parseInt(w.el.style.height) || w.h || 300,
+        minimized: !!w.minimized,
+        maximized: !!w.maximized
+      };
+      if (!w.winType && w.bookmarkId) {
+        d.navStackIds = (w.navStack || []).map((n) => n && n.id || null).filter((v) => v !== null);
+      }
+      return d;
+    });
+  }
+  var windowStateSaveTimer = null;
+  function scheduleWindowStateSave() {
+    clearTimeout(windowStateSaveTimer);
+    windowStateSaveTimer = setTimeout(() => {
+      const activeIndex = state.windows.findIndex(
+        (w) => w.id === state.activeWindowId
+      );
+      chrome.storage.local.set({
+        [STORAGE_WINDOWS_KEY]: {
+          windows: collectWindowState(),
+          activeIndex
         }
-
-        // Remove the calculator's document-level keyboard listener
-        const calcEl = /** @type {HTMLDivElement & { _calcKeyHandler?: (e: Event) => void }} */ (
-            winData.el
-        );
-        if (calcEl && calcEl._calcKeyHandler) {
-            document.removeEventListener("keydown", calcEl._calcKeyHandler);
-        }
-
-        const tbBtn = document.getElementById(`tb-${id}`);
-        if (tbBtn) tbBtn.remove();
-
-        if (state.activeWindowId === id) {
-            state.activeWindowId = null;
-            const visible = state.windows.filter((w) => !w.minimized);
-            if (visible.length) bringToFront(visible[visible.length - 1].id);
-        }
-
-        scheduleWindowStateSave();
+      }).catch(() => {
+      });
+    }, 400);
+  }
+  function lastCreatedWindow() {
+    return state.windows[state.windows.length - 1] || null;
+  }
+  function applySavedWindowState(win, d) {
+    if (!win || !d) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const x = clampInt(d.x, 0, Math.max(0, vw - 40)) ?? win.x ?? 0;
+    const y = clampInt(d.y, 0, Math.max(0, vh - 60)) ?? win.y ?? 0;
+    const w = clampInt(d.w, 120, vw) ?? win.w ?? 400;
+    const h = clampInt(d.h, 80, vh - 40) ?? win.h ?? 300;
+    win.el.style.left = x + "px";
+    win.el.style.top = y + "px";
+    win.el.style.width = w + "px";
+    win.el.style.height = h + "px";
+    win.x = x;
+    win.y = y;
+    win.w = w;
+    win.h = h;
+    if (d.maximized) {
+      win.prevBounds = { x, y, w, h };
+      win.el.classList.add("maximized");
+      win.maximized = true;
     }
-
-    function updateTaskbarButtons() {
-        state.windows.forEach((w) => {
-            const tbBtn = document.getElementById(`tb-${w.id}`);
-            if (tbBtn) {
-                if (w.id === state.activeWindowId && !w.minimized) {
-                    tbBtn.classList.add("active");
-                } else {
-                    tbBtn.classList.remove("active");
-                }
-            }
-        });
+    if (d.minimized) {
+      win.minimized = true;
+      win.el.style.display = "none";
     }
-
-    /* ============================================================
-     WINDOW STATE PERSISTENCE
-     (remember open windows so a tab reload can restore them)
-     ============================================================ */
-
-    const STORAGE_WINDOWS_KEY = "openWindows";
-
-    /** Serialize the current open windows into storage-friendly descriptors.
-        Settings windows and dialogs are transient — never persisted. */
-    function collectWindowState() {
-        return state.windows
-            .filter((w) => !w.dialog && w.title !== "Настройки")
-            .map((w) => {
-                const d = {
-                    winType: w.winType || null,
-                    title: w.title || "",
-                    bookmarkId: w.bookmarkId || null,
-                    x: parseInt(w.el.style.left) || 0,
-                    y: parseInt(w.el.style.top) || 0,
-                    w: parseInt(w.el.style.width) || w.w || 400,
-                    h: parseInt(w.el.style.height) || w.h || 300,
-                    minimized: !!w.minimized,
-                    maximized: !!w.maximized,
-                };
-                // Folder windows keep their «Назад» history across a reload
-                if (!w.winType && w.bookmarkId) {
-                    d.navStackIds = (w.navStack || [])
-                        .map((n) => (n && n.id) || null)
-                        .filter((v) => v !== null);
-                }
-                return d;
-            });
+  }
+  function resolveSavedNodeId(id) {
+    if (id === ALL_ROOT_ID) return buildAllBookmarksNode(state.treeRoot);
+    return findNodeById(state.treeRoot, id) || null;
+  }
+  function restoreFolderWindowFromSaved(d) {
+    let node = null;
+    if (d.bookmarkId === ALL_ROOT_ID) {
+      node = buildAllBookmarksNode(state.treeRoot);
+    } else if (d.bookmarkId) {
+      node = findNodeById(state.treeRoot, d.bookmarkId);
     }
-
-    let windowStateSaveTimer = null;
-    /** Debounced write of the open-window layout to chrome.storage.local */
-    function scheduleWindowStateSave() {
-        clearTimeout(windowStateSaveTimer);
-        windowStateSaveTimer = setTimeout(() => {
-            const activeIndex = state.windows.findIndex(
-                (w) => w.id === state.activeWindowId,
-            );
-            chrome.storage.local
-                .set({
-                    [STORAGE_WINDOWS_KEY]: {
-                        windows: collectWindowState(),
-                        activeIndex,
-                    },
-                })
-                .catch(() => {});
-        }, 400);
+    if (!node) return null;
+    if (node.id !== ALL_ROOT_ID && !isFolderNode(node)) return null;
+    openFolderWindow(node);
+    const win = lastCreatedWindow();
+    if (!win) return null;
+    applySavedWindowState(win, d);
+    win.navStack = (d.navStackIds || []).map(resolveSavedNodeId).filter(Boolean);
+    updateNavButtons(win);
+    return win;
+  }
+  async function restoreSavedWindows() {
+    let stored = null;
+    try {
+      stored = await chrome.storage.local.get(STORAGE_WINDOWS_KEY);
+    } catch {
+      return;
     }
-
-    /** The window created by the most recent open* call (used by the restore path) */
-    function lastCreatedWindow() {
-        return state.windows[state.windows.length - 1] || null;
+    const data = stored && stored[STORAGE_WINDOWS_KEY];
+    if (!data || !Array.isArray(data.windows) || data.windows.length === 0) {
+      return;
     }
-
-    /** Re-apply saved geometry and minimized/maximized state to a fresh window */
-    function applySavedWindowState(win, d) {
-        if (!win || !d) return;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const x = clampInt(d.x, 0, Math.max(0, vw - 40)) ?? win.x ?? 0;
-        const y = clampInt(d.y, 0, Math.max(0, vh - 60)) ?? win.y ?? 0;
-        const w = clampInt(d.w, 120, vw) ?? win.w ?? 400;
-        const h = clampInt(d.h, 80, vh - 40) ?? win.h ?? 300;
-        win.el.style.left = x + "px";
-        win.el.style.top = y + "px";
-        win.el.style.width = w + "px";
-        win.el.style.height = h + "px";
-        win.x = x;
-        win.y = y;
-        win.w = w;
-        win.h = h;
-        if (d.maximized) {
-            win.prevBounds = { x, y, w, h };
-            win.el.classList.add("maximized");
-            win.maximized = true;
-        }
-        if (d.minimized) {
-            win.minimized = true;
-            win.el.style.display = "none";
-        }
-    }
-
-    /** Resolve a persisted node id back to a live node (synthetic root included) */
-    function resolveSavedNodeId(id) {
-        if (id === ALL_ROOT_ID) return buildAllBookmarksNode(state.treeRoot);
-        return findNodeById(state.treeRoot, id) || null;
-    }
-
-    /** Restore a saved folder window; returns the window or null (folder deleted) */
-    function restoreFolderWindowFromSaved(d) {
-        let node = null;
-        if (d.bookmarkId === ALL_ROOT_ID) {
-            node = buildAllBookmarksNode(state.treeRoot);
-        } else if (d.bookmarkId) {
-            node = findNodeById(state.treeRoot, d.bookmarkId);
-        }
-        if (!node) return null;
-        if (node.id !== ALL_ROOT_ID && !isFolderNode(node)) return null;
-        openFolderWindow(node);
-        const win = lastCreatedWindow();
-        if (!win) return null;
+    const seen = /* @__PURE__ */ new Set();
+    const list = data.windows.filter((d) => {
+      const key = d.bookmarkId ? "b:" + d.bookmarkId : d.winType ? "t:" + d.winType : d.title === "Поиск" ? "search" : "o:" + d.title;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    for (const [i, d] of list.entries()) {
+      let win = null;
+      if (d.winType === "all-bookmarks") {
+        win = await openAllBookmarksWindow();
         applySavedWindowState(win, d);
-        // Repopulate «Назад» from the saved ids, dropping any deleted folders
-        win.navStack = (d.navStackIds || [])
-            .map(resolveSavedNodeId)
-            .filter(Boolean);
-        updateNavButtons(win);
-        return win;
+      } else if (d.winType === "notepad") {
+        openNotepad();
+        win = lastCreatedWindow();
+        applySavedWindowState(win, d);
+      } else if (d.winType === "calculator") {
+        openCalculator();
+        win = lastCreatedWindow();
+        applySavedWindowState(win, d);
+      } else if (d.winType === "weather") {
+        openWeatherWindow();
+        win = lastCreatedWindow();
+        applySavedWindowState(win, d);
+      } else if (d.winType === "calendar") {
+        openCalendar();
+        win = lastCreatedWindow();
+        applySavedWindowState(win, d);
+      } else if (!d.winType && d.title === "Поиск") {
+        openSearchWindow();
+        win = lastCreatedWindow();
+        applySavedWindowState(win, d);
+      } else if (!d.winType && d.bookmarkId) {
+        win = restoreFolderWindowFromSaved(d);
+      }
+      if (win) win._savedIndex = i;
     }
-
-    /** Recreate every window that was open before the tab reloaded */
-    async function restoreSavedWindows() {
-        let stored = null;
-        try {
-            stored = await chrome.storage.local.get(STORAGE_WINDOWS_KEY);
-        } catch {
-            return;
-        }
-        const data = stored && stored[STORAGE_WINDOWS_KEY];
-        if (!data || !Array.isArray(data.windows) || data.windows.length === 0) {
-            return;
-        }
-
-        // Windows are single-instance by nature (folder id / winType / search
-        // title); drop duplicate saved entries so a skip never misapplies state.
-        const seen = new Set();
-        const list = data.windows.filter((d) => {
-            const key = d.bookmarkId
-                ? "b:" + d.bookmarkId
-                : d.winType
-                  ? "t:" + d.winType
-                  : d.title === "Поиск"
-                    ? "search"
-                    : "o:" + d.title;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-
-        for (const [i, d] of list.entries()) {
-            let win = null;
-            if (d.winType === "all-bookmarks") {
-                win = await openAllBookmarksWindow();
-                applySavedWindowState(win, d);
-            } else if (d.winType === "notepad") {
-                openNotepad();
-                win = lastCreatedWindow();
-                applySavedWindowState(win, d);
-            } else if (d.winType === "calculator") {
-                openCalculator();
-                win = lastCreatedWindow();
-                applySavedWindowState(win, d);
-            } else if (d.winType === "weather") {
-                openWeatherWindow();
-                win = lastCreatedWindow();
-                applySavedWindowState(win, d);
-            } else if (d.winType === "calendar") {
-                openCalendar();
-                win = lastCreatedWindow();
-                applySavedWindowState(win, d);
-            } else if (!d.winType && d.title === "Поиск") {
-                openSearchWindow();
-                win = lastCreatedWindow();
-                applySavedWindowState(win, d);
-            } else if (!d.winType && d.bookmarkId) {
-                win = restoreFolderWindowFromSaved(d);
-            }
-            if (win) win._savedIndex = i;
-        }
-
-        // Re-apply the previously active window and sync taskbar highlight
-        const target = state.windows.find(
-            (w) => w._savedIndex === data.activeIndex,
-        );
-        const visible = state.windows.filter((w) => !w.minimized);
-        if (target && !target.minimized) {
-            bringToFront(target.id);
-        } else if (visible.length) {
-            bringToFront(visible[visible.length - 1].id);
-        }
-        updateTaskbarButtons();
-        scheduleWindowStateSave();
+    const target = state.windows.find(
+      (w) => w._savedIndex === data.activeIndex
+    );
+    const visible = state.windows.filter((w) => !w.minimized);
+    if (target && !target.minimized) {
+      bringToFront(target.id);
+    } else if (visible.length) {
+      bringToFront(visible[visible.length - 1].id);
     }
-
-    /* ============================================================
-     DRAG & RESIZE
-     ============================================================ */
-
-    /** @param {MouseEvent} e @param {WinData} winData */
-    function startDrag(e, winData) {
-        if (winData.maximized) return;
-        const rect = winData.el.getBoundingClientRect();
-        state.dragState = {
-            winData,
-            offsetX: e.clientX - rect.left,
-            offsetY: e.clientY - rect.top,
-            x: e.clientX,
-            y: e.clientY,
-            raf: null,
+    updateTaskbarButtons();
+    scheduleWindowStateSave();
+  }
+  function startDrag(e, winData) {
+    if (winData.maximized) return;
+    const rect = winData.el.getBoundingClientRect();
+    state.dragState = {
+      winData,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      x: e.clientX,
+      y: e.clientY,
+      raf: null
+    };
+    document.addEventListener("mousemove", onDragMove);
+    document.addEventListener("mouseup", onDragEnd);
+  }
+  function onDragMove(e) {
+    const d = state.dragState;
+    if (!d) return;
+    d.x = e.clientX;
+    d.y = e.clientY;
+    if (d.raf) return;
+    d.raf = requestAnimationFrame(() => {
+      d.raf = null;
+      const x = d.x - d.offsetX;
+      const y = d.y - d.offsetY;
+      d.winData.el.style.left = x + "px";
+      d.winData.el.style.top = Math.max(0, y) + "px";
+    });
+  }
+  function onDragEnd() {
+    state.dragState = null;
+    document.removeEventListener("mousemove", onDragMove);
+    document.removeEventListener("mouseup", onDragEnd);
+    scheduleWindowStateSave();
+  }
+  function startResize(e, winData) {
+    if (winData.maximized) return;
+    state.resizeState = {
+      winData,
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: parseInt(winData.el.style.width),
+      startH: parseInt(winData.el.style.height),
+      x: e.clientX,
+      y: e.clientY,
+      raf: null
+    };
+    document.addEventListener("mousemove", onResizeMove);
+    document.addEventListener("mouseup", onResizeEnd);
+  }
+  function onResizeMove(e) {
+    const r = state.resizeState;
+    if (!r) return;
+    r.x = e.clientX;
+    r.y = e.clientY;
+    if (r.raf) return;
+    r.raf = requestAnimationFrame(() => {
+      r.raf = null;
+      const newW = Math.max(MIN_WINDOW_W, r.startW + (r.x - r.startX));
+      const newH = Math.max(MIN_WINDOW_H, r.startH + (r.y - r.startY));
+      r.winData.el.style.width = newW + "px";
+      r.winData.el.style.height = newH + "px";
+    });
+  }
+  function onResizeEnd() {
+    state.resizeState = null;
+    document.removeEventListener("mousemove", onResizeMove);
+    document.removeEventListener("mouseup", onResizeEnd);
+    scheduleWindowStateSave();
+  }
+  async function loadBookmarks() {
+    let tree;
+    try {
+      const result = await chrome.bookmarks.getTree();
+      tree = result[0];
+    } catch (err) {
+      showEmptyState(
+        "Не удалось загрузить закладки. Проверьте права расширения."
+      );
+      return;
+    }
+    state.treeRoot = tree;
+    state.nodeIndex = buildNodeIndex(tree);
+    renderBookmarks(tree);
+  }
+  function renderBookmarks(tree) {
+    $desktopIcons.innerHTML = "";
+    const emptyMsg = document.querySelector(".empty-desktop-msg");
+    if (emptyMsg) emptyMsg.remove();
+    const children = tree ? tree.children || [] : [];
+    const roots = children.filter((n) => n.children && n.children.length > 0).sort(
+      (a, b) => (ROOT_ORDER[a.id] ?? 99) - (ROOT_ORDER[b.id] ?? 99)
+    );
+    if (roots.length === 0) {
+      showEmptyState(
+        "Нет закладок. Добавьте закладки в Chrome и они появятся здесь."
+      );
+      return;
+    }
+    renderDesktopIcons(roots);
+  }
+  function showEmptyState(msg) {
+    const el = document.createElement("div");
+    el.className = "empty-desktop-msg";
+    el.textContent = msg;
+    $desktop.appendChild(el);
+  }
+  function findNodeById(node, id) {
+    void node;
+    return state.nodeIndex && state.nodeIndex.get(id) || null;
+  }
+  var EMPTY_FOLDER_HTML = '<div style="padding:20px;color:#808080;font-size:11px;">Папка пуста</div>';
+  var colorIdx = 0;
+  var nodeDragState = null;
+  function renderDesktopIcons(roots) {
+    colorIdx = 0;
+    roots.forEach((root, rootIdx) => {
+      if (rootIdx > 0) {
+        const sep = document.createElement("div");
+        sep.className = "desktop-row-separator";
+        $desktopIcons.appendChild(sep);
+      }
+      const items = root.children || [];
+      for (const item of items) {
+        if (!isVisibleNode(item)) continue;
+        const icon = createDesktopIcon(item);
+        $desktopIcons.appendChild(icon);
+      }
+    });
+  }
+  function createDesktopIcon(node) {
+    const div = document.createElement("div");
+    div.className = "desktop-icon";
+    const isFolder = isFolderNode(node);
+    const img = document.createElement("img");
+    img.draggable = false;
+    if (isFolder) {
+      img.src = drawFolderIcon(
+        FOLDER_COLORS[colorIdx % FOLDER_COLORS.length]
+      );
+      colorIdx++;
+    } else {
+      const favUrl = getFaviconUrl(node.url);
+      if (favUrl) {
+        img.onerror = () => {
+          img.src = drawPageIcon();
         };
-        document.addEventListener("mousemove", onDragMove);
-        document.addEventListener("mouseup", onDragEnd);
-    }
-
-    function onDragMove(e) {
-        const d = state.dragState;
-        if (!d) return;
-        // Always track the latest cursor position; only coalesce the style write
-        // to one per animation frame (mousemove can fire faster than 60 Hz).
-        d.x = e.clientX;
-        d.y = e.clientY;
-        if (d.raf) return;
-        d.raf = requestAnimationFrame(() => {
-            d.raf = null;
-            const x = d.x - d.offsetX;
-            const y = d.y - d.offsetY;
-            d.winData.el.style.left = x + "px";
-            d.winData.el.style.top = Math.max(0, y) + "px";
+        img.src = favUrl;
+        faviconDataUrl(favUrl, currentIconSize()).then((clean) => {
+          img.src = clean;
+        }).catch(() => {
         });
+      } else {
+        img.src = drawPageIcon();
+      }
     }
-
-    function onDragEnd() {
-        state.dragState = null;
-        document.removeEventListener("mousemove", onDragMove);
-        document.removeEventListener("mouseup", onDragEnd);
-        scheduleWindowStateSave();
+    const label = document.createElement("div");
+    label.className = "desktop-icon-label";
+    label.textContent = node.title || node.url || "Без названия";
+    div.appendChild(img);
+    div.appendChild(label);
+    div._node = node;
+    return div;
+  }
+  function selectDesktopIcon(el) {
+    $desktopIcons.querySelectorAll(".desktop-icon.selected").forEach((d) => d.classList.remove("selected"));
+    if (!el) return;
+    el.classList.add("selected");
+    state.selectedDesktopEl = el;
+  }
+  function attachDesktopIconEvents() {
+    $desktopIcons.addEventListener("click", (e) => {
+      const div = (
+        /** @type {IconEl | null} */
+        eventTargetElement(e).closest(".desktop-icon")
+      );
+      if (!div) return;
+      const node = div._node;
+      if (!node) return;
+      if (isSingleClickMode()) {
+        const prev = Number(div.dataset.lastClick || 0);
+        const now = Date.now();
+        div.dataset.lastClick = String(now);
+        if (now - prev < CLICK_DEBOUNCE_MS) return;
+        openNode(node);
+      } else {
+        selectDesktopIcon(div);
+      }
+    });
+    $desktopIcons.addEventListener("dblclick", (e) => {
+      const div = (
+        /** @type {IconEl | null} */
+        eventTargetElement(e).closest(".desktop-icon")
+      );
+      if (!div || !div._node) return;
+      if (!isSingleClickMode()) openNode(div._node);
+    });
+    $desktopIcons.addEventListener("auxclick", (e) => {
+      const div = (
+        /** @type {IconEl | null} */
+        eventTargetElement(e).closest(".desktop-icon")
+      );
+      if (!div || !div._node) return;
+      handleAuxClick(e, div._node);
+    });
+    $desktopIcons.addEventListener("contextmenu", (e) => {
+      const div = (
+        /** @type {IconEl | null} */
+        eventTargetElement(e).closest(".desktop-icon")
+      );
+      if (!div || !div._node) return;
+      e.preventDefault();
+      selectDesktopIcon(div);
+      showContextMenu(
+        e.clientX,
+        e.clientY,
+        buildNodeContextMenuItems(div._node)
+      );
+    });
+  }
+  function openNode(node) {
+    if (node.url) {
+      window.location.href = node.url;
+    } else {
+      openFolderWindow(node);
     }
-
-    /** @param {MouseEvent} e @param {WinData} winData */
-    function startResize(e, winData) {
-        if (winData.maximized) return;
-        state.resizeState = {
-            winData,
-            startX: e.clientX,
-            startY: e.clientY,
-            startW: parseInt(winData.el.style.width),
-            startH: parseInt(winData.el.style.height),
-            x: e.clientX,
-            y: e.clientY,
-            raf: null,
-        };
-        document.addEventListener("mousemove", onResizeMove);
-        document.addEventListener("mouseup", onResizeEnd);
+  }
+  function openInBackgroundTab(url) {
+    chrome.tabs.create({ url, active: false });
+  }
+  function handleAuxClick(e, node) {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (node && node.url) openInBackgroundTab(node.url);
+  }
+  function isSingleClickMode() {
+    return state.settings && state.settings.clickMode === "single";
+  }
+  function buildAllBookmarksNode(tree) {
+    return {
+      id: ALL_ROOT_ID,
+      title: "Все закладки",
+      children: (tree && tree.children || []).filter((n) => isVisibleNode(n))
+    };
+  }
+  function resolveNavNode(node, tree) {
+    const t = tree || state.treeRoot;
+    if (!node) return null;
+    if (node.id === ALL_ROOT_ID) return buildAllBookmarksNode(t);
+    return findNodeById(t, node.id) || null;
+  }
+  function currentFolderViewMode() {
+    return previewFolderViewMode || state.settings && state.settings.folderViewMode || "icons";
+  }
+  function setFolderViewMode(mode) {
+    if (mode !== "icons" && mode !== "list") return;
+    state.settings = {
+      ...state.settings || DEFAULT_SETTINGS,
+      folderViewMode: mode
+    };
+    previewFolderViewMode = null;
+    saveSettings();
+    applyFolderViewModeToWindows(mode);
+  }
+  function applyFolderViewModeToWindows(mode) {
+    state.windows.forEach((w) => {
+      if (!w.el) return;
+      const fc = w.el.querySelector(".folder-content");
+      if (fc) fc.classList.toggle("folder-view-list", mode === "list");
+      const viewBtn = w.el.querySelector('[data-nav="view"]');
+      if (viewBtn) {
+        const target = mode === "list" ? "Значки" : "Список";
+        const sp = viewBtn.querySelector("span");
+        if (sp) sp.textContent = "Вид: " + target;
+      }
+    });
+  }
+  function renderFolderContent(winData, node) {
+    const el = winData.el;
+    if (!el) return;
+    let fc = el.querySelector(".folder-content");
+    if (!fc) {
+      const contentEl = el.querySelector(".win98-window-content");
+      if (!contentEl) return;
+      fc = document.createElement("div");
+      fc.className = "folder-content";
+      contentEl.appendChild(fc);
     }
-
-    function onResizeMove(e) {
-        const r = state.resizeState;
-        if (!r) return;
-        r.x = e.clientX;
-        r.y = e.clientY;
-        if (r.raf) return;
-        r.raf = requestAnimationFrame(() => {
-            r.raf = null;
-            const newW = Math.max(MIN_WINDOW_W, r.startW + (r.x - r.startX));
-            const newH = Math.max(MIN_WINDOW_H, r.startH + (r.y - r.startY));
-            r.winData.el.style.width = newW + "px";
-            r.winData.el.style.height = newH + "px";
-        });
+    wireFolderBackgroundDrop(
+      /** @type {HTMLElement & { _dropWired?: boolean }} */
+      fc,
+      winData
+    );
+    const items = (node.children || []).filter((n) => isVisibleNode(n));
+    fc.innerHTML = "";
+    const viewMode = currentFolderViewMode();
+    fc.classList.toggle("folder-view-list", viewMode === "list");
+    const viewBtn = (
+      /** @type {HTMLElement} */
+      el.querySelector('[data-nav="view"]')
+    );
+    if (viewBtn) {
+      const target = viewMode === "list" ? "Значки" : "Список";
+      const sp = viewBtn.querySelector("span");
+      if (sp) sp.textContent = "Вид: " + target;
+      viewBtn.title = target === "Список" ? "Переключить в режим «Список»" : "Переключить в режим «Значки»";
     }
-
-    function onResizeEnd() {
-        state.resizeState = null;
-        document.removeEventListener("mousemove", onResizeMove);
-        document.removeEventListener("mouseup", onResizeEnd);
-        scheduleWindowStateSave();
-    }
-
-    /* ============================================================
-     BOOKMARKS LOADING
-     ============================================================ */
-
-    async function loadBookmarks() {
-        let tree;
-        try {
-            const result = await chrome.bookmarks.getTree();
-            tree = result[0];
-        } catch (err) {
-            showEmptyState(
-                "Не удалось загрузить закладки. Проверьте права расширения.",
-            );
-            return;
-        }
-
-        state.treeRoot = tree;
-        state.nodeIndex = buildNodeIndex(tree);
-        renderBookmarks(tree);
-    }
-
-    /** Render the desktop icons from a bookmarks tree (used on init and on live refresh) */
-    function renderBookmarks(tree) {
-        $desktopIcons.innerHTML = "";
-        const emptyMsg = document.querySelector(".empty-desktop-msg");
-        if (emptyMsg) emptyMsg.remove();
-
-        const children = tree ? tree.children || [] : [];
-        const roots = children
-            .filter((n) => n.children && n.children.length > 0)
-            .sort(
-                (a, b) => (ROOT_ORDER[a.id] ?? 99) - (ROOT_ORDER[b.id] ?? 99),
-            );
-
-        // A bookmark anywhere makes its root have children, so `roots` is empty
-        // only when there are truly no bookmarks at all — no extra full-tree walk.
-        if (roots.length === 0) {
-            showEmptyState(
-                "Нет закладок. Добавьте закладки в Chrome и они появятся здесь.",
-            );
-            return;
-        }
-
-        renderDesktopIcons(roots);
-    }
-
-    function showEmptyState(msg) {
-        const el = document.createElement("div");
-        el.className = "empty-desktop-msg";
-        el.textContent = msg;
-        $desktop.appendChild(el);
-    }
-
-    /** Folder nodes have a children array (possibly empty); bookmarks have a URL. Chrome
-      separator nodes (url: "" without children) must never be rendered as folders. */
-    function isFolderNode(n) {
-        return !!n && !n.url && Array.isArray(n.children);
-    }
-    function isBookmarkNode(n) {
-        return !!n && !!n.url;
-    }
-    /** Anything that should appear on the desktop / in folder windows */
-    function isVisibleNode(n) {
-        return isFolderNode(n) || isBookmarkNode(n);
-    }
-
-    /** Build an id→node index for O(1) lookups (rebuilt after every tree refresh) */
-    /** @param {BookmarkNode} root @returns {Map<string, BookmarkNode>} */
-    function buildNodeIndex(root) {
-        const map = new Map();
-        (function walk(n) {
-            if (!n) return;
-            map.set(n.id, n);
-            (n.children || []).forEach(walk);
-        })(root);
-        return map;
-    }
-
-    /** Look up a node by id in the cached tree (O(1) via the index) */
-    function findNodeById(node, id) {
-        void node; // the index is keyed on ids, the tree root only matters at build time
-        return (state.nodeIndex && state.nodeIndex.get(id)) || null;
-    }
-
-    const EMPTY_FOLDER_HTML =
-        '<div style="padding:20px;color:#808080;font-size:11px;">Папка пуста</div>';
-
-    /* ============================================================
-     DESKTOP ICONS RENDERING
-     ============================================================ */
-
-    let colorIdx = 0;
-
-    // Bookmark/folder currently being dragged between folder windows
-    // ({ id, sourceEl } or null)
-    let nodeDragState = null;
-
-    function renderDesktopIcons(roots) {
-        // Note: caller (`renderBookmarks`) has already cleared $desktopIcons.
-        colorIdx = 0;
-
-        roots.forEach((root, rootIdx) => {
-            if (rootIdx > 0) {
-                // Force next group onto a new row
-                const sep = document.createElement("div");
-                sep.className = "desktop-row-separator";
-                $desktopIcons.appendChild(sep);
-            }
-            const items = root.children || [];
-            for (const item of items) {
-                if (!isVisibleNode(item)) continue;
-                const icon = createDesktopIcon(item);
-                $desktopIcons.appendChild(icon);
-            }
-        });
-    }
-
-    /** @param {BookmarkNode} node @returns {IconEl} */
-    function createDesktopIcon(node) {
-        /** @type {IconEl} */
-        const div = document.createElement("div");
-        div.className = "desktop-icon";
-
-        const isFolder = isFolderNode(node);
-
-        // Create icon image
-        const img = document.createElement("img");
-        img.draggable = false;
-
-        if (isFolder) {
-            img.src = drawFolderIcon(
-                FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
-            );
-            colorIdx++;
-        } else {
-            // Try favicon, fallback to page icon. Show the original favicon
-            // immediately (usually cached), then swap in a background-cleaned
-            // copy once fetched — Google wraps some icons in a white PNG.
-            const favUrl = getFaviconUrl(node.url);
-            if (favUrl) {
-                img.onerror = () => {
-                    img.src = drawPageIcon();
-                };
-                img.src = favUrl;
-                faviconDataUrl(favUrl, currentIconSize())
-                    .then((clean) => {
-                        img.src = clean;
-                    })
-                    .catch(() => {});
-            } else {
-                img.src = drawPageIcon();
-            }
-        }
-
-        const label = document.createElement("div");
-        label.className = "desktop-icon-label";
-        label.textContent = node.title || node.url || "Без названия";
-
-        div.appendChild(img);
-        div.appendChild(label);
-
-        // Event handling is delegated on $desktopIcons (see init) — listeners are
-        // attached once on the container rather than once per icon.
-        div._node = node;
-        return div;
-    }
-
-    function selectDesktopIcon(el) {
-        $desktopIcons
-            .querySelectorAll(".desktop-icon.selected")
-            .forEach((d) => d.classList.remove("selected"));
-        if (!el) return;
-        el.classList.add("selected");
-        state.selectedDesktopEl = el;
-    }
-
-    /** Attach delegated click/dblclick/auxclick/contextmenu on the desktop icons
-        container — one listener set total instead of four per desktop icon. */
-    function attachDesktopIconEvents() {
-        $desktopIcons.addEventListener("click", (e) => {
-            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
-            if (!div) return;
-            const node = div._node;
-            if (!node) return;
-            if (isSingleClickMode()) {
-                const prev = Number(div.dataset.lastClick || 0);
-                const now = Date.now();
-                div.dataset.lastClick = String(now);
-                if (now - prev < CLICK_DEBOUNCE_MS) return; // part of a double-click
-                openNode(node);
-            } else {
-                selectDesktopIcon(div);
-            }
-        });
-
-        $desktopIcons.addEventListener("dblclick", (e) => {
-            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
-            if (!div || !div._node) return;
-            if (!isSingleClickMode()) openNode(div._node);
-        });
-
-        // Middle mouse button → open bookmark in a background tab
-        $desktopIcons.addEventListener("auxclick", (e) => {
-            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
-            if (!div || !div._node) return;
-            handleAuxClick(e, div._node);
-        });
-
-        // Right-click context menu
-        $desktopIcons.addEventListener("contextmenu", (e) => {
-            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
-            if (!div || !div._node) return;
-            e.preventDefault();
-            selectDesktopIcon(div);
-            showContextMenu(
-                e.clientX,
-                e.clientY,
-                buildNodeContextMenuItems(div._node),
-            );
-        });
-    }
-
-    /** Open a bookmark node (URL → navigate, folder → window) */
-    /** @param {BookmarkNode} node */
-    function openNode(node) {
-        if (node.url) {
-            window.location.href = node.url;
-        } else {
-            openFolderWindow(node);
-        }
-    }
-
-    /** Open a bookmark URL in a new background tab (middle-click) */
-    function openInBackgroundTab(url) {
-        chrome.tabs.create({ url, active: false });
-    }
-
-    /** Middle-click (auxclick, button=1) → background tab; folders are ignored */
-    function handleAuxClick(e, node) {
-        if (e.button !== 1) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (node && node.url) openInBackgroundTab(node.url);
-    }
-
-    /** Current click mode from settings */
-    function isSingleClickMode() {
-        return state.settings && state.settings.clickMode === "single";
-    }
-
-    /* ============================================================
-     FOLDER WINDOW
-     ============================================================ */
-
-    /** Build the synthetic top-level node that lists the Chrome root folders */
-    /** @param {BookmarkNode} tree @returns {BookmarkNode} */
-    function buildAllBookmarksNode(tree) {
-        return {
-            id: ALL_ROOT_ID,
-            title: "Все закладки",
-            children: ((tree && tree.children) || []).filter((n) => isVisibleNode(n)),
-        };
-    }
-
-    /** Re-resolve a nav target against the live tree (synthetic root is always rebuilt fresh) */
-    function resolveNavNode(node, tree) {
-        const t = tree || state.treeRoot;
-        if (!node) return null;
-        if (node.id === ALL_ROOT_ID) return buildAllBookmarksNode(t);
-        return findNodeById(t, node.id) || null;
-    }
-
-    /** Current folder-window view mode: "icons" grid or "list" rows */
-    function currentFolderViewMode() {
-        return (
-            previewFolderViewMode ||
-            (state.settings && state.settings.folderViewMode) ||
-            "icons"
+    if (items.length === 0) {
+      fc.innerHTML = EMPTY_FOLDER_HTML;
+    } else {
+      for (const item of items) {
+        fc.appendChild(
+          createFolderItem(item, node, {
+            // Folders inside a window navigate the SAME window instead of opening a new one
+            navigateTo: isFolderNode(item) ? (n) => navigateInWindow(winData, n) : void 0
+          })
         );
+      }
     }
-
-    /** Set the folder-window view mode globally, persist it and re-render open windows */
-    function setFolderViewMode(mode) {
-        if (mode !== "icons" && mode !== "list") return;
-        state.settings = {
-            ...(state.settings || DEFAULT_SETTINGS),
-            folderViewMode: mode,
-        };
-        previewFolderViewMode = null;
-        saveSettings();
-        applyFolderViewModeToWindows(mode);
+    const titleEl = el.querySelector(".win98-titlebar-text");
+    if (titleEl) titleEl.textContent = node.title || "Папка";
+    const tbBtn = document.getElementById(`tb-${winData.id}`);
+    if (tbBtn) {
+      const tbSpan = tbBtn.querySelector("span");
+      if (tbSpan) tbSpan.textContent = node.title || "Папка";
     }
-
-    /** Apply the view-mode class + toolbar label to every open folder window */
-    function applyFolderViewModeToWindows(mode) {
-        state.windows.forEach((w) => {
-            if (!w.el) return;
-            const fc = w.el.querySelector(".folder-content");
-            if (fc) fc.classList.toggle("folder-view-list", mode === "list");
-            const viewBtn = w.el.querySelector('[data-nav="view"]');
-            if (viewBtn) {
-                const target = mode === "list" ? "Значки" : "Список";
-                const sp = viewBtn.querySelector("span");
-                if (sp) sp.textContent = "Вид: " + target;
-            }
-        });
+    const ab = (
+      /** @type {HTMLInputElement} */
+      el.querySelector(".win98-addressbar-input")
+    );
+    if (ab) ab.value = getNodePath(node, state.nodeIndex);
+    const sf = el.querySelector(".win98-statusbar-field");
+    if (sf) {
+      const folders = items.filter(isFolderNode).length;
+      const bookmarks = items.filter(isBookmarkNode).length;
+      sf.textContent = node.id === ALL_ROOT_ID ? `Корневых папок: ${folders}` : `${folders} пап(ок), ${bookmarks} элемент(ов)`;
     }
-
-    /**
-     * Render the children of `node` into an already-open folder window and keep
-     * the title / addressbar / statusbar / nav buttons in sync.
-     */
-    /** @param {WinData} winData @param {BookmarkNode} node */
-    function renderFolderContent(winData, node) {
-        const el = winData.el;
-        if (!el) return;
-        // The window may be created with empty content — ensure the folder container exists
-        let fc = el.querySelector(".folder-content");
-        if (!fc) {
-            const contentEl = el.querySelector(".win98-window-content");
-            if (!contentEl) return;
-            fc = document.createElement("div");
-            fc.className = "folder-content";
-            contentEl.appendChild(fc);
-        }
-        // Empty area drops append to the folder currently shown in this window
-        wireFolderBackgroundDrop(
-            /** @type {HTMLElement & { _dropWired?: boolean }} */ (fc),
-            winData,
-        );
-
-        const items = (node.children || []).filter((n) => isVisibleNode(n));
-        fc.innerHTML = "";
-        const viewMode = currentFolderViewMode();
-        fc.classList.toggle("folder-view-list", viewMode === "list");
-        // Toolbar view toggle shows the mode it will switch to
-        const viewBtn = /** @type {HTMLElement} */ (
-            el.querySelector('[data-nav="view"]')
-        );
-        if (viewBtn) {
-            const target = viewMode === "list" ? "Значки" : "Список";
-            const sp = viewBtn.querySelector("span");
-            if (sp) sp.textContent = "Вид: " + target;
-            viewBtn.title =
-                target === "Список"
-                    ? "Переключить в режим «Список»"
-                    : "Переключить в режим «Значки»";
-        }
-        if (items.length === 0) {
-            fc.innerHTML = EMPTY_FOLDER_HTML;
-        } else {
-            for (const item of items) {
-                fc.appendChild(
-                    createFolderItem(item, node, {
-                        // Folders inside a window navigate the SAME window instead of opening a new one
-                        navigateTo: isFolderNode(item)
-                            ? (n) => navigateInWindow(winData, n)
-                            : undefined,
-                    }),
-                );
-            }
-        }
-
-        const titleEl = el.querySelector(".win98-titlebar-text");
-        if (titleEl) titleEl.textContent = node.title || "Папка";
-        const tbBtn = document.getElementById(`tb-${winData.id}`);
-        if (tbBtn) {
-            const tbSpan = tbBtn.querySelector("span");
-            if (tbSpan) tbSpan.textContent = node.title || "Папка";
-        }
-        const ab = /** @type {HTMLInputElement} */ (el.querySelector(".win98-addressbar-input"));
-        if (ab) ab.value = getNodePath(node);
-        const sf = el.querySelector(".win98-statusbar-field");
-        if (sf) {
-            const folders = items.filter(isFolderNode).length;
-            const bookmarks = items.filter(isBookmarkNode).length;
-            sf.textContent =
-                node.id === ALL_ROOT_ID
-                    ? `Корневых папок: ${folders}`
-                    : `${folders} пап(ок), ${bookmarks} элемент(ов)`;
-        }
-        const sf2 = el.querySelector(".win98-statusbar-field2");
-        if (sf2) sf2.textContent = `Объектов: ${items.length}`;
+    const sf2 = el.querySelector(".win98-statusbar-field2");
+    if (sf2) sf2.textContent = `Объектов: ${items.length}`;
+  }
+  function navigateInWindow(winData, node, opts) {
+    opts = opts || {};
+    if (!winData || !node) return;
+    if (!opts.fromHistory) {
+      winData.navStack.push(winData.currentNode || null);
     }
-
-    /** Navigate an open folder window to another folder (same window, no new window) */
-    /** @param {WinData} winData @param {BookmarkNode} node @param {{fromHistory?: boolean}} [opts] */
-    function navigateInWindow(winData, node, opts) {
-        opts = opts || {};
-        if (!winData || !node) return;
-        if (!opts.fromHistory) {
-            // Save the current folder so «Назад» can return to it
-            winData.navStack.push(winData.currentNode || null);
-        }
-        const target = opts.fromHistory ? node : resolveNavNode(node) || node;
-        winData.currentNode = target;
-        winData.bookmarkId = target.id;
-        renderFolderContent(winData, target);
-        updateNavButtons(winData);
-        scheduleWindowStateSave();
+    const target = opts.fromHistory ? node : resolveNavNode(node) || node;
+    winData.currentNode = target;
+    winData.bookmarkId = target.id;
+    renderFolderContent(winData, target);
+    updateNavButtons(winData);
+    scheduleWindowStateSave();
+  }
+  function goBack(winData) {
+    const prev = winData.navStack.pop();
+    if (!prev) return;
+    const target = resolveNavNode(prev);
+    if (target) navigateInWindow(winData, target, { fromHistory: true });
+  }
+  function goUp(winData) {
+    const cur = winData.currentNode;
+    if (!cur) return;
+    if (cur.id === ALL_ROOT_ID) return;
+    if (cur.parentId && cur.parentId !== "0") {
+      const parent = resolveNavNode({ id: cur.parentId });
+      if (parent) {
+        navigateInWindow(winData, parent);
+        return;
+      }
     }
-
-    /** @param {WinData} winData */
-    function goBack(winData) {
-        const prev = winData.navStack.pop();
-        if (!prev) return;
-        const target = resolveNavNode(prev);
-        if (target) navigateInWindow(winData, target, { fromHistory: true });
+    navigateInWindow(winData, buildAllBookmarksNode(state.treeRoot));
+  }
+  function updateNavButtons(winData) {
+    const el = winData.el;
+    if (!el) return;
+    const back = (
+      /** @type {HTMLButtonElement} */
+      el.querySelector('[data-nav="back"]')
+    );
+    if (back) back.disabled = winData.navStack.length === 0;
+    const up = (
+      /** @type {HTMLButtonElement} */
+      el.querySelector('[data-nav="up"]')
+    );
+    if (up) {
+      const cur = winData.currentNode;
+      up.disabled = !cur || cur.id === ALL_ROOT_ID;
     }
-
-    /** @param {WinData} winData */
-    function goUp(winData) {
-        const cur = winData.currentNode;
-        if (!cur) return;
-        if (cur.id === ALL_ROOT_ID) return; // top level — button is disabled anyway
-        if (cur.parentId && cur.parentId !== "0") {
-            const parent = resolveNavNode({ id: cur.parentId });
-            if (parent) {
-                navigateInWindow(winData, parent);
-                return;
-            }
-        }
-        // Chrome root folder (parentId "0") → up to the «Все закладки» listing
-        navigateInWindow(winData, buildAllBookmarksNode(state.treeRoot));
+  }
+  function openFolderWindow(node) {
+    const existing = state.windows.find((w) => w.bookmarkId === node.id);
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
     }
-
-    /** «Назад» disabled without history; «Вверх» disabled at the top level (no previous level) */
-    /** @param {WinData} winData */
-    function updateNavButtons(winData) {
-        const el = winData.el;
-        if (!el) return;
-        const back = /** @type {HTMLButtonElement} */ (el.querySelector('[data-nav="back"]'));
-        if (back) back.disabled = winData.navStack.length === 0;
-        const up = /** @type {HTMLButtonElement} */ (el.querySelector('[data-nav="up"]'));
-        if (up) {
-            const cur = winData.currentNode;
-            up.disabled = !cur || cur.id === ALL_ROOT_ID;
-        }
-    }
-
-    function openFolderWindow(node) {
-        // Single instance per folder: if it is already displayed in some window,
-        // just bring that window to the front instead of opening a new one.
-        const existing = state.windows.find((w) => w.bookmarkId === node.id);
-        if (existing) {
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return;
-        }
-
-        const folderIcon = drawFolderIcon(
-            FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
-            true,
-        );
-
-        const toolbarHtml = `
+    const folderIcon = drawFolderIcon(
+      FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
+      true
+    );
+    const toolbarHtml = `
       <button class="win98-toolbar-btn" data-nav="back" disabled>
         <span>← Назад</span>
       </button>
@@ -2355,1789 +1963,1382 @@
         <span>Вид: Список</span>
       </button>
     `;
-
-        createWindow({
-            title: node.title || "Папка",
-            icon: folderIcon,
-            bookmarkId: node.id,
-            width: 550,
-            height: 400,
-            toolbar: toolbarHtml,
-            addressbar: true,
-            addressbarValue: getNodePath(node),
-            content: "",
-            statusbar: true,
-            statusText: "",
-            onCreated: (el, winData) => {
-                // Folder windows browse the tree with history in a single window
-                winData.currentNode = node;
-                winData.navStack = [];
-                renderFolderContent(winData, node);
-                updateNavButtons(winData);
-
-                // Second statusbar field: «Объектов: N» (Win98 Explorer style)
-                const statusBar = el.querySelector(".win98-statusbar");
-                if (statusBar) {
-                    const objField = document.createElement("div");
-                    objField.className =
-                        "win98-statusbar-field win98-statusbar-field2";
-                    objField.textContent = "Объектов: 0";
-                    statusBar.appendChild(objField);
-                }
-
-                el.querySelector('[data-nav="back"]')?.addEventListener(
-                    "click",
-                    () => goBack(winData),
-                );
-                el.querySelector('[data-nav="up"]')?.addEventListener(
-                    "click",
-                    () => goUp(winData),
-                );
-                el.querySelector('[data-nav="view"]')?.addEventListener(
-                    "click",
-                    () =>
-                        setFolderViewMode(
-                            currentFolderViewMode() === "list"
-                                ? "icons"
-                                : "list",
-                        ),
-                );
-            },
-        });
-    }
-
-    /**
-     * @param {BookmarkNode} node
-     * @param {BookmarkNode} parentNode
-     * @param {{navigateTo?: (folder: BookmarkNode) => void}} [options]
-     * @returns {IconEl}
-     */
-    function createFolderItem(node, parentNode, options) {
-        options = options || {};
-        /** @type {IconEl} */
-        const div = document.createElement("div");
-        div.className = "folder-item";
-        div.dataset.bookmarkId = String(node.id || "");
-
-        const isFolder = isFolderNode(node);
-        const img = document.createElement("img");
-        img.draggable = false;
-
-        if (isFolder) {
-            img.src = drawFolderIcon(
-                FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
-            );
-            colorIdx++;
-        } else {
-            const favUrl = getFaviconUrl(node.url);
-            if (favUrl) {
-                img.onerror = () => {
-                    img.src = drawPageIcon();
-                };
-                img.src = favUrl;
-                faviconDataUrl(favUrl, currentIconSize())
-                    .then((clean) => {
-                        img.src = clean;
-                    })
-                    .catch(() => {});
-            } else {
-                img.src = drawPageIcon();
-            }
+    createWindow({
+      title: node.title || "Папка",
+      icon: folderIcon,
+      bookmarkId: node.id,
+      width: 550,
+      height: 400,
+      toolbar: toolbarHtml,
+      addressbar: true,
+      addressbarValue: getNodePath(node, state.nodeIndex),
+      content: "",
+      statusbar: true,
+      statusText: "",
+      onCreated: (el, winData) => {
+        winData.currentNode = node;
+        winData.navStack = [];
+        renderFolderContent(winData, node);
+        updateNavButtons(winData);
+        const statusBar = el.querySelector(".win98-statusbar");
+        if (statusBar) {
+          const objField = document.createElement("div");
+          objField.className = "win98-statusbar-field win98-statusbar-field2";
+          objField.textContent = "Объектов: 0";
+          statusBar.appendChild(objField);
         }
-
-        const label = document.createElement("div");
-        label.className = "folder-item-label";
-        label.textContent = node.title || node.url || "Без названия";
-
-        div.appendChild(img);
-        div.appendChild(label);
-
-        // Open a bookmark normally; a folder either navigates the current window
-        // (folder windows / «Все закладки») or opens a new one (desktop, search)
-        const openItem = () => {
-            if (
-                isFolderNode(node) &&
-                typeof options.navigateTo === "function"
-            ) {
-                options.navigateTo(node);
-            } else {
-                openNode(node);
-            }
-        };
-
-        div.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (isSingleClickMode()) {
-                const prev = Number(div.dataset.lastClick || 0);
-                const now = Date.now();
-                div.dataset.lastClick = String(now);
-                if (now - prev < CLICK_DEBOUNCE_MS) return; // part of a double-click
-                openItem();
-            } else {
-                // Scope to this window's list, not every open folder window
-                const scope = div.closest(".folder-content") || document;
-                scope
-                    .querySelectorAll(".folder-item.selected")
-                    .forEach((d) => d.classList.remove("selected"));
-                div.classList.add("selected");
-            }
-        });
-
-        div.addEventListener("dblclick", (e) => {
-            e.stopPropagation();
-            if (!isSingleClickMode()) {
-                openItem();
-            }
-        });
-
-        // Middle mouse button → open bookmark in a background tab
-        div.addEventListener("auxclick", (e) => handleAuxClick(e, node));
-
-        div.addEventListener("contextmenu", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const scope = div.closest(".folder-content") || document;
-            scope
-                .querySelectorAll(".folder-item.selected")
-                .forEach((d) => d.classList.remove("selected"));
-            div.classList.add("selected");
-            showContextMenu(
-                e.clientX,
-                e.clientY,
-                buildNodeContextMenuItems(node),
-            );
-        });
-
-        // ---------- Drag & drop: move this node between folder windows ----------
-        // Chrome root folders (parentId "0") are fixed and cannot be moved, but
-        // they stay valid drop targets (as folders) below.
-        if (!isRootFolder(node)) {
-            div.draggable = true;
-
-            div.addEventListener("dragstart", (e) => {
-                nodeDragState = { id: String(node.id), sourceEl: div };
-                e.dataTransfer.effectAllowed = "move";
-                try {
-                    e.dataTransfer.setData("text/plain", String(node.id));
-                } catch {
-                    /* module state is the source of truth */
-                }
-                div.classList.add("dragging");
-            });
-
-            div.addEventListener("dragend", () => {
-                nodeDragState = null;
-                clearDropHighlights();
-                div.classList.remove("dragging");
-            });
-        }
-
-        div.addEventListener("dragover", (e) => {
-            const drag = nodeDragState;
-            if (!drag || drag.id === String(node.id)) return;
-            const into = isFolderNode(node) && canDropIntoFolder(drag.id, node.id);
-            const nextTo =
-                !isFolderNode(node) && canDropNextTo(drag.id, node.id);
-            if (!into && !nextTo) return; // no preventDefault → «нельзя» cursor
-            e.preventDefault();
-            e.stopPropagation();
-            e.dataTransfer.dropEffect = "move";
-            clearDropTargets();
-            if (into) {
-                div.classList.add("drop-into");
-            } else {
-                div.classList.add(
-                    isAfterMidpoint(div, e) ? "drop-after" : "drop-before",
-                );
-            }
-        });
-
-        div.addEventListener("drop", (e) => {
-            const drag = nodeDragState;
-            if (!drag) return;
-            e.preventDefault();
-            e.stopPropagation();
-            clearDropHighlights();
-            nodeDragState = null;
-
-            // Drop onto a folder → move into it (append at the end)
-            if (isFolderNode(node)) {
-                if (!canDropIntoFolder(drag.id, node.id)) return;
-                moveBookmarkTo(drag.id, node.id, -1);
-                return;
-            }
-            // Drop onto a bookmark → insert before/after it (reorder)
-            if (!canDropNextTo(drag.id, node.id)) return;
-            const parent = findNodeById(state.treeRoot, node.parentId);
-            const idx = insertionIndex(
-                parent,
-                node.id,
-                isAfterMidpoint(div, e),
-                drag.id,
-            );
-            if (idx < 0) return;
-            moveBookmarkTo(drag.id, node.parentId, idx);
-        });
-
-        div._node = node;
-        return div;
-    }
-
-    /* ============================================================
-     NODE DRAG & DROP (move bookmarks/folders between folder windows)
-     ============================================================ */
-
-    /** Clear drop-target highlights only (keeps the dragged source faded) */
-    function clearDropTargets() {
-        document
-            .querySelectorAll(
-                ".folder-item.drop-into, .folder-item.drop-before, .folder-item.drop-after, .folder-content.drop-append",
-            )
-            .forEach((el) =>
-                el.classList.remove(
-                    "drop-into",
-                    "drop-before",
-                    "drop-after",
-                    "drop-append",
-                ),
-            );
-    }
-
-    /** Clear every drag highlight (drop targets + dragged source) */
-    function clearDropHighlights() {
-        clearDropTargets();
-        document
-            .querySelectorAll(".folder-item.dragging")
-            .forEach((el) => el.classList.remove("dragging"));
-    }
-
-    /** Is `node` the given node itself or one of its descendants? */
-    function isNodeWithin(node, ancestorId) {
-        let cur = node;
-        while (cur && cur.id !== ALL_ROOT_ID) {
-            if (String(cur.id) === String(ancestorId)) return true;
-            cur = cur.parentId
-                ? findNodeById(state.treeRoot, cur.parentId)
-                : null;
-        }
-        return false;
-    }
-
-    /** Chrome root folders sit directly under "0" and can never be moved */
-    function isRootFolder(node) {
-        return !!node && node.parentId === "0";
-    }
-
-    /** Can `draggedId` be moved INTO the folder `targetId`? */
-    function canDropIntoFolder(draggedId, targetId) {
-        const dragged = findNodeById(state.treeRoot, draggedId);
-        const target = findNodeById(state.treeRoot, targetId);
-        if (!dragged || !target || !isFolderNode(target)) return false;
-        if (isRootFolder(dragged)) return false;
-        if (String(dragged.id) === String(target.id)) return false;
-        // A folder must never be moved into itself or its own descendants.
-        if (isNodeWithin(target, dragged.id)) return false;
-        return true;
-    }
-
-    /** Can `draggedId` be reordered next to the bookmark `targetId`? */
-    function canDropNextTo(draggedId, targetId) {
-        const dragged = findNodeById(state.treeRoot, draggedId);
-        const target = findNodeById(state.treeRoot, targetId);
-        if (!dragged || !target) return false;
-        if (isRootFolder(dragged) || isRootFolder(target)) return false;
-        if (String(dragged.id) === String(target.id)) return false;
-        // Inserting into a node that lives inside the dragged folder → cycle.
-        if (isNodeWithin(target, dragged.id)) return false;
-        return true;
-    }
-
-    /** Pointer below the vertical middle of an item → insert after it */
-    function isAfterMidpoint(el, e) {
-        const r = el.getBoundingClientRect();
-        return e.clientY >= r.top + r.height / 2;
-    }
-
-    /** Insertion index for `draggedId` before/after `targetId`, computed on the
-        sibling list WITHOUT the dragged node — matching how chrome.bookmarks.move
-        places a node after it has been removed from its old position. */
-    function insertionIndex(parent, targetId, after, draggedId) {
-        const siblings = ((parent && parent.children) || []).filter(
-            (k) => String(k.id) !== String(draggedId),
+        el.querySelector('[data-nav="back"]')?.addEventListener(
+          "click",
+          () => goBack(winData)
         );
-        const pos = siblings.findIndex(
-            (k) => String(k.id) === String(targetId),
+        el.querySelector('[data-nav="up"]')?.addEventListener(
+          "click",
+          () => goUp(winData)
         );
-        if (pos < 0) return -1;
-        return pos + (after ? 1 : 0);
-    }
-
-    /** Move a node into `parentId` (index < 0 → append) and refresh the UI */
-    function moveBookmarkTo(id, parentId, index) {
-        if (!id || !parentId) return;
-        const opts = { parentId: String(parentId) };
-        if (typeof index === "number" && index >= 0) opts.index = index;
-        chrome.bookmarks
-            .move(String(id), opts)
-            .then(() => scheduleBookmarksRefresh())
-            .catch(() => {
-                openMessageBox(
-                    "Перемещение",
-                    "Не удалось переместить объект.",
-                );
-            });
-    }
-
-    /** Make the empty area of a folder window a drop zone that appends the
-        dragged node to the folder currently displayed in that window. */
-    /** @param {HTMLElement & { _dropWired?: boolean }} fc @param {WinData} winData */
-    function wireFolderBackgroundDrop(fc, winData) {
-        if (fc._dropWired) return;
-        fc._dropWired = true;
-
-        const targetParentId = () => {
-            const cur = winData.currentNode;
-            if (!cur || cur.id === ALL_ROOT_ID) return null;
-            return cur.id;
+        el.querySelector('[data-nav="view"]')?.addEventListener(
+          "click",
+          () => setFolderViewMode(
+            currentFolderViewMode() === "list" ? "icons" : "list"
+          )
+        );
+      }
+    });
+  }
+  function createFolderItem(node, parentNode, options) {
+    options = options || {};
+    const div = document.createElement("div");
+    div.className = "folder-item";
+    div.dataset.bookmarkId = String(node.id || "");
+    const isFolder = isFolderNode(node);
+    const img = document.createElement("img");
+    img.draggable = false;
+    if (isFolder) {
+      img.src = drawFolderIcon(
+        FOLDER_COLORS[colorIdx % FOLDER_COLORS.length]
+      );
+      colorIdx++;
+    } else {
+      const favUrl = getFaviconUrl(node.url);
+      if (favUrl) {
+        img.onerror = () => {
+          img.src = drawPageIcon();
         };
-
-        fc.addEventListener("dragover", (e) => {
-            const drag = nodeDragState;
-            if (!drag) return;
-            const parentId = targetParentId();
-            if (!parentId || !canDropIntoFolder(drag.id, parentId)) return;
-            e.preventDefault();
-            e.stopPropagation();
-            e.dataTransfer.dropEffect = "move";
-            clearDropTargets();
-            fc.classList.add("drop-append");
+        img.src = favUrl;
+        faviconDataUrl(favUrl, currentIconSize()).then((clean) => {
+          img.src = clean;
+        }).catch(() => {
         });
-
-        fc.addEventListener("dragleave", (e) => {
-            // Ignore transitions onto child items inside the same container.
-            if (!fc.contains(/** @type {Node | null} */ (e.relatedTarget))) {
-                fc.classList.remove("drop-append");
-            }
-        });
-
-        fc.addEventListener("drop", (e) => {
-            const drag = nodeDragState;
-            fc.classList.remove("drop-append");
-            if (!drag) return;
-            const parentId = targetParentId();
-            e.preventDefault();
-            e.stopPropagation();
-            nodeDragState = null;
-            if (!parentId || !canDropIntoFolder(drag.id, parentId)) return;
-            moveBookmarkTo(drag.id, parentId, -1);
-        });
+      } else {
+        img.src = drawPageIcon();
+      }
     }
-
-    /** Safety net: whenever a drag ends anywhere, reset highlights and state */
-    function attachNodeDragGlobals() {
-        document.addEventListener("dragend", () => {
-            nodeDragState = null;
-            clearDropHighlights();
-        });
-    }
-
-    function getNodePath(node) {
-        // Build the full path from the cached tree: root > … > parent > node
-        const parts = [];
-        let cur = node;
-        while (cur && cur.title) {
-            parts.unshift(cur.title);
-            if (!cur.parentId || cur.parentId === "0") break;
-            const parent = state.nodeIndex && state.nodeIndex.get(cur.parentId);
-            if (!parent) break;
-            cur = parent;
-        }
-        return parts.join(" > ") || "/";
-    }
-
-    /* ============================================================
-     NODE OPERATIONS (open variants, copy, rename, delete)
-     ============================================================ */
-
-    function copyText(text) {
-        if (!text) return;
+    const label = document.createElement("div");
+    label.className = "folder-item-label";
+    label.textContent = node.title || node.url || "Без названия";
+    div.appendChild(img);
+    div.appendChild(label);
+    const openItem = () => {
+      if (isFolderNode(node) && typeof options.navigateTo === "function") {
+        options.navigateTo(node);
+      } else {
+        openNode(node);
+      }
+    };
+    div.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (isSingleClickMode()) {
+        const prev = Number(div.dataset.lastClick || 0);
+        const now = Date.now();
+        div.dataset.lastClick = String(now);
+        if (now - prev < CLICK_DEBOUNCE_MS) return;
+        openItem();
+      } else {
+        const scope = div.closest(".folder-content") || document;
+        scope.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
+        div.classList.add("selected");
+      }
+    });
+    div.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      if (!isSingleClickMode()) {
+        openItem();
+      }
+    });
+    div.addEventListener("auxclick", (e) => handleAuxClick(e, node));
+    div.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const scope = div.closest(".folder-content") || document;
+      scope.querySelectorAll(".folder-item.selected").forEach((d) => d.classList.remove("selected"));
+      div.classList.add("selected");
+      showContextMenu(
+        e.clientX,
+        e.clientY,
+        buildNodeContextMenuItems(node)
+      );
+    });
+    if (!isRootFolder(node)) {
+      div.draggable = true;
+      div.addEventListener("dragstart", (e) => {
+        nodeDragState = { id: String(node.id), sourceEl: div };
+        e.dataTransfer.effectAllowed = "move";
         try {
-            navigator.clipboard.writeText(text);
+          e.dataTransfer.setData("text/plain", String(node.id));
         } catch {
-            const ta = document.createElement("textarea");
-            ta.value = text;
-            ta.style.position = "fixed";
-            ta.style.opacity = "0";
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand("copy");
-            ta.remove();
         }
+        div.classList.add("dragging");
+      });
+      div.addEventListener("dragend", () => {
+        nodeDragState = null;
+        clearDropHighlights();
+        div.classList.remove("dragging");
+      });
     }
-
-    function createTab(url, active) {
-        if (!url) return Promise.resolve();
-        return chrome.tabs.create({ url, active });
-    }
-
-    function openInNewWindow(url, incognito) {
-        if (!url) return;
-        chrome.windows.create({ url, incognito: !!incognito }).catch(() => {});
-    }
-
-    /** Build the right-click menu items for a bookmark or folder node */
-    function buildNodeContextMenuItems(node) {
-        if (!node) return [];
-        if (isBookmarkNode(node)) {
-            return [
-                { label: "Открыть", action: () => openNode(node) },
-                {
-                    label: "Открыть в новой вкладке",
-                    action: () => createTab(node.url, true),
-                },
-                {
-                    label: "Открыть в фоновой вкладке",
-                    action: () => createTab(node.url, false),
-                },
-                {
-                    label: "Открыть в новом окне",
-                    action: () => openInNewWindow(node.url, false),
-                },
-                {
-                    label: "Открыть в режиме инкогнито",
-                    action: () => openInNewWindow(node.url, true),
-                },
-                { type: "separator" },
-                {
-                    label: "Копировать адрес",
-                    action: () => {
-                        copyText(node.url);
-                        state.clipUrl = node.url;
-                    },
-                },
-                { type: "separator" },
-                { label: "Переименовать", action: () => renameNode(node) },
-                { label: "Удалить", action: () => deleteNode(node) },
-                { type: "separator" },
-                { label: "Свойства", action: () => openProperties(node) },
-            ];
-        }
-        return [
-            { label: "Открыть", action: () => openNode(node) },
-            { type: "separator" },
-            { label: "Переименовать", action: () => renameNode(node) },
-            { label: "Удалить", action: () => deleteNode(node) },
-            { type: "separator" },
-            { label: "Свойства", action: () => openProperties(node) },
-        ];
-    }
-
-    /** Win98 «Свойства» dialog for a bookmark or folder */
-    function openProperties(node) {
-        const isFolder = isFolderNode(node);
-        const body = document.createElement("div");
-        body.className = "win98-dialog";
-
-        const gb = document.createElement("div");
-        gb.className = "win98-groupbox props-group";
-        const legend = document.createElement("div");
-        legend.className = "win98-groupbox-legend";
-        legend.textContent = isFolder ? "Папка" : "Интернет-ярлык";
-        gb.appendChild(legend);
-
-        const row = (k, v) => {
-            const r = document.createElement("div");
-            r.className = "props-row";
-            const kEl = document.createElement("span");
-            kEl.className = "props-row-key";
-            kEl.textContent = k + ":";
-            const vEl = document.createElement("span");
-            vEl.className = "props-row-value";
-            vEl.textContent = v || "—";
-            r.append(kEl, vEl);
-            return r;
-        };
-
-        gb.appendChild(row("Тип", isFolder ? "Папка" : "Интернет-ярлык"));
-        if (!isFolder) gb.appendChild(row("Адрес", node.url));
-        gb.appendChild(row("Расположение", getNodePath(node)));
-        if (isFolder) {
-            const kids = (node.children || []).filter(isVisibleNode);
-            gb.appendChild(
-                row(
-                    "Содержит",
-                    `${kids.filter(isFolderNode).length} пап(ок), ` +
-                        `${kids.filter(isBookmarkNode).length} закладк(и)`,
-                ),
-            );
-        }
-        if (node.dateAdded) {
-            gb.appendChild(row("Дата добавления", formatDateTime(node.dateAdded)));
-        }
-        gb.appendChild(row("Идентификатор", node.id));
-        body.appendChild(gb);
-
-        return openDialog({
-            title: "Свойства: " + (node.title || "Без названия"),
-            icon: isFolder
-                ? drawFolderIcon("#c0b060", false, 16)
-                : drawPageIcon(16),
-            width: 380,
-            body,
-            buttons: [{ label: "OK" }],
-        });
-    }
-
-    function formatDateTime(ts) {
-        try {
-            return new Date(ts).toLocaleString("ru-RU", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-            });
-        } catch {
-            return String(ts);
-        }
-    }
-
-    function renameNode(node) {
-        openPromptDialog(
-            "Переименовать",
-            "Новое имя:",
-            node.title || "",
-            (newName) => {
-                if (newName && newName !== node.title) {
-                    chrome.bookmarks
-                        .update(node.id, { title: newName })
-                        .catch(() => {});
-                }
-            },
+    div.addEventListener("dragover", (e) => {
+      const drag = nodeDragState;
+      if (!drag || drag.id === String(node.id)) return;
+      const into = isFolderNode(node) && canDropIntoFolder(drag.id, node.id);
+      const nextTo = !isFolderNode(node) && canDropNextTo(drag.id, node.id);
+      if (!into && !nextTo) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      clearDropTargets();
+      if (into) {
+        div.classList.add("drop-into");
+      } else {
+        div.classList.add(
+          isAfterMidpoint(div, e) ? "drop-after" : "drop-before"
         );
-    }
-
-    function deleteNode(node) {
-        const folder = isFolderNode(node);
-        openConfirmDialog(
-            folder ? "Удалить папку" : "Удалить закладку",
-            folder
-                ? `Удалить папку «${node.title}» вместе со всем содержимым? Действие необратимо.`
-                : `Удалить закладку «${node.title}»? Действие необратимо.`,
-            () => {
-                if (folder)
-                    chrome.bookmarks.removeTree(node.id).catch(() => {});
-                else chrome.bookmarks.remove(node.id).catch(() => {});
-            },
-        );
-    }
-
-    /* ============================================================
-     WIN98 DIALOGS (prompt / confirm as child windows)
-     ============================================================ */
-
-    function openDialog(opts) {
-        /** @type {HTMLDivElement & { okButton?: HTMLButtonElement }} */
-        const body = document.createElement("div");
-        body.className = "win98-dialog";
-        if (opts.body instanceof HTMLElement) body.appendChild(opts.body);
-        else body.innerHTML = typeof opts.body === "string" ? opts.body : "";
-
-        const btnRow = document.createElement("div");
-        btnRow.className = "win98-dialog-buttons";
-        const buttons = opts.buttons || [{ label: "OK", onClick: null }];
-
-        const winData = createWindow({
-            title: opts.title || "",
-            icon: opts.icon || drawComputerIcon(16),
-            width: opts.width || 340,
-            height: 0,
-            dialog: true,
-            content: "",
-            statusbar: false,
-            onCreated: (el) => {
-                const ce = /** @type {HTMLElement} */ (el.querySelector(".win98-window-content"));
-                ce.classList.add("win98-dialog-container");
-                ce.style.background = "var(--win98-silver)";
-                // Buttons go directly into ce (outside the scrollable body)
-                // so they are always visible at the bottom
-                buttons.forEach((b, i) => {
-                    const btn = document.createElement("button");
-                    btn.type = "button";
-                    btn.className = "win98-btn";
-                    btn.textContent = b.label;
-                    btn.addEventListener("click", () => {
-                        if (b.onClick) b.onClick();
-                        if (b.close !== false) closeWindow(winData.id);
-                    });
-                    btnRow.appendChild(btn);
-                    // Expose the first button as the dialog's OK button so
-                    // prompt dialogs can trigger it from the keyboard (Enter).
-                    if (i === 0) {
-                        body.okButton = btn;
-                    }
-                });
-                ce.appendChild(body);
-                ce.appendChild(btnRow);
-            },
-        });
-
-        // NOTE: `winData` must NOT be referenced inside onCreated above — it is
-        // called synchronously from createWindow, before the const initializes
-        // (temporal dead zone) → ReferenceError → dialog renders titlebar-only.
-        // Also mirror the OK button onto winData for the Enter handler below.
-        winData.okButton = body.okButton;
-
-        // Win98 dialogs size to their content — no empty space, no needless
-        // scrollbars. Cap at the viewport so small screens still work, and
-        // recenter vertically after the real height is known.
-        requestAnimationFrame(() => {
-            const el = winData.el;
-            if (!el.isConnected) return;
-            el.style.height = "auto";
-            const natural = el.offsetHeight;
-            const maxH = Math.max(160, window.innerHeight - 56);
-            const h = Math.min(natural, maxH);
-            el.style.height = h + "px";
-            el.style.minHeight = h + "px";
-            if (natural > maxH) {
-                el.classList.add("win98-window--dialog-scroll");
-            }
-            const y = Math.max(4, Math.round((window.innerHeight - h) / 2));
-            el.style.top = y + "px";
-        });
-
-        return winData;
-    }
-
-    /** Enter = default button, Esc = close, for whichever dialog is active */
-    document.addEventListener("keydown", (e) => {
-        const winData = state.windows.find(
-            (w) => w.dialog && !w.minimized && w.id === state.activeWindowId,
-        );
-        if (!winData) return;
-        if (
-            e.key === "Enter" &&
-            !eventTargetElement(e).closest("input,textarea,select,button")
-        ) {
-            e.preventDefault();
-            const ok = /** @type {HTMLButtonElement} */ (
-                winData.el.querySelector(".win98-dialog-buttons .win98-btn")
-            );
-            if (ok) ok.click();
-        } else if (e.key === "Escape") {
-            e.preventDefault();
-            closeWindow(winData.id);
-        }
+      }
     });
-
-    function openConfirmDialog(title, message, onConfirm) {
-        const body = document.createElement("div");
-        body.className = "win98-dialog";
-        const txt = document.createElement("div");
-        txt.className = "win98-dialog-text";
-        txt.textContent = message;
-        body.appendChild(txt);
-        openDialog({
-            title,
-            body,
-            buttons: [{ label: "OK", onClick: onConfirm }, { label: "Отмена" }],
-        });
-    }
-
-    /** Classic Win98 system message box: icon + text, centered OK button */
-    function openMessageBox(title, message, icon) {
-        const body = document.createElement("div");
-        body.className = "win98-dialog win98-msgbox";
-        const main = document.createElement("div");
-        main.className = "win98-msgbox-main";
-        const msgIcon = document.createElement("img");
-        msgIcon.className = "win98-msgbox-icon";
-        msgIcon.src = icon || drawComputerIcon(32);
-        msgIcon.alt = "";
-        const txt = document.createElement("div");
-        txt.className = "win98-dialog-text";
-        txt.textContent = message;
-        main.append(msgIcon, txt);
-        body.appendChild(main);
-        return openDialog({
-            title,
-            icon: icon || drawComputerIcon(16),
-            width: 270,
-            body,
-            buttons: [{ label: "OK" }],
-        });
-    }
-
-    function openPromptDialog(title, labelText, initialValue, onSubmit) {
-        const body = document.createElement("div");
-        body.className = "win98-dialog";
-        const lbl = document.createElement("div");
-        lbl.className = "win98-dialog-label";
-        lbl.textContent = labelText;
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "win98-addressbar-input";
-        input.value = initialValue;
-        input.style.width = "100%";
-        body.append(lbl, input);
-
-        const winData = openDialog({
-            title,
-            body,
-            buttons: [
-                {
-                    label: "OK",
-                    onClick: () => {
-                        const v = input.value.trim();
-                        if (v) onSubmit(v);
-                    },
-                },
-                { label: "Отмена" },
-            ],
-        });
-
-        input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") {
-                e.preventDefault();
-                if (winData.okButton) winData.okButton.click();
-            } else if (e.key === "Escape") {
-                e.preventDefault();
-                closeWindow(winData.id);
-            }
-        });
-        setTimeout(() => input.focus(), 50);
-        return winData;
-    }
-
-    /* ============================================================
-     LIVE SYNC with the bookmarks service
-     ============================================================ */
-
-    function attachBookmarkListeners() {
-        ["onCreated", "onRemoved", "onChanged", "onMoved"].forEach((evt) => {
-            const api = chrome.bookmarks[evt];
-            if (api && typeof api.addListener === "function") {
-                api.addListener(scheduleBookmarksRefresh);
-            }
-        });
-    }
-
-    function scheduleBookmarksRefresh() {
-        clearTimeout(state.bookmarksRefreshTimer);
-        state.bookmarksRefreshTimer = setTimeout(refreshAllBookmarks, BOOKMARK_REFRESH_DEBOUNCE_MS);
-    }
-
-    /** Re-read the whole tree, re-render the desktop and all windows that show a folder */
-    async function refreshAllBookmarks() {
-        let tree = state.treeRoot;
-        try {
-            tree = (await chrome.bookmarks.getTree())[0];
-            state.treeRoot = tree;
-            state.nodeIndex = buildNodeIndex(tree);
-        } catch {
-            // Permission revoked or API unavailable — keep showing what we have
-            return;
-        }
-        renderBookmarks(tree);
-        refreshOpenFolderWindows(tree);
-        refreshSearchWindow();
-    }
-
-    function refreshOpenFolderWindows(tree) {
-        state.windows.forEach((w) => {
-            if (w.bookmarkId == null) return;
-            const fc = w.el && w.el.querySelector(".folder-content");
-            if (!fc) return;
-
-            // The «Все закладки» top-level listing (or a nested folder inside that window)
-            if (w.bookmarkId === ALL_ROOT_ID || w.winType === "all-bookmarks") {
-                const target = resolveNavNode(w.currentNode, tree);
-                if (!target) {
-                    // Current folder was deleted → return to the top-level listing
-                    w.currentNode = buildAllBookmarksNode(tree);
-                    w.bookmarkId = ALL_ROOT_ID;
-                    renderFolderContent(w, w.currentNode);
-                } else {
-                    w.currentNode = target;
-                    if (w.bookmarkId !== target.id) w.bookmarkId = target.id;
-                    renderFolderContent(w, target);
-                }
-                updateNavButtons(w);
-                return;
-            }
-
-            const node = tree ? findNodeById(tree, w.bookmarkId) : null;
-            if (!node) {
-                closeWindow(w.id); // folder was deleted
-                return;
-            }
-            w.currentNode = node;
-            renderFolderContent(w, node);
-            updateNavButtons(w);
-        });
-    }
-
-    /* ============================================================
-     SEARCH (start menu + Ctrl+F)
-     ============================================================ */
-
-    /** Flatten the whole tree into a searchable list of bookmarks and folders.
-        Lowercase copies are precomputed so filtering/sorting never re-lowercases. */
-    function buildSearchIndex(tree) {
-        const out = [];
-        const walk = (node, path) => {
-            if (!node) return;
-            const p = path ? `${path} > ${node.title}` : node.title;
-            const title = node.title || "";
-            if (isBookmarkNode(node)) {
-                out.push({
-                    id: node.id,
-                    title,
-                    url: node.url,
-                    path,
-                    isFolder: false,
-                    _tl: title.toLowerCase(),
-                    _ul: node.url.toLowerCase(),
-                    _pl: (path || "").toLowerCase(),
-                });
-            } else if (isFolderNode(node)) {
-                out.push({
-                    id: node.id,
-                    title,
-                    url: null,
-                    path,
-                    isFolder: true,
-                    _tl: title.toLowerCase(),
-                    _ul: "",
-                    _pl: (path || "").toLowerCase(),
-                });
-                (node.children || []).forEach((c) => walk(c, p));
-            }
-        };
-        (tree ? tree.children || [] : []).forEach((r) => walk(r, ""));
-        return out;
-    }
-
-    function openSearchWindow() {
-        const existing = state.windows.find((w) => w.title === "Поиск");
-        if (existing) {
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return;
-        }
-
-        state.searchNodes = buildSearchIndex(state.treeRoot);
-
-        createWindow({
-            title: "Поиск",
-            icon: "icons/search.svg",
-            width: 520,
-            height: 400,
-            content: "",
-            statusbar: true,
-            statusText: "Найдено: 0",
-            onCreated: (el, winData) => {
-                const ce = /** @type {HTMLElement} */ (el.querySelector(".win98-window-content"));
-                ce.style.background = "var(--win98-silver)";
-                const ui = buildSearchUI(winData);
-                ce.appendChild(ui);
-                winData.searchFilter = ui.filter;
-                ui.input.focus();
-            },
-        });
-    }
-
-    /** @param {WinData} winData @returns {SearchUI} */
-    function buildSearchUI(winData) {
-        const wrap = /** @type {SearchUI} */ (document.createElement("div"));
-        wrap.className = "search-wrap";
-
-        const row = document.createElement("div");
-        row.className = "search-row";
-        const label = document.createElement("label");
-        label.textContent = "Найти:";
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "win98-addressbar-input";
-        input.placeholder = "Имя или адрес закладки...";
-        input.style.boxSizing = "border-box";
-        row.append(label, input);
-        wrap.appendChild(row);
-
-        const results = document.createElement("div");
-        results.className = "search-results";
-        wrap.appendChild(results);
-
-        let selectedRow = null;
-        let current = [];
-
-        const statusEl = () =>
-            winData.el.querySelector(".win98-statusbar-field");
-
-        function selectRow(rowEl) {
-            results
-                .querySelectorAll(".search-result-row.selected")
-                .forEach((r) => r.classList.remove("selected"));
-            if (rowEl) {
-                rowEl.classList.add("selected");
-                rowEl.scrollIntoView({ block: "nearest" });
-            }
-            selectedRow = rowEl;
-        }
-
-        function openSearchResult(n) {
-            const node = findNodeById(state.treeRoot, n.id);
-            if (node) openNode(node);
-        }
-
-        function scoreNode(n, q) {
-            if (n._tl.startsWith(q)) return 0;
-            if (n._tl.includes(q)) return 1;
-            if (n._ul.startsWith(q)) return 2;
-            return 3;
-        }
-
-        function renderList(filter) {
-            const q = (filter || "").toLowerCase().trim();
-            let list = state.searchNodes;
-            if (q) {
-                list = state.searchNodes.filter(
-                    (n) =>
-                        n._tl.includes(q) || n._ul.includes(q) || n._pl.includes(q),
-                );
-                list = list.sort(
-                    (a, b) =>
-                        scoreNode(a, q) - scoreNode(b, q) ||
-                        a.title.localeCompare(b.title, "ru"),
-                );
-            }
-            list = list.slice(0, SEARCH_RESULT_LIMIT);
-
-            results.innerHTML = "";
-            current = list;
-            list.forEach((n, i) => {
-                const rowEl = document.createElement("div");
-                rowEl.className = "search-result-row";
-                const img = document.createElement("img");
-                img.className = "search-result-img";
-                img.draggable = false;
-                if (n.isFolder) {
-                    img.src = drawFolderIcon(
-                        FOLDER_COLORS[i % FOLDER_COLORS.length],
-                        false,
-                        24,
-                    );
-                } else {
-                    const fav = getFaviconUrl(n.url);
-                    img.onerror = () => {
-                        img.src = drawPageIcon(24);
-                    };
-                    if (fav) {
-                        img.src = fav;
-                        faviconDataUrl(fav, 24)
-                            .then((clean) => {
-                                img.src = clean;
-                            })
-                            .catch(() => {});
-                    } else {
-                        img.src = drawPageIcon(24);
-                    }
-                }
-                const text = document.createElement("div");
-                text.className = "search-result-text";
-                const t = document.createElement("div");
-                t.className = "search-result-title";
-                t.textContent = n.title || n.url || "Без названия";
-                const p = document.createElement("div");
-                p.className = "search-result-path";
-                p.textContent = n.isFolder ? n.path || "Папка" : n.url;
-                text.append(t, p);
-                rowEl.append(img, text);
-                rowEl.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    if (isSingleClickMode()) openSearchResult(n);
-                    else selectRow(rowEl);
-                });
-                rowEl.addEventListener("dblclick", (e) => {
-                    e.stopPropagation();
-                    if (!isSingleClickMode()) openSearchResult(n);
-                });
-                results.appendChild(rowEl);
-            });
-
-            selectRow(results.querySelector(".search-result-row"));
-            const st = statusEl();
-            if (st)
-                st.textContent = `Найдено: ${list.length}${list.length >= SEARCH_RESULT_LIMIT ? "+" : ""}`;
-        }
-
-        function currentRowIndex() {
-            // selectedRow is a direct child of `results`; indexInto children (no array alloc)
-            return selectedRow ? Array.prototype.indexOf.call(results.children, selectedRow) : -1;
-        }
-
-        // Debounce keystrokes so rapid typing only re-renders once (search can be
-        // heavy on large trees); first render below runs immediately.
-        let searchTimer = null;
-        input.addEventListener("input", () => {
-            clearTimeout(searchTimer);
-            searchTimer = setTimeout(() => renderList(input.value), SEARCH_DEBOUNCE_MS);
-        });
-        input.addEventListener("keydown", (e) => {
-            const rows = results.querySelectorAll(".search-result-row");
-            const idx = currentRowIndex();
-            if (e.key === "ArrowDown") {
-                e.preventDefault();
-                selectRow(
-                    rows[Math.min(rows.length - 1, Math.max(0, idx) + 1)],
-                );
-            } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                selectRow(rows[Math.max(0, idx - 1)]);
-            } else if (e.key === "Enter") {
-                e.preventDefault();
-                if (selectedRow && current[Math.max(0, idx)])
-                    openSearchResult(current[Math.max(0, idx)]);
-            } else if (e.key === "Escape") {
-                e.preventDefault();
-                closeWindow(winData.id);
-            }
-        });
-
-        renderList("");
-        // Expando hooks consumed by refreshSearchWindow() / the window onCreated
-        wrap.filter = () => renderList(input.value);
-        wrap.input = input;
-        return wrap;
-    }
-
-    /** Keep results of an open search window in sync with the live tree */
-    function refreshSearchWindow() {
-        const sw = state.windows.find((w) => w.title === "Поиск");
-        if (!sw) return;
-        state.searchNodes = buildSearchIndex(state.treeRoot);
-        if (sw.searchFilter) sw.searchFilter();
-    }
-
-    /* ============================================================
-     CONTEXT MENU
-     ============================================================ */
-
-    let activeContextMenu = null;
-
-    function showContextMenu(x, y, items) {
-        hideContextMenu();
-
-        const menu = document.createElement("div");
-        menu.className = "win98-context-menu";
-
-        for (const item of items) {
-            if (item.type === "separator") {
-                const sep = document.createElement("div");
-                sep.className = "win98-context-menu-separator";
-                menu.appendChild(sep);
-            } else {
-                const el = document.createElement("div");
-                el.className =
-                    "win98-context-menu-item" +
-                    (item.disabled ? " disabled" : "");
-                el.textContent = item.label;
-                if (!item.disabled) {
-                    el.addEventListener("click", () => {
-                        hideContextMenu();
-                        item.action();
-                    });
-                }
-                menu.appendChild(el);
-            }
-        }
-
-        menu.style.left = x + "px";
-        menu.style.top = y + "px";
-        document.body.appendChild(menu);
-        activeContextMenu = menu;
-
-        // Adjust if off-screen
-        requestAnimationFrame(() => {
-            const rect = menu.getBoundingClientRect();
-            if (rect.right > window.innerWidth) {
-                menu.style.left = x - rect.width + "px";
-            }
-            if (rect.bottom > window.innerHeight - 28) {
-                menu.style.top = y - rect.height + "px";
-            }
-        });
-    }
-
-    function hideContextMenu() {
-        if (activeContextMenu) {
-            activeContextMenu.remove();
-            activeContextMenu = null;
-        }
-    }
-
-    /* ============================================================
-     START MENU
-     ============================================================ */
-
-    function toggleStartMenu() {
-        state.startMenuOpen = !state.startMenuOpen;
-        $startMenu.style.display = state.startMenuOpen ? "flex" : "none";
-        // With auto-hide, keep the taskbar visible while the menu is open
-        if (state.startMenuOpen && state.settings && state.settings.taskbarAutoHide) {
-            $taskbar.classList.add("taskbar-force-show");
-        }
-    }
-
-    function closeStartMenu() {
-        state.startMenuOpen = false;
-        $startMenu.style.display = "none";
-        const flyout = document.getElementById("start-menu-flyout");
-        if (flyout) flyout.style.display = "none";
-        if (state.settings && state.settings.taskbarAutoHide) {
-            $taskbar.classList.remove("taskbar-force-show");
-        }
-    }
-
-    /* ============================================================
-     CALENDAR (tray clock → month calendar)
-     ============================================================ */
-
-    let calendarYear = new Date().getFullYear();
-    let calendarMonth = new Date().getMonth(); // 0-based
-
-    function openCalendar() {
-        const existing = state.windows.find((w) => w.winType === "calendar");
-        if (existing) {
-            renderCalendar(existing);
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return;
-        }
-        createWindow({
-            winType: "calendar",
-            title: "Календарь",
-            icon: drawComputerIcon(16),
-            width: 250,
-            height: 262,
-            content: "",
-            statusbar: false,
-            onCreated: (el, winData) => {
-                /** @type {HTMLElement} */
-                (el.querySelector(".win98-window-content")).style.background =
-                    "var(--win98-silver)";
-                renderCalendar(winData);
-            },
-        });
-    }
-
-    function renderCalendar(winData) {
-        const el = winData.el;
-        if (!el) return;
-        const ce = el.querySelector(".win98-window-content");
-        if (!ce) return;
-        ce.innerHTML = "";
-
-        // Header: prev / month-year / next
-        const header = document.createElement("div");
-        header.className = "cal-header";
-        const prev = document.createElement("button");
-        prev.type = "button";
-        prev.className = "win98-btn cal-nav";
-        prev.textContent = "◀";
-        prev.addEventListener("click", () => {
-            calendarMonth--;
-            if (calendarMonth < 0) {
-                calendarMonth = 11;
-                calendarYear--;
-            }
-            renderCalendar(winData);
-        });
-        const title = document.createElement("div");
-        title.className = "cal-title";
-        const now = new Date();
-        title.textContent =
-            new Date(calendarYear, calendarMonth, 1).toLocaleString("ru-RU", {
-                month: "long",
-                year: "numeric",
-            });
-        const next = document.createElement("button");
-        next.type = "button";
-        next.className = "win98-btn cal-nav";
-        next.textContent = "▶";
-        next.addEventListener("click", () => {
-            calendarMonth++;
-            if (calendarMonth > 11) {
-                calendarMonth = 0;
-                calendarYear++;
-            }
-            renderCalendar(winData);
-        });
-        header.append(prev, title, next);
-        ce.appendChild(header);
-
-        // Day-of-week header (Mon..Sun)
-        const grid = document.createElement("div");
-        grid.className = "cal-grid";
-        const dayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
-        for (const d of dayNames) {
-            const cell = document.createElement("div");
-            cell.className = "cal-cell cal-dow";
-            cell.textContent = d;
-            grid.appendChild(cell);
-        }
-
-        const firstDow = new Date(calendarYear, calendarMonth, 1).getDay(); // 0=Sun
-        let offset = (firstDow + 6) % 7; // Monday-first
-        const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-        for (let i = 0; i < offset; i++) {
-            const cell = document.createElement("div");
-            cell.className = "cal-cell cal-empty";
-            grid.appendChild(cell);
-        }
-        const today = new Date();
-        for (let d = 1; d <= daysInMonth; d++) {
-            const cell = document.createElement("div");
-            cell.className = "cal-cell" +
-                (d === today.getDate() &&
-                calendarMonth === today.getMonth() &&
-                calendarYear === today.getFullYear()
-                    ? " cal-today"
-                    : "");
-            cell.textContent = String(d);
-            grid.appendChild(cell);
-        }
-        ce.appendChild(grid);
-
-        //«Сегодня» button
-        const btns = document.createElement("div");
-        btns.className = "win98-dialog-buttons";
-        const todayBtn = document.createElement("button");
-        todayBtn.type = "button";
-        todayBtn.className = "win98-btn";
-        todayBtn.textContent = "Сегодня";
-        todayBtn.addEventListener("click", () => {
-            const n = new Date();
-            calendarYear = n.getFullYear();
-            calendarMonth = n.getMonth();
-            renderCalendar(winData);
-        });
-        btns.appendChild(todayBtn);
-        ce.appendChild(btns);
-    }
-
-    /* ============================================================
-     EVENT LISTENERS
-     ============================================================ */
-
-    // Desktop click → deselect
-    $desktop.addEventListener("click", (e) => {
-        if (e.target === $desktop || e.target === $desktopIcons) {
-            document
-                .querySelectorAll(".desktop-icon.selected")
-                .forEach((d) => d.classList.remove("selected"));
-        }
-        hideContextMenu();
-        closeStartMenu();
+    div.addEventListener("drop", (e) => {
+      const drag = nodeDragState;
+      if (!drag) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearDropHighlights();
+      nodeDragState = null;
+      if (isFolderNode(node)) {
+        if (!canDropIntoFolder(drag.id, node.id)) return;
+        moveBookmarkTo(drag.id, node.id, -1);
+        return;
+      }
+      if (!canDropNextTo(drag.id, node.id)) return;
+      const parent = findNodeById(state.treeRoot, node.parentId);
+      const idx = insertionIndex(
+        parent,
+        node.id,
+        isAfterMidpoint(div, e),
+        drag.id
+      );
+      if (idx < 0) return;
+      moveBookmarkTo(drag.id, node.parentId, idx);
     });
-
-    // Desktop right-click
-    $desktop.addEventListener("contextmenu", (e) => {
-        if (eventTargetElement(e).closest(".desktop-icon")) return;
-        e.preventDefault();
-        showContextMenu(e.clientX, e.clientY, [
-            { label: "Обновить", action: () => refreshAllBookmarks() },
-            { type: "separator" },
-            {
-                label: "Создать папку",
-                action: () => {
-                    openPromptDialog(
-                        "Создать папку",
-                        "Имя новой папки:",
-                        "",
-                        (name) => {
-                            if (name)
-                                chrome.bookmarks
-                                    .create({ parentId: "1", title: name })
-                                    .catch(() => {});
-                        },
-                    );
-                },
-            },
-            {
-                label: "Вставить",
-                disabled: !state.clipUrl,
-                action: () => {
-                    if (!state.clipUrl) return;
-                    let title = "";
-                    try {
-                        title = new URL(state.clipUrl).hostname;
-                    } catch {}
-                    chrome.bookmarks
-                        .create({
-                            parentId: "1",
-                            title: title || state.clipUrl,
-                            url: state.clipUrl,
-                        })
-                        .catch(() => {});
-                },
-            },
-            { type: "separator" },
-            {
-                label: "Открыть все закладки",
-                action: () => openAllBookmarksWindow(),
-            },
-            { type: "separator" },
-            {
-                label: "Настройки",
-                action: () => openSettingsWindow(),
-            },
-        ]);
-    });
-
-    // Clock click → calendar (single click) or easter egg (10 rapid clicks).
-    // Календарь открывается только после паузы 300 ms: быстрая серия кликов
-    // (пасхалка) не сопровождается появлением окна календаря раньше времени.
-    let clockClicks = 0;
-    let clockCalendarTimer = null;
-
-    $clock.addEventListener("click", () => {
-        clockClicks++;
-        clearTimeout(clockCalendarTimer);
-        if (clockClicks >= 10) {
-            clockClicks = 0;
-            clearTimeout(clockCalendarTimer);
-            const cal = state.windows.find((w) => w.winType === "calendar");
-            if (cal) closeWindow(cal.id);
-            openMessageBox("Внимание", "Ты старый", "icons/pc_icon.png");
-            return;
-        }
-        clockCalendarTimer = setTimeout(() => {
-            clockClicks = 0;
-            clockCalendarTimer = null;
-            openCalendar();
-        }, 300);
-    });
-
-    // Start button
-    $startBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        toggleStartMenu();
-    });
-
-    // Start menu: open all bookmarks
-    $menuAllBookmarks.addEventListener("click", () => {
-        closeStartMenu();
-        openAllBookmarksWindow();
-    });
-
-    // Start menu: settings
-    document.getElementById("menu-settings").addEventListener("click", () => {
-        closeStartMenu();
-        openSettingsWindow();
-    });
-
-    // Start menu: search
-    document.getElementById("menu-search").addEventListener("click", () => {
-        closeStartMenu();
-        openSearchWindow();
-    });
-
-    // Quick launch: notepad
-    $launcherNotepad.addEventListener("click", () => openNotepad());
-
-    /* ---------- «Show desktop» strip: minimize all / restore all ---------- */
-    const $showDesktopBtn = document.getElementById("show-desktop-btn");
-    if ($showDesktopBtn) {
-        // Windows that were visible when the desktop was shown, to restore
-        let collapsedWindows = null;
-        $showDesktopBtn.addEventListener("click", () => {
-            const visible = state.windows.filter((w) => !w.minimized);
-            if (visible.length > 0) {
-                // First click: collapse everything
-                collapsedWindows = visible.map((w) => w.id);
-                visible.forEach((w) => minimizeWindow(w.id));
-                $showDesktopBtn.classList.add("active");
-                $showDesktopBtn.title = "Развернуть все окна";
-            } else if (collapsedWindows && collapsedWindows.length > 0) {
-                // Second click: restore what was visible before
-                collapsedWindows.forEach((id) => restoreWindow(id));
-                collapsedWindows = null;
-                $showDesktopBtn.classList.remove("active");
-                $showDesktopBtn.title = "Свернуть все окна";
-            }
-        });
-    }
-
-    /* ---------- Start menu: «Программы» flyout ---------- */
-    const $menuPrograms = document.getElementById("menu-programs");
-    const $menuProgramsImg = /** @type {HTMLImageElement | null} */ (
-        document.getElementById("menu-programs-img")
+    div._node = node;
+    return div;
+  }
+  function clearDropTargets() {
+    document.querySelectorAll(
+      ".folder-item.drop-into, .folder-item.drop-before, .folder-item.drop-after, .folder-content.drop-append"
+    ).forEach(
+      (el) => el.classList.remove(
+        "drop-into",
+        "drop-before",
+        "drop-after",
+        "drop-append"
+      )
     );
-    const $flyout = document.getElementById("start-menu-flyout");
-    if ($menuProgramsImg) {
-        // Orange folder icon = the classic Win98 «Программы» icon
-        $menuProgramsImg.src = drawFolderIcon("#c89644", false);
+  }
+  function clearDropHighlights() {
+    clearDropTargets();
+    document.querySelectorAll(".folder-item.dragging").forEach((el) => el.classList.remove("dragging"));
+  }
+  function isNodeWithin(node, ancestorId) {
+    let cur = node;
+    while (cur && cur.id !== ALL_ROOT_ID) {
+      if (String(cur.id) === String(ancestorId)) return true;
+      cur = cur.parentId ? findNodeById(state.treeRoot, cur.parentId) : null;
     }
-    let flyoutTimer = null;
-    function showFlyout() {
-        clearTimeout(flyoutTimer);
-        if ($flyout) $flyout.style.display = "block";
-    }
-    function hideFlyoutDelayed() {
-        flyoutTimer = setTimeout(() => {
-            if ($flyout) $flyout.style.display = "none";
-        }, 200);
-    }
-    if ($menuPrograms) {
-        $menuPrograms.addEventListener("mouseenter", showFlyout);
-        $menuPrograms.addEventListener("mouseleave", hideFlyoutDelayed);
-        $menuPrograms.addEventListener("click", (e) => {
-            e.stopPropagation();
-            showFlyout();
-        });
-    }
-    if ($flyout) {
-        $flyout.addEventListener("mouseenter", showFlyout);
-        $flyout.addEventListener("mouseleave", hideFlyoutDelayed);
-        $flyout.addEventListener("click", (e) => {
-            const item = /** @type {HTMLElement | null} */ (
-                eventTargetElement(e).closest(".start-menu-flyout-item")
-            );
-            if (!item || !item.dataset.action) return;
-            closeStartMenu();
-            /** @type {Record<string, () => void>} */
-            const actionMap = {
-                notepad: openNotepad,
-                calculator: openCalculator,
-                "all-bookmarks": openAllBookmarksWindow,
-            };
-            const action = actionMap[item.dataset.action];
-            if (action) action();
-        });
-    }
-
-    /* ---------- Taskbar right-click menu ---------- */
-    $taskbar.addEventListener("contextmenu", (e) => {
-        if (eventTargetElement(e).closest("#start-btn")) return;
-        e.preventDefault();
-        const visible = state.windows.filter((w) => !w.minimized);
-        showContextMenu(e.clientX, e.clientY, [
-            {
-                label: "Каскад окон",
-                disabled: visible.length === 0,
-                action: () => cascadeWindows(visible),
-            },
-            {
-                label: "Стопкой",
-                disabled: visible.length === 0,
-                action: () => tileWindows(visible),
-            },
-            { type: "separator" },
-            { label: "Свойства панели задач", action: openTaskbarProperties },
-        ]);
-    });
-
-    /** Cascade all visible windows like Win98 «Каскад окон» */
-    function cascadeWindows(wins) {
-        if (!wins.length) return;
-        wins.forEach((w, i) => {
-            w.el.classList.remove("maximized");
-            w.maximized = false;
-            w.el.style.left = 28 + i * 24 + "px";
-            w.el.style.top = 28 + i * 24 + "px";
-            w.el.style.width = Math.min(420, window.innerWidth - 60) + "px";
-            w.el.style.height = Math.min(320, window.innerHeight - 90) + "px";
-            bringToFront(w.id);
-        });
-        scheduleWindowStateSave();
-    }
-
-    /** Tile all visible windows across the desktop like Win98 «Стопкой» */
-    function tileWindows(wins) {
-        if (!wins.length) return;
-        const cols = Math.ceil(Math.sqrt(wins.length));
-        const rows = Math.ceil(wins.length / cols);
-        const areaW = window.innerWidth;
-        const areaH = Math.max(1, window.innerHeight - 28);
-        const wW = Math.floor(areaW / cols);
-        const hH = Math.floor(areaH / rows);
-        wins.forEach((w, i) => {
-            w.el.classList.remove("maximized");
-            w.maximized = false;
-            w.el.style.left = (i % cols) * wW + "px";
-            w.el.style.top = Math.floor(i / cols) * hH + "px";
-            w.el.style.width = wW + "px";
-            w.el.style.height = hH + "px";
-            bringToFront(w.id);
-        });
-        scheduleWindowStateSave();
-    }
-
-    /** «Свойства панели задач» — classic Win98 checkboxes with real behavior */
-    function openTaskbarProperties() {
-        const body = document.createElement("div");
-        body.className = "win98-dialog";
-        const makeCheck = (label, key) => {
-            const wrap = document.createElement("div");
-            wrap.className = "win98-dialog-row";
-            const cb = document.createElement("input");
-            cb.type = "checkbox";
-            cb.checked = !!(state.settings && state.settings[key]);
-            cb.id = "taskbar-prop-" + key;
-            const lbl = document.createElement("label");
-            lbl.htmlFor = cb.id;
-            lbl.textContent = " " + label;
-            wrap.append(cb, lbl);
-            return { wrap, cb, key };
-        };
-        const checks = [
-            makeCheck("Автоскрытие панели задач", "taskbarAutoHide"),
-            makeCheck("Мелкие значки на панели задач", "taskbarSmallIcons"),
-            makeCheck("Показывать часы", "showClock"),
-        ];
-        checks.forEach((c) => body.appendChild(c.wrap));
-        openDialog({
-            title: "Свойства панели задач",
-            width: 320,
-            body,
-            buttons: [
-                {
-                    label: "OK",
-                    onClick: () => {
-                        checks.forEach((c) => {
-                            state.settings[c.key] = c.cb.checked;
-                        });
-                        saveSettings();
-                        applyTaskbarSettings();
-                    },
-                },
-                { label: "Отмена" },
-            ],
-        });
-    }
-
-    /* ---------- Taskbar auto-hide hover behavior ---------- */
-    document.addEventListener("mousemove", (e) => {
-        if (state.settings && state.settings.taskbarAutoHide) {
-            if (e.clientY >= window.innerHeight - 6) {
-                $taskbar.classList.add("taskbar-force-show");
-            }
-        }
-    });
-    $taskbar.addEventListener("mouseleave", () => {
-        if (
-            state.settings &&
-            state.settings.taskbarAutoHide &&
-            !state.startMenuOpen
-        ) {
-            $taskbar._hideTimer = setTimeout(
-                () => $taskbar.classList.remove("taskbar-force-show"),
-                300,
-            );
-        }
-    });
-    $taskbar.addEventListener("mouseenter", () =>
-        clearTimeout($taskbar._hideTimer),
+    return false;
+  }
+  function canDropIntoFolder(draggedId, targetId) {
+    const dragged = findNodeById(state.treeRoot, draggedId);
+    const target = findNodeById(state.treeRoot, targetId);
+    if (!dragged || !target || !isFolderNode(target)) return false;
+    if (isRootFolder(dragged)) return false;
+    if (String(dragged.id) === String(target.id)) return false;
+    if (isNodeWithin(target, dragged.id)) return false;
+    return true;
+  }
+  function canDropNextTo(draggedId, targetId) {
+    const dragged = findNodeById(state.treeRoot, draggedId);
+    const target = findNodeById(state.treeRoot, targetId);
+    if (!dragged || !target) return false;
+    if (isRootFolder(dragged) || isRootFolder(target)) return false;
+    if (String(dragged.id) === String(target.id)) return false;
+    if (isNodeWithin(target, dragged.id)) return false;
+    return true;
+  }
+  function isAfterMidpoint(el, e) {
+    const r = el.getBoundingClientRect();
+    return e.clientY >= r.top + r.height / 2;
+  }
+  function insertionIndex(parent, targetId, after, draggedId) {
+    const siblings = (parent && parent.children || []).filter(
+      (k) => String(k.id) !== String(draggedId)
     );
-
-    /* ---------- Marquee selection on the desktop ---------- */
-    let marqueeEl = null;
-    let marqueeStart = null;
-
-    function deselectAllDesktopIcons() {
-        $desktopIcons
-            .querySelectorAll(".desktop-icon.selected")
-            .forEach((d) => d.classList.remove("selected"));
-        state.selectedDesktopEl = null;
-    }
-
-    function selectIconsInRect(rect) {
-        deselectAllDesktopIcons();
-        $desktopIcons.querySelectorAll(".desktop-icon").forEach((/** @type {IconEl} */ icon) => {
-            if (!icon._node) return;
-            const r = icon.getBoundingClientRect();
-            if (
-                r.right < rect.left ||
-                r.left > rect.right ||
-                r.bottom < rect.top ||
-                r.top > rect.bottom
-            ) {
-                return;
-            }
-            icon.classList.add("selected");
-        });
-    }
-
-    function onMarqueeMove(e) {
-        if (!marqueeStart) return;
-        const dx = e.clientX - marqueeStart.x;
-        const dy = e.clientY - marqueeStart.y;
-        if (Math.abs(dx) < 4 && Math.abs(dy) < 4 && !marqueeEl) return;
-        if (!marqueeEl) {
-            marqueeEl = document.createElement("div");
-            marqueeEl.className = "desktop-marquee";
-            document.body.appendChild(marqueeEl);
-        }
-        const x = Math.min(marqueeStart.x, e.clientX);
-        const y = Math.min(marqueeStart.y, e.clientY);
-        marqueeEl.style.left = x + "px";
-        marqueeEl.style.top = y + "px";
-        marqueeEl.style.width = Math.abs(dx) + "px";
-        marqueeEl.style.height = Math.abs(dy) + "px";
-        selectIconsInRect(marqueeEl.getBoundingClientRect());
-    }
-
-    function onMarqueeUp() {
-        document.removeEventListener("mousemove", onMarqueeMove);
-        document.removeEventListener("mouseup", onMarqueeUp);
-        marqueeStart = null;
-        if (marqueeEl) {
-            marqueeEl.remove();
-            marqueeEl = null;
-        }
-    }
-
-    $desktop.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        if (eventTargetElement(e).closest(".desktop-icon")) return;
-        if (eventTargetElement(e).closest(".win98-window")) return;
-        marqueeStart = { x: e.clientX, y: e.clientY };
-        document.addEventListener("mousemove", onMarqueeMove);
-        document.addEventListener("mouseup", onMarqueeUp);
+    const pos = siblings.findIndex(
+      (k) => String(k.id) === String(targetId)
+    );
+    if (pos < 0) return -1;
+    return pos + (after ? 1 : 0);
+  }
+  function moveBookmarkTo(id, parentId, index) {
+    if (!id || !parentId) return;
+    const opts = { parentId: String(parentId) };
+    if (typeof index === "number" && index >= 0) opts.index = index;
+    chrome.bookmarks.move(String(id), opts).then(() => scheduleBookmarksRefresh()).catch(() => {
+      openMessageBox(
+        "Перемещение",
+        "Не удалось переместить объект."
+      );
     });
-
-    // Close menus on outside click
-    document.addEventListener("click", (e) => {
-        if (
-            !eventTargetElement(e).closest("#start-menu") &&
-            !eventTargetElement(e).closest("#start-btn")
-        ) {
-            closeStartMenu();
-        }
-        if (!eventTargetElement(e).closest(".win98-context-menu")) {
-            hideContextMenu();
-        }
+  }
+  function wireFolderBackgroundDrop(fc, winData) {
+    if (fc._dropWired) return;
+    fc._dropWired = true;
+    const targetParentId = () => {
+      const cur = winData.currentNode;
+      if (!cur || cur.id === ALL_ROOT_ID) return null;
+      return cur.id;
+    };
+    fc.addEventListener("dragover", (e) => {
+      const drag = nodeDragState;
+      if (!drag) return;
+      const parentId = targetParentId();
+      if (!parentId || !canDropIntoFolder(drag.id, parentId)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      clearDropTargets();
+      fc.classList.add("drop-append");
     });
-
-    /* ============================================================
-     KEYBOARD: desktop navigation + shortcuts
-     ============================================================ */
-
-    /** Estimate how many desktop icons fit in one row (for up/down arrows) */
-    function desktopRowLength() {
-        const size = currentIconSize();
-        const gap =
-            (state.settings && state.settings.iconGap) ||
-            DEFAULT_SETTINGS.iconGap;
-        return Math.max(
-            1,
-            Math.floor($desktopIcons.clientWidth / (size + gap + 12)),
-        );
+    fc.addEventListener("dragleave", (e) => {
+      if (!fc.contains(
+        /** @type {Node | null} */
+        e.relatedTarget
+      )) {
+        fc.classList.remove("drop-append");
+      }
+    });
+    fc.addEventListener("drop", (e) => {
+      const drag = nodeDragState;
+      fc.classList.remove("drop-append");
+      if (!drag) return;
+      const parentId = targetParentId();
+      e.preventDefault();
+      e.stopPropagation();
+      nodeDragState = null;
+      if (!parentId || !canDropIntoFolder(drag.id, parentId)) return;
+      moveBookmarkTo(drag.id, parentId, -1);
+    });
+  }
+  function attachNodeDragGlobals() {
+    document.addEventListener("dragend", () => {
+      nodeDragState = null;
+      clearDropHighlights();
+    });
+  }
+  function copyText(text) {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
     }
-
-    document.addEventListener("keydown", (e) => {
-        // Ctrl+F — поиск по закладкам (работает из любого места)
-        if (
-            e.ctrlKey &&
-            (e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А")
-        ) {
-            e.preventDefault();
-            openSearchWindow();
-            return;
-        }
-        if (e.key === "Escape") {
-            if (state.startMenuOpen) closeStartMenu();
-            hideContextMenu();
-            return;
-        }
-
-        const tag =
-            (document.activeElement && document.activeElement.tagName) || "";
-        if (
-            tag === "INPUT" ||
-            tag === "TEXTAREA" ||
-            tag === "SELECT" ||
-            tag === "BUTTON"
+  }
+  function createTab(url, active) {
+    if (!url) return Promise.resolve();
+    return chrome.tabs.create({ url, active });
+  }
+  function openInNewWindow(url, incognito) {
+    if (!url) return;
+    chrome.windows.create({ url, incognito: !!incognito }).catch(() => {
+    });
+  }
+  function buildNodeContextMenuItems(node) {
+    if (!node) return [];
+    if (isBookmarkNode(node)) {
+      return [
+        { label: "Открыть", action: () => openNode(node) },
+        {
+          label: "Открыть в новой вкладке",
+          action: () => createTab(node.url, true)
+        },
+        {
+          label: "Открыть в фоновой вкладке",
+          action: () => createTab(node.url, false)
+        },
+        {
+          label: "Открыть в новом окне",
+          action: () => openInNewWindow(node.url, false)
+        },
+        {
+          label: "Открыть в режиме инкогнито",
+          action: () => openInNewWindow(node.url, true)
+        },
+        { type: "separator" },
+        {
+          label: "Копировать адрес",
+          action: () => {
+            copyText(node.url);
+            state.clipUrl = node.url;
+          }
+        },
+        { type: "separator" },
+        { label: "Переименовать", action: () => renameNode(node) },
+        { label: "Удалить", action: () => deleteNode(node) },
+        { type: "separator" },
+        { label: "Свойства", action: () => openProperties(node) }
+      ];
+    }
+    return [
+      { label: "Открыть", action: () => openNode(node) },
+      { type: "separator" },
+      { label: "Переименовать", action: () => renameNode(node) },
+      { label: "Удалить", action: () => deleteNode(node) },
+      { type: "separator" },
+      { label: "Свойства", action: () => openProperties(node) }
+    ];
+  }
+  function openProperties(node) {
+    const isFolder = isFolderNode(node);
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    const gb = document.createElement("div");
+    gb.className = "win98-groupbox props-group";
+    const legend = document.createElement("div");
+    legend.className = "win98-groupbox-legend";
+    legend.textContent = isFolder ? "Папка" : "Интернет-ярлык";
+    gb.appendChild(legend);
+    const row = (k, v) => {
+      const r = document.createElement("div");
+      r.className = "props-row";
+      const kEl = document.createElement("span");
+      kEl.className = "props-row-key";
+      kEl.textContent = k + ":";
+      const vEl = document.createElement("span");
+      vEl.className = "props-row-value";
+      vEl.textContent = v || "—";
+      r.append(kEl, vEl);
+      return r;
+    };
+    gb.appendChild(row("Тип", isFolder ? "Папка" : "Интернет-ярлык"));
+    if (!isFolder) gb.appendChild(row("Адрес", node.url));
+    gb.appendChild(row("Расположение", getNodePath(node, state.nodeIndex)));
+    if (isFolder) {
+      const kids = (node.children || []).filter(isVisibleNode);
+      gb.appendChild(
+        row(
+          "Содержит",
+          `${kids.filter(isFolderNode).length} пап(ок), ${kids.filter(isBookmarkNode).length} закладк(и)`
         )
-            return;
-
-        const all = Array.from(
-            document.querySelectorAll("#desktop-icons .desktop-icon"),
-        );
-        const sel = state.selectedDesktopEl;
-
-        if (
-            e.key === "ArrowLeft" ||
-            e.key === "ArrowRight" ||
-            e.key === "ArrowUp" ||
-            e.key === "ArrowDown"
-        ) {
-            if (!all.length) return;
-            let idx = all.indexOf(sel);
-            if (idx === -1) idx = 0;
-            if (e.key === "ArrowRight") idx = Math.min(all.length - 1, idx + 1);
-            else if (e.key === "ArrowLeft") idx = Math.max(0, idx - 1);
-            else if (e.key === "ArrowDown")
-                idx = Math.min(all.length - 1, idx + desktopRowLength());
-            else idx = Math.max(0, idx - desktopRowLength());
-            selectDesktopIcon(all[idx]);
-            e.preventDefault();
-            return;
-        }
-        if (e.key === "Enter" && sel && sel._node) {
-            e.preventDefault();
-            openNode(sel._node);
-            return;
-        }
-        // Alt+Enter — «Свойства» выделенного ярлыка
-        if (e.altKey && e.key === "Enter" && sel && sel._node) {
-            e.preventDefault();
-            openProperties(sel._node);
-            return;
-        }
-        if ((e.key === "Delete" || e.key === "Del") && sel && sel._node) {
-            e.preventDefault();
-            deleteNode(sel._node);
-            return;
-        }
-        if (
-            e.ctrlKey &&
-            (e.key === "c" ||
-                e.key === "C" ||
-                e.key === "с" ||
-                e.key === "С") &&
-            sel &&
-            sel._node &&
-            sel._node.url
-        ) {
-            copyText(sel._node.url);
-            state.clipUrl = sel._node.url;
-        }
+      );
+    }
+    if (node.dateAdded) {
+      gb.appendChild(row("Дата добавления", formatDateTime(node.dateAdded)));
+    }
+    gb.appendChild(row("Идентификатор", node.id));
+    body.appendChild(gb);
+    return openDialog({
+      title: "Свойства: " + (node.title || "Без названия"),
+      icon: isFolder ? drawFolderIcon("#c0b060", false, 16) : drawPageIcon(16),
+      width: 380,
+      body,
+      buttons: [{ label: "OK" }]
     });
-
-    /* ============================================================
-     ALL BOOKMARKS WINDOW
-     ============================================================ */
-
-    function openAllBookmarksWindow() {
-        // Single instance — track by winType, not title (title changes while browsing)
-        const existing = state.windows.find(
-            (w) => w.winType === "all-bookmarks",
-        );
-        if (existing) {
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return Promise.resolve(existing);
+  }
+  function formatDateTime(ts) {
+    try {
+      return new Date(ts).toLocaleString("ru-RU", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch {
+      return String(ts);
+    }
+  }
+  function renameNode(node) {
+    openPromptDialog(
+      "Переименовать",
+      "Новое имя:",
+      node.title || "",
+      (newName) => {
+        if (newName && newName !== node.title) {
+          chrome.bookmarks.update(node.id, { title: newName }).catch(() => {
+          });
         }
-
-        return new Promise((resolve) => {
-            chrome.bookmarks.getTree((tree) => {
-                state.treeRoot = tree[0];
-                state.nodeIndex = buildNodeIndex(tree[0]);
-
-            const toolbarHtml = `
+      }
+    );
+  }
+  function deleteNode(node) {
+    const folder = isFolderNode(node);
+    openConfirmDialog(
+      folder ? "Удалить папку" : "Удалить закладку",
+      folder ? `Удалить папку «${node.title}» вместе со всем содержимым? Действие необратимо.` : `Удалить закладку «${node.title}»? Действие необратимо.`,
+      () => {
+        if (folder)
+          chrome.bookmarks.removeTree(node.id).catch(() => {
+          });
+        else chrome.bookmarks.remove(node.id).catch(() => {
+        });
+      }
+    );
+  }
+  function openDialog(opts) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    if (opts.body instanceof HTMLElement) body.appendChild(opts.body);
+    else body.innerHTML = typeof opts.body === "string" ? opts.body : "";
+    const btnRow = document.createElement("div");
+    btnRow.className = "win98-dialog-buttons";
+    const buttons = opts.buttons || [{ label: "OK", onClick: null }];
+    const winData = createWindow({
+      title: opts.title || "",
+      icon: opts.icon || drawComputerIcon(16),
+      width: opts.width || 340,
+      height: 0,
+      dialog: true,
+      content: "",
+      statusbar: false,
+      onCreated: (el) => {
+        const ce = (
+          /** @type {HTMLElement} */
+          el.querySelector(".win98-window-content")
+        );
+        ce.classList.add("win98-dialog-container");
+        ce.style.background = "var(--win98-silver)";
+        buttons.forEach((b, i) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "win98-btn";
+          btn.textContent = b.label;
+          btn.addEventListener("click", () => {
+            if (b.onClick) b.onClick();
+            if (b.close !== false) closeWindow(winData.id);
+          });
+          btnRow.appendChild(btn);
+          if (i === 0) {
+            body.okButton = btn;
+          }
+        });
+        ce.appendChild(body);
+        ce.appendChild(btnRow);
+      }
+    });
+    winData.okButton = body.okButton;
+    requestAnimationFrame(() => {
+      const el = winData.el;
+      if (!el.isConnected) return;
+      el.style.height = "auto";
+      const natural = el.offsetHeight;
+      const maxH = Math.max(160, window.innerHeight - 56);
+      const h = Math.min(natural, maxH);
+      el.style.height = h + "px";
+      el.style.minHeight = h + "px";
+      if (natural > maxH) {
+        el.classList.add("win98-window--dialog-scroll");
+      }
+      const y = Math.max(4, Math.round((window.innerHeight - h) / 2));
+      el.style.top = y + "px";
+    });
+    return winData;
+  }
+  document.addEventListener("keydown", (e) => {
+    const winData = state.windows.find(
+      (w) => w.dialog && !w.minimized && w.id === state.activeWindowId
+    );
+    if (!winData) return;
+    if (e.key === "Enter" && !eventTargetElement(e).closest("input,textarea,select,button")) {
+      e.preventDefault();
+      const ok = (
+        /** @type {HTMLButtonElement} */
+        winData.el.querySelector(".win98-dialog-buttons .win98-btn")
+      );
+      if (ok) ok.click();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeWindow(winData.id);
+    }
+  });
+  function openConfirmDialog(title, message, onConfirm) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    const txt = document.createElement("div");
+    txt.className = "win98-dialog-text";
+    txt.textContent = message;
+    body.appendChild(txt);
+    openDialog({
+      title,
+      body,
+      buttons: [{ label: "OK", onClick: onConfirm }, { label: "Отмена" }]
+    });
+  }
+  function openMessageBox(title, message, icon) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog win98-msgbox";
+    const main = document.createElement("div");
+    main.className = "win98-msgbox-main";
+    const msgIcon = document.createElement("img");
+    msgIcon.className = "win98-msgbox-icon";
+    msgIcon.src = icon || drawComputerIcon(32);
+    msgIcon.alt = "";
+    const txt = document.createElement("div");
+    txt.className = "win98-dialog-text";
+    txt.textContent = message;
+    main.append(msgIcon, txt);
+    body.appendChild(main);
+    return openDialog({
+      title,
+      icon: icon || drawComputerIcon(16),
+      width: 270,
+      body,
+      buttons: [{ label: "OK" }]
+    });
+  }
+  function openPromptDialog(title, labelText, initialValue, onSubmit) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    const lbl = document.createElement("div");
+    lbl.className = "win98-dialog-label";
+    lbl.textContent = labelText;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "win98-addressbar-input";
+    input.value = initialValue;
+    input.style.width = "100%";
+    body.append(lbl, input);
+    const winData = openDialog({
+      title,
+      body,
+      buttons: [
+        {
+          label: "OK",
+          onClick: () => {
+            const v = input.value.trim();
+            if (v) onSubmit(v);
+          }
+        },
+        { label: "Отмена" }
+      ]
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (winData.okButton) winData.okButton.click();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeWindow(winData.id);
+      }
+    });
+    setTimeout(() => input.focus(), 50);
+    return winData;
+  }
+  function attachBookmarkListeners() {
+    ["onCreated", "onRemoved", "onChanged", "onMoved"].forEach((evt) => {
+      const api = chrome.bookmarks[evt];
+      if (api && typeof api.addListener === "function") {
+        api.addListener(scheduleBookmarksRefresh);
+      }
+    });
+  }
+  function scheduleBookmarksRefresh() {
+    clearTimeout(state.bookmarksRefreshTimer);
+    state.bookmarksRefreshTimer = setTimeout(refreshAllBookmarks, BOOKMARK_REFRESH_DEBOUNCE_MS);
+  }
+  async function refreshAllBookmarks() {
+    let tree = state.treeRoot;
+    try {
+      tree = (await chrome.bookmarks.getTree())[0];
+      state.treeRoot = tree;
+      state.nodeIndex = buildNodeIndex(tree);
+    } catch {
+      return;
+    }
+    renderBookmarks(tree);
+    refreshOpenFolderWindows(tree);
+    refreshSearchWindow();
+  }
+  function refreshOpenFolderWindows(tree) {
+    state.windows.forEach((w) => {
+      if (w.bookmarkId == null) return;
+      const fc = w.el && w.el.querySelector(".folder-content");
+      if (!fc) return;
+      if (w.bookmarkId === ALL_ROOT_ID || w.winType === "all-bookmarks") {
+        const target = resolveNavNode(w.currentNode, tree);
+        if (!target) {
+          w.currentNode = buildAllBookmarksNode(tree);
+          w.bookmarkId = ALL_ROOT_ID;
+          renderFolderContent(w, w.currentNode);
+        } else {
+          w.currentNode = target;
+          if (w.bookmarkId !== target.id) w.bookmarkId = target.id;
+          renderFolderContent(w, target);
+        }
+        updateNavButtons(w);
+        return;
+      }
+      const node = tree ? findNodeById(tree, w.bookmarkId) : null;
+      if (!node) {
+        closeWindow(w.id);
+        return;
+      }
+      w.currentNode = node;
+      renderFolderContent(w, node);
+      updateNavButtons(w);
+    });
+  }
+  function openSearchWindow() {
+    const existing = state.windows.find((w) => w.title === "Поиск");
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+    state.searchNodes = buildSearchIndex(state.treeRoot);
+    createWindow({
+      title: "Поиск",
+      icon: "icons/search.svg",
+      width: 520,
+      height: 400,
+      content: "",
+      statusbar: true,
+      statusText: "Найдено: 0",
+      onCreated: (el, winData) => {
+        const ce = (
+          /** @type {HTMLElement} */
+          el.querySelector(".win98-window-content")
+        );
+        ce.style.background = "var(--win98-silver)";
+        const ui = buildSearchUI(winData);
+        ce.appendChild(ui);
+        winData.searchFilter = ui.filter;
+        ui.input.focus();
+      }
+    });
+  }
+  function buildSearchUI(winData) {
+    const wrap = (
+      /** @type {SearchUI} */
+      document.createElement("div")
+    );
+    wrap.className = "search-wrap";
+    const row = document.createElement("div");
+    row.className = "search-row";
+    const label = document.createElement("label");
+    label.textContent = "Найти:";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "win98-addressbar-input";
+    input.placeholder = "Имя или адрес закладки...";
+    input.style.boxSizing = "border-box";
+    row.append(label, input);
+    wrap.appendChild(row);
+    const results = document.createElement("div");
+    results.className = "search-results";
+    wrap.appendChild(results);
+    let selectedRow = null;
+    let current = [];
+    const statusEl = () => winData.el.querySelector(".win98-statusbar-field");
+    function selectRow(rowEl) {
+      results.querySelectorAll(".search-result-row.selected").forEach((r) => r.classList.remove("selected"));
+      if (rowEl) {
+        rowEl.classList.add("selected");
+        rowEl.scrollIntoView({ block: "nearest" });
+      }
+      selectedRow = rowEl;
+    }
+    function openSearchResult(n) {
+      const node = findNodeById(state.treeRoot, n.id);
+      if (node) openNode(node);
+    }
+    function renderList(filter) {
+      const list = filterSearchNodes(
+        state.searchNodes,
+        filter,
+        SEARCH_RESULT_LIMIT
+      );
+      results.innerHTML = "";
+      current = list;
+      list.forEach((n, i) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "search-result-row";
+        const img = document.createElement("img");
+        img.className = "search-result-img";
+        img.draggable = false;
+        if (n.isFolder) {
+          img.src = drawFolderIcon(
+            FOLDER_COLORS[i % FOLDER_COLORS.length],
+            false,
+            24
+          );
+        } else {
+          const fav = getFaviconUrl(n.url);
+          img.onerror = () => {
+            img.src = drawPageIcon(24);
+          };
+          if (fav) {
+            img.src = fav;
+            faviconDataUrl(fav, 24).then((clean) => {
+              img.src = clean;
+            }).catch(() => {
+            });
+          } else {
+            img.src = drawPageIcon(24);
+          }
+        }
+        const text = document.createElement("div");
+        text.className = "search-result-text";
+        const t = document.createElement("div");
+        t.className = "search-result-title";
+        t.textContent = n.title || n.url || "Без названия";
+        const p = document.createElement("div");
+        p.className = "search-result-path";
+        p.textContent = n.isFolder ? n.path || "Папка" : n.url;
+        text.append(t, p);
+        rowEl.append(img, text);
+        rowEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (isSingleClickMode()) openSearchResult(n);
+          else selectRow(rowEl);
+        });
+        rowEl.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          if (!isSingleClickMode()) openSearchResult(n);
+        });
+        results.appendChild(rowEl);
+      });
+      selectRow(results.querySelector(".search-result-row"));
+      const st = statusEl();
+      if (st)
+        st.textContent = `Найдено: ${list.length}${list.length >= SEARCH_RESULT_LIMIT ? "+" : ""}`;
+    }
+    function currentRowIndex() {
+      return selectedRow ? Array.prototype.indexOf.call(results.children, selectedRow) : -1;
+    }
+    let searchTimer = null;
+    input.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => renderList(input.value), SEARCH_DEBOUNCE_MS);
+    });
+    input.addEventListener("keydown", (e) => {
+      const rows = results.querySelectorAll(".search-result-row");
+      const idx = currentRowIndex();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        selectRow(
+          rows[Math.min(rows.length - 1, Math.max(0, idx) + 1)]
+        );
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        selectRow(rows[Math.max(0, idx - 1)]);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (selectedRow && current[Math.max(0, idx)])
+          openSearchResult(current[Math.max(0, idx)]);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeWindow(winData.id);
+      }
+    });
+    renderList("");
+    wrap.filter = () => renderList(input.value);
+    wrap.input = input;
+    return wrap;
+  }
+  function refreshSearchWindow() {
+    const sw = state.windows.find((w) => w.title === "Поиск");
+    if (!sw) return;
+    state.searchNodes = buildSearchIndex(state.treeRoot);
+    if (sw.searchFilter) sw.searchFilter();
+  }
+  var activeContextMenu = null;
+  function showContextMenu(x, y, items) {
+    hideContextMenu();
+    const menu = document.createElement("div");
+    menu.className = "win98-context-menu";
+    for (const item of items) {
+      if (item.type === "separator") {
+        const sep = document.createElement("div");
+        sep.className = "win98-context-menu-separator";
+        menu.appendChild(sep);
+      } else {
+        const el = document.createElement("div");
+        el.className = "win98-context-menu-item" + (item.disabled ? " disabled" : "");
+        el.textContent = item.label;
+        if (!item.disabled) {
+          el.addEventListener("click", () => {
+            hideContextMenu();
+            item.action();
+          });
+        }
+        menu.appendChild(el);
+      }
+    }
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+    document.body.appendChild(menu);
+    activeContextMenu = menu;
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      if (rect.right > window.innerWidth) {
+        menu.style.left = x - rect.width + "px";
+      }
+      if (rect.bottom > window.innerHeight - 28) {
+        menu.style.top = y - rect.height + "px";
+      }
+    });
+  }
+  function hideContextMenu() {
+    if (activeContextMenu) {
+      activeContextMenu.remove();
+      activeContextMenu = null;
+    }
+  }
+  function toggleStartMenu() {
+    state.startMenuOpen = !state.startMenuOpen;
+    $startMenu.style.display = state.startMenuOpen ? "flex" : "none";
+    if (state.startMenuOpen && state.settings && state.settings.taskbarAutoHide) {
+      $taskbar.classList.add("taskbar-force-show");
+    }
+  }
+  function closeStartMenu() {
+    state.startMenuOpen = false;
+    $startMenu.style.display = "none";
+    const flyout = document.getElementById("start-menu-flyout");
+    if (flyout) flyout.style.display = "none";
+    if (state.settings && state.settings.taskbarAutoHide) {
+      $taskbar.classList.remove("taskbar-force-show");
+    }
+  }
+  var calendarYear = (/* @__PURE__ */ new Date()).getFullYear();
+  var calendarMonth = (/* @__PURE__ */ new Date()).getMonth();
+  function openCalendar() {
+    const existing = state.windows.find((w) => w.winType === "calendar");
+    if (existing) {
+      renderCalendar(existing);
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+    createWindow({
+      winType: "calendar",
+      title: "Календарь",
+      icon: drawComputerIcon(16),
+      width: 250,
+      height: 262,
+      content: "",
+      statusbar: false,
+      onCreated: (el, winData) => {
+        el.querySelector(".win98-window-content").style.background = "var(--win98-silver)";
+        renderCalendar(winData);
+      }
+    });
+  }
+  function renderCalendar(winData) {
+    const el = winData.el;
+    if (!el) return;
+    const ce = el.querySelector(".win98-window-content");
+    if (!ce) return;
+    ce.innerHTML = "";
+    const header = document.createElement("div");
+    header.className = "cal-header";
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.className = "win98-btn cal-nav";
+    prev.textContent = "◀";
+    prev.addEventListener("click", () => {
+      calendarMonth--;
+      if (calendarMonth < 0) {
+        calendarMonth = 11;
+        calendarYear--;
+      }
+      renderCalendar(winData);
+    });
+    const title = document.createElement("div");
+    title.className = "cal-title";
+    const now = /* @__PURE__ */ new Date();
+    title.textContent = new Date(calendarYear, calendarMonth, 1).toLocaleString("ru-RU", {
+      month: "long",
+      year: "numeric"
+    });
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "win98-btn cal-nav";
+    next.textContent = "▶";
+    next.addEventListener("click", () => {
+      calendarMonth++;
+      if (calendarMonth > 11) {
+        calendarMonth = 0;
+        calendarYear++;
+      }
+      renderCalendar(winData);
+    });
+    header.append(prev, title, next);
+    ce.appendChild(header);
+    const grid = document.createElement("div");
+    grid.className = "cal-grid";
+    const dayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+    for (const d of dayNames) {
+      const cell = document.createElement("div");
+      cell.className = "cal-cell cal-dow";
+      cell.textContent = d;
+      grid.appendChild(cell);
+    }
+    const firstDow = new Date(calendarYear, calendarMonth, 1).getDay();
+    let offset = (firstDow + 6) % 7;
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    for (let i = 0; i < offset; i++) {
+      const cell = document.createElement("div");
+      cell.className = "cal-cell cal-empty";
+      grid.appendChild(cell);
+    }
+    const today = /* @__PURE__ */ new Date();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cell = document.createElement("div");
+      cell.className = "cal-cell" + (d === today.getDate() && calendarMonth === today.getMonth() && calendarYear === today.getFullYear() ? " cal-today" : "");
+      cell.textContent = String(d);
+      grid.appendChild(cell);
+    }
+    ce.appendChild(grid);
+    const btns = document.createElement("div");
+    btns.className = "win98-dialog-buttons";
+    const todayBtn = document.createElement("button");
+    todayBtn.type = "button";
+    todayBtn.className = "win98-btn";
+    todayBtn.textContent = "Сегодня";
+    todayBtn.addEventListener("click", () => {
+      const n = /* @__PURE__ */ new Date();
+      calendarYear = n.getFullYear();
+      calendarMonth = n.getMonth();
+      renderCalendar(winData);
+    });
+    btns.appendChild(todayBtn);
+    ce.appendChild(btns);
+  }
+  $desktop.addEventListener("click", (e) => {
+    if (e.target === $desktop || e.target === $desktopIcons) {
+      document.querySelectorAll(".desktop-icon.selected").forEach((d) => d.classList.remove("selected"));
+    }
+    hideContextMenu();
+    closeStartMenu();
+  });
+  $desktop.addEventListener("contextmenu", (e) => {
+    if (eventTargetElement(e).closest(".desktop-icon")) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: "Обновить", action: () => refreshAllBookmarks() },
+      { type: "separator" },
+      {
+        label: "Создать папку",
+        action: () => {
+          openPromptDialog(
+            "Создать папку",
+            "Имя новой папки:",
+            "",
+            (name) => {
+              if (name)
+                chrome.bookmarks.create({ parentId: "1", title: name }).catch(() => {
+                });
+            }
+          );
+        }
+      },
+      {
+        label: "Вставить",
+        disabled: !state.clipUrl,
+        action: () => {
+          if (!state.clipUrl) return;
+          let title = "";
+          try {
+            title = new URL(state.clipUrl).hostname;
+          } catch {
+          }
+          chrome.bookmarks.create({
+            parentId: "1",
+            title: title || state.clipUrl,
+            url: state.clipUrl
+          }).catch(() => {
+          });
+        }
+      },
+      { type: "separator" },
+      {
+        label: "Открыть все закладки",
+        action: () => openAllBookmarksWindow()
+      },
+      { type: "separator" },
+      {
+        label: "Настройки",
+        action: () => openSettingsWindow()
+      }
+    ]);
+  });
+  var clockClicks = 0;
+  var clockCalendarTimer = null;
+  $clock.addEventListener("click", () => {
+    clockClicks++;
+    clearTimeout(clockCalendarTimer);
+    if (clockClicks >= 10) {
+      clockClicks = 0;
+      clearTimeout(clockCalendarTimer);
+      const cal = state.windows.find((w) => w.winType === "calendar");
+      if (cal) closeWindow(cal.id);
+      openMessageBox("Внимание", "Ты старый", "icons/pc_icon.png");
+      return;
+    }
+    clockCalendarTimer = setTimeout(() => {
+      clockClicks = 0;
+      clockCalendarTimer = null;
+      openCalendar();
+    }, 300);
+  });
+  $startBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleStartMenu();
+  });
+  $menuAllBookmarks.addEventListener("click", () => {
+    closeStartMenu();
+    openAllBookmarksWindow();
+  });
+  document.getElementById("menu-settings").addEventListener("click", () => {
+    closeStartMenu();
+    openSettingsWindow();
+  });
+  document.getElementById("menu-search").addEventListener("click", () => {
+    closeStartMenu();
+    openSearchWindow();
+  });
+  $launcherNotepad.addEventListener("click", () => openNotepad());
+  var $showDesktopBtn = document.getElementById("show-desktop-btn");
+  if ($showDesktopBtn) {
+    let collapsedWindows = null;
+    $showDesktopBtn.addEventListener("click", () => {
+      const visible = state.windows.filter((w) => !w.minimized);
+      if (visible.length > 0) {
+        collapsedWindows = visible.map((w) => w.id);
+        visible.forEach((w) => minimizeWindow(w.id));
+        $showDesktopBtn.classList.add("active");
+        $showDesktopBtn.title = "Развернуть все окна";
+      } else if (collapsedWindows && collapsedWindows.length > 0) {
+        collapsedWindows.forEach((id) => restoreWindow(id));
+        collapsedWindows = null;
+        $showDesktopBtn.classList.remove("active");
+        $showDesktopBtn.title = "Свернуть все окна";
+      }
+    });
+  }
+  var $menuPrograms = document.getElementById("menu-programs");
+  var $menuProgramsImg = (
+    /** @type {HTMLImageElement | null} */
+    document.getElementById("menu-programs-img")
+  );
+  var $flyout = document.getElementById("start-menu-flyout");
+  if ($menuProgramsImg) {
+    $menuProgramsImg.src = drawFolderIcon("#c89644", false);
+  }
+  var flyoutTimer = null;
+  function showFlyout() {
+    clearTimeout(flyoutTimer);
+    if ($flyout) $flyout.style.display = "block";
+  }
+  function hideFlyoutDelayed() {
+    flyoutTimer = setTimeout(() => {
+      if ($flyout) $flyout.style.display = "none";
+    }, 200);
+  }
+  if ($menuPrograms) {
+    $menuPrograms.addEventListener("mouseenter", showFlyout);
+    $menuPrograms.addEventListener("mouseleave", hideFlyoutDelayed);
+    $menuPrograms.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showFlyout();
+    });
+  }
+  if ($flyout) {
+    $flyout.addEventListener("mouseenter", showFlyout);
+    $flyout.addEventListener("mouseleave", hideFlyoutDelayed);
+    $flyout.addEventListener("click", (e) => {
+      const item = (
+        /** @type {HTMLElement | null} */
+        eventTargetElement(e).closest(".start-menu-flyout-item")
+      );
+      if (!item || !item.dataset.action) return;
+      closeStartMenu();
+      const actionMap = {
+        notepad: openNotepad,
+        calculator: openCalculator,
+        "all-bookmarks": openAllBookmarksWindow
+      };
+      const action = actionMap[item.dataset.action];
+      if (action) action();
+    });
+  }
+  $taskbar.addEventListener("contextmenu", (e) => {
+    if (eventTargetElement(e).closest("#start-btn")) return;
+    e.preventDefault();
+    const visible = state.windows.filter((w) => !w.minimized);
+    showContextMenu(e.clientX, e.clientY, [
+      {
+        label: "Каскад окон",
+        disabled: visible.length === 0,
+        action: () => cascadeWindows(visible)
+      },
+      {
+        label: "Стопкой",
+        disabled: visible.length === 0,
+        action: () => tileWindows(visible)
+      },
+      { type: "separator" },
+      { label: "Свойства панели задач", action: openTaskbarProperties }
+    ]);
+  });
+  function cascadeWindows(wins) {
+    if (!wins.length) return;
+    wins.forEach((w, i) => {
+      w.el.classList.remove("maximized");
+      w.maximized = false;
+      w.el.style.left = 28 + i * 24 + "px";
+      w.el.style.top = 28 + i * 24 + "px";
+      w.el.style.width = Math.min(420, window.innerWidth - 60) + "px";
+      w.el.style.height = Math.min(320, window.innerHeight - 90) + "px";
+      bringToFront(w.id);
+    });
+    scheduleWindowStateSave();
+  }
+  function tileWindows(wins) {
+    if (!wins.length) return;
+    const cols = Math.ceil(Math.sqrt(wins.length));
+    const rows = Math.ceil(wins.length / cols);
+    const areaW = window.innerWidth;
+    const areaH = Math.max(1, window.innerHeight - 28);
+    const wW = Math.floor(areaW / cols);
+    const hH = Math.floor(areaH / rows);
+    wins.forEach((w, i) => {
+      w.el.classList.remove("maximized");
+      w.maximized = false;
+      w.el.style.left = i % cols * wW + "px";
+      w.el.style.top = Math.floor(i / cols) * hH + "px";
+      w.el.style.width = wW + "px";
+      w.el.style.height = hH + "px";
+      bringToFront(w.id);
+    });
+    scheduleWindowStateSave();
+  }
+  function openTaskbarProperties() {
+    const body = document.createElement("div");
+    body.className = "win98-dialog";
+    const makeCheck = (label, key) => {
+      const wrap = document.createElement("div");
+      wrap.className = "win98-dialog-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!(state.settings && state.settings[key]);
+      cb.id = "taskbar-prop-" + key;
+      const lbl = document.createElement("label");
+      lbl.htmlFor = cb.id;
+      lbl.textContent = " " + label;
+      wrap.append(cb, lbl);
+      return { wrap, cb, key };
+    };
+    const checks = [
+      makeCheck("Автоскрытие панели задач", "taskbarAutoHide"),
+      makeCheck("Мелкие значки на панели задач", "taskbarSmallIcons"),
+      makeCheck("Показывать часы", "showClock")
+    ];
+    checks.forEach((c) => body.appendChild(c.wrap));
+    openDialog({
+      title: "Свойства панели задач",
+      width: 320,
+      body,
+      buttons: [
+        {
+          label: "OK",
+          onClick: () => {
+            checks.forEach((c) => {
+              state.settings[c.key] = c.cb.checked;
+            });
+            saveSettings();
+            applyTaskbarSettings();
+          }
+        },
+        { label: "Отмена" }
+      ]
+    });
+  }
+  document.addEventListener("mousemove", (e) => {
+    if (state.settings && state.settings.taskbarAutoHide) {
+      if (e.clientY >= window.innerHeight - 6) {
+        $taskbar.classList.add("taskbar-force-show");
+      }
+    }
+  });
+  $taskbar.addEventListener("mouseleave", () => {
+    if (state.settings && state.settings.taskbarAutoHide && !state.startMenuOpen) {
+      $taskbar._hideTimer = setTimeout(
+        () => $taskbar.classList.remove("taskbar-force-show"),
+        300
+      );
+    }
+  });
+  $taskbar.addEventListener(
+    "mouseenter",
+    () => clearTimeout($taskbar._hideTimer)
+  );
+  var marqueeEl = null;
+  var marqueeStart = null;
+  function deselectAllDesktopIcons() {
+    $desktopIcons.querySelectorAll(".desktop-icon.selected").forEach((d) => d.classList.remove("selected"));
+    state.selectedDesktopEl = null;
+  }
+  function selectIconsInRect(rect) {
+    deselectAllDesktopIcons();
+    $desktopIcons.querySelectorAll(".desktop-icon").forEach((icon) => {
+      if (!icon._node) return;
+      const r = icon.getBoundingClientRect();
+      if (r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom) {
+        return;
+      }
+      icon.classList.add("selected");
+    });
+  }
+  function onMarqueeMove(e) {
+    if (!marqueeStart) return;
+    const dx = e.clientX - marqueeStart.x;
+    const dy = e.clientY - marqueeStart.y;
+    if (Math.abs(dx) < 4 && Math.abs(dy) < 4 && !marqueeEl) return;
+    if (!marqueeEl) {
+      marqueeEl = document.createElement("div");
+      marqueeEl.className = "desktop-marquee";
+      document.body.appendChild(marqueeEl);
+    }
+    const x = Math.min(marqueeStart.x, e.clientX);
+    const y = Math.min(marqueeStart.y, e.clientY);
+    marqueeEl.style.left = x + "px";
+    marqueeEl.style.top = y + "px";
+    marqueeEl.style.width = Math.abs(dx) + "px";
+    marqueeEl.style.height = Math.abs(dy) + "px";
+    selectIconsInRect(marqueeEl.getBoundingClientRect());
+  }
+  function onMarqueeUp() {
+    document.removeEventListener("mousemove", onMarqueeMove);
+    document.removeEventListener("mouseup", onMarqueeUp);
+    marqueeStart = null;
+    if (marqueeEl) {
+      marqueeEl.remove();
+      marqueeEl = null;
+    }
+  }
+  $desktop.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (eventTargetElement(e).closest(".desktop-icon")) return;
+    if (eventTargetElement(e).closest(".win98-window")) return;
+    marqueeStart = { x: e.clientX, y: e.clientY };
+    document.addEventListener("mousemove", onMarqueeMove);
+    document.addEventListener("mouseup", onMarqueeUp);
+  });
+  document.addEventListener("click", (e) => {
+    if (!eventTargetElement(e).closest("#start-menu") && !eventTargetElement(e).closest("#start-btn")) {
+      closeStartMenu();
+    }
+    if (!eventTargetElement(e).closest(".win98-context-menu")) {
+      hideContextMenu();
+    }
+  });
+  function desktopRowLength() {
+    const size = currentIconSize();
+    const gap = state.settings && state.settings.iconGap || DEFAULT_SETTINGS.iconGap;
+    return Math.max(
+      1,
+      Math.floor($desktopIcons.clientWidth / (size + gap + 12))
+    );
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && (e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А")) {
+      e.preventDefault();
+      openSearchWindow();
+      return;
+    }
+    if (e.key === "Escape") {
+      if (state.startMenuOpen) closeStartMenu();
+      hideContextMenu();
+      return;
+    }
+    const tag = document.activeElement && document.activeElement.tagName || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON")
+      return;
+    const all = Array.from(
+      document.querySelectorAll("#desktop-icons .desktop-icon")
+    );
+    const sel = state.selectedDesktopEl;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+      if (!all.length) return;
+      let idx = all.indexOf(sel);
+      if (idx === -1) idx = 0;
+      if (e.key === "ArrowRight") idx = Math.min(all.length - 1, idx + 1);
+      else if (e.key === "ArrowLeft") idx = Math.max(0, idx - 1);
+      else if (e.key === "ArrowDown")
+        idx = Math.min(all.length - 1, idx + desktopRowLength());
+      else idx = Math.max(0, idx - desktopRowLength());
+      selectDesktopIcon(all[idx]);
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "Enter" && sel && sel._node) {
+      e.preventDefault();
+      openNode(sel._node);
+      return;
+    }
+    if (e.altKey && e.key === "Enter" && sel && sel._node) {
+      e.preventDefault();
+      openProperties(sel._node);
+      return;
+    }
+    if ((e.key === "Delete" || e.key === "Del") && sel && sel._node) {
+      e.preventDefault();
+      deleteNode(sel._node);
+      return;
+    }
+    if (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") && sel && sel._node && sel._node.url) {
+      copyText(sel._node.url);
+      state.clipUrl = sel._node.url;
+    }
+  });
+  function openAllBookmarksWindow() {
+    const existing = state.windows.find(
+      (w) => w.winType === "all-bookmarks"
+    );
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return Promise.resolve(existing);
+    }
+    return new Promise((resolve) => {
+      chrome.bookmarks.getTree((tree) => {
+        state.treeRoot = tree[0];
+        state.nodeIndex = buildNodeIndex(tree[0]);
+        const toolbarHtml = `
         <button class="win98-toolbar-btn" data-nav="back" disabled>
           <span>← Назад</span>
         </button>
@@ -4151,1416 +3352,1092 @@
           <span>Вид: Список</span>
         </button>
       `;
-
-            const win = createWindow({
-                winType: "all-bookmarks",
-                title: "Все закладки",
-                icon: drawFolderIcon("#d4c044", true),
-                width: 650,
-                height: 450,
-                toolbar: toolbarHtml,
-                bookmarkId: ALL_ROOT_ID,
-                addressbar: true,
-                addressbarValue: "Все закладки",
-                content: "",
-                statusbar: true,
-                statusText: "",
-                onCreated: (el, winData) => {
-                    winData.currentNode = buildAllBookmarksNode(state.treeRoot);
-                    winData.navStack = [];
-                    renderFolderContent(winData, winData.currentNode);
-                    updateNavButtons(winData);
-
-                    el.querySelector('[data-nav="back"]')?.addEventListener(
-                        "click",
-                        () => goBack(winData),
-                    );
-                    el.querySelector('[data-nav="up"]')?.addEventListener(
-                        "click",
-                        () => goUp(winData),
-                    );
-                    el.querySelector('[data-nav="refresh"]')?.addEventListener(
-                        "click",
-                        () => {
-                            chrome.bookmarks.getTree((t) => {
-                                state.treeRoot = t[0];
-                                state.nodeIndex = buildNodeIndex(t[0]);
-                                const target = resolveNavNode(
-                                    winData.currentNode,
-                                    t[0],
-                                );
-                                if (target)
-                                    navigateInWindow(winData, target, {
-                                        fromHistory: true,
-                                    });
-                                else updateNavButtons(winData);
-                            });
-                        },
-                    );
-                    el.querySelector('[data-nav="view"]')?.addEventListener(
-                        "click",
-                        () =>
-                            setFolderViewMode(
-                                currentFolderViewMode() === "list"
-                                    ? "icons"
-                                    : "list",
-                            ),
-                    );
-                },
-            });
-            resolve(win);
-            });
-        });
-    }
-
-    /* ============================================================
-     SETTINGS (storage + wallpaper + click mode)
-     ============================================================ */
-
-    /** @param {Partial<Settings> | null} partial @returns {Settings} */
-    function mergeSettings(partial) {
-        const base = structuredClone(DEFAULT_SETTINGS);
-        if (!partial) return base;
-        if (partial.clickMode === "single" || partial.clickMode === "double") {
-            base.clickMode = partial.clickMode;
-        }
-        if (ICON_SIZES.includes(partial.iconSize)) {
-            base.iconSize = partial.iconSize;
-        }
-        if (clampInt(partial.labelSize, 9, 18) !== null)
-            base.labelSize = clampInt(partial.labelSize, 9, 18);
-        if (clampInt(partial.iconGap, 0, 32) !== null)
-            base.iconGap = clampInt(partial.iconGap, 0, 32);
-        if (clampInt(partial.desktopPadX, 0, 64) !== null)
-            base.desktopPadX = clampInt(partial.desktopPadX, 0, 64);
-        if (clampInt(partial.desktopPadY, 0, 64) !== null)
-            base.desktopPadY = clampInt(partial.desktopPadY, 0, 64);
-        if (FOLDER_STYLES.some((s) => s.id === partial.folderIconStyle)) {
-            base.folderIconStyle = partial.folderIconStyle;
-        }
-        if (
-            typeof partial.weatherCity === "string" &&
-            partial.weatherCity.trim()
-        ) {
-            base.weatherCity = partial.weatherCity.trim();
-        }
-        if (typeof partial.showClockDate === "boolean") {
-            base.showClockDate = partial.showClockDate;
-        }
-        if (typeof partial.showClockWeekday === "boolean") {
-            base.showClockWeekday = partial.showClockWeekday;
-        }
-        if (typeof partial.iconLabelShadow === "boolean") {
-            base.iconLabelShadow = partial.iconLabelShadow;
-        }
-        if (
-            partial.folderViewMode === "icons" ||
-            partial.folderViewMode === "list"
-        ) {
-            base.folderViewMode = partial.folderViewMode;
-        }
-        if (UI_FONTS.some((f) => f.value === partial.uiFont)) {
-            base.uiFont = partial.uiFont;
-        }
-        if (typeof partial.taskbarAutoHide === "boolean") {
-            base.taskbarAutoHide = partial.taskbarAutoHide;
-        }
-        if (typeof partial.taskbarSmallIcons === "boolean") {
-            base.taskbarSmallIcons = partial.taskbarSmallIcons;
-        }
-        if (typeof partial.showClock === "boolean") {
-            base.showClock = partial.showClock;
-        }
-        if (THEME_OPTIONS.some((t) => t.id === partial.theme)) {
-            base.theme = partial.theme;
-        }
-        if (partial.customColors && typeof partial.customColors === "object") {
-            /** @type {Object<string, string>} */
-            const colors = {};
-            CUSTOM_THEME_KEYS.forEach((k) => {
-                const v = partial.customColors[k.css];
-                if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) {
-                    colors[k.css] = v;
-                }
-            });
-            base.customColors = colors;
-        }
-        if (partial.wallpaper) {
-            const wp = partial.wallpaper;
-            if (wp.type === "color" || wp.type === "image")
-                base.wallpaper.type = wp.type;
-            if (typeof wp.color === "string") base.wallpaper.color = wp.color;
-            if (typeof wp.imageData === "string")
-                base.wallpaper.imageData = wp.imageData;
-            if (["stretch", "tile", "center"].includes(wp.imageStyle))
-                base.wallpaper.imageStyle = wp.imageStyle;
-            if (typeof wp.scale === "number")
-                base.wallpaper.scale = clampInt(Math.round(wp.scale), 10, 500);
-            if (["color", "file", "url"].includes(wp.uiType))
-                base.wallpaper.uiType = wp.uiType;
-        }
-        return base;
-    }
-
-    async function loadSettings() {
-        try {
-            const stored = await chrome.storage.local.get("settings");
-            state.settings = mergeSettings(stored.settings);
-        } catch (err) {
-            state.settings = mergeSettings(null);
-        }
-        applyWallpaper(state.settings.wallpaper);
-        applyDesktopStyle();
-        applyTaskbarSettings();
-        updateClock();
-    }
-
-    /**
-     * Apply the appearance theme (built-in palette or custom colors) as CSS
-     * variables on documentElement. Called from applyDesktopStyle() so live
-     * preview in the settings window updates the whole desktop in one go.
-     * @param {Settings} [src]
-     */
-    function applyTheme(src) {
-        const s = src || state.settings || DEFAULT_SETTINGS;
-        const el = document.documentElement;
-        const themeId = s.theme || DEFAULT_SETTINGS.theme;
-
-        // Reset any theme-applied variables first (classic = CSS defaults).
-        const allVars = new Set([
-            ...Object.keys(THEME_COLORS.olive),
-            ...Object.keys(THEME_COLORS["high-contrast"]),
-            ...CUSTOM_THEME_KEYS.map((k) => k.css),
-        ]);
-        allVars.forEach((name) => el.style.removeProperty(name));
-
-        let colors = null;
-        if (themeId === "custom") {
-            colors = s.customColors || {};
-            // Derive title bar gradients from the picked base colors so the
-            // whole chrome stays coherent when only the highlight changes.
-            const sel = colors["--win98-navy"] || "#000080";
-            const inactive = colors["--win98-shadow"] || "#808080";
-            colors = {
-                ...colors,
-                "--win98-title-active": `linear-gradient(90deg, ${sel}, ${shadeColor(sel, 35)})`,
-                "--win98-title-inactive": `linear-gradient(90deg, ${inactive}, ${shadeColor(inactive, 35)})`,
-            };
-        } else if (THEME_COLORS[themeId]) {
-            colors = THEME_COLORS[themeId];
-        }
-
-        if (!colors) return; // classic — defaults from win98.css :root
-        Object.entries(colors).forEach(([name, value]) => {
-            if (value) el.style.setProperty(name, value);
-        });
-    }
-
-    /** Apply all desktop layout CSS variables (icon size, label size, spacing, padding) */
-    function applyDesktopStyle(src) {
-        applyTheme(src);
-        const s = src || state.settings || DEFAULT_SETTINGS;
-        const el = document.documentElement;
-        el.style.setProperty(
-            "--win98-icon-size",
-            (s.iconSize || DEFAULT_SETTINGS.iconSize) + "px",
-        );
-        el.style.setProperty(
-            "--win98-label-size",
-            (s.labelSize ?? DEFAULT_SETTINGS.labelSize) + "px",
-        );
-        el.style.setProperty(
-            "--win98-icon-gap",
-            (s.iconGap ?? DEFAULT_SETTINGS.iconGap) + "px",
-        );
-        el.style.setProperty(
-            "--win98-desktop-pad-x",
-            (s.desktopPadX ?? DEFAULT_SETTINGS.desktopPadX) + "px",
-        );
-        el.style.setProperty(
-            "--win98-desktop-pad-y",
-            (s.desktopPadY ?? DEFAULT_SETTINGS.desktopPadY) + "px",
-        );
-        // Icon label appearance: transparent like original Win98 with drop
-        // shadows ("Use drop shadows for icon labels on the desktop" checkbox).
-        // No opaque background — the wallpaper/desktop color shows through.
-        el.style.setProperty(
-            "--win98-label-shadow",
-            s.iconLabelShadow ? "1px 1px 1px rgba(0,0,0,0.7)" : "none",
-        );
-        el.style.setProperty(
-            "--win98-font",
-            s.uiFont || DEFAULT_SETTINGS.uiFont,
-        );
-    }
-
-    function saveSettings() {
-        return chrome.storage.local
-            .set({ settings: state.settings })
-            .catch(() => {});
-    }
-
-    /** Apply taskbar-related settings (auto-hide, small icons, clock visibility) */
-    function applyTaskbarSettings() {
-        const s = state.settings || DEFAULT_SETTINGS;
-        $taskbar.classList.toggle("taskbar-small", !!s.taskbarSmallIcons);
-        $clock.style.display = s.showClock !== false ? "" : "none";
-        if (s.taskbarAutoHide) {
-            $taskbar.classList.add("taskbar-autohide");
-        } else {
-            $taskbar.classList.remove("taskbar-autohide");
-            $taskbar.classList.remove("taskbar-force-show");
-        }
-    }
-
-    /** Natural pixel size of a wallpaper image (data URL), cached per URL */
-    function resolveImageSize(dataUrl) {
-        if (!state.wallpaperSizeCache) state.wallpaperSizeCache = new Map();
-        let pending = state.wallpaperSizeCache.get(dataUrl);
-        if (!pending) {
-            pending = new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () =>
-                    resolve({ w: img.naturalWidth, h: img.naturalHeight });
-                img.onerror = () => resolve(null);
-                img.src = dataUrl;
-            });
-            state.wallpaperSizeCache.set(dataUrl, pending);
-        }
-        return pending;
-    }
-
-    /** Apply wallpaper to the desktop background */
-    function applyWallpaper(wp) {
-        wp =
-            wp ||
-            (state.settings && state.settings.wallpaper) ||
-            DEFAULT_SETTINGS.wallpaper;
-        const desk = document.getElementById("desktop");
-        desk.style.backgroundPosition = "0 0";
-
-        if (wp.type !== "color" && wp.imageData) {
-            desk.style.backgroundImage = `url(${wp.imageData})`;
-            desk.style.backgroundColor = wp.color || "#008080";
-            const sty = wp.imageStyle || "tile";
-            const scale = clampInt(Math.round(wp.scale || 100), 10, 500) / 100;
-
-            const applyTileOrCenter = (size) => {
-                if (size && scale !== 1) {
-                    const w = Math.max(1, Math.round(size.w * scale));
-                    const h = Math.max(1, Math.round(size.h * scale));
-                    desk.style.backgroundSize = `${w}px ${h}px`;
-                } else {
-                    desk.style.backgroundSize = "auto";
-                }
-                desk.style.backgroundRepeat =
-                    sty === "tile" ? "repeat" : "no-repeat";
-                desk.style.backgroundPosition =
-                    sty === "center" ? "center center" : "0 0";
-            };
-
-            if (sty === "stretch") {
-                desk.style.backgroundSize = "100% 100%";
-                desk.style.backgroundRepeat = "no-repeat";
-            } else if (scale !== 1) {
-                // Need the natural size to scale; resolve asynchronously
-                desk.style.backgroundSize = "auto";
-                resolveImageSize(wp.imageData).then(applyTileOrCenter);
-            } else {
-                applyTileOrCenter(null);
-            }
-        } else {
-            desk.style.backgroundImage = "none";
-            desk.style.backgroundColor = wp.color || "#008080";
-            desk.style.backgroundSize = "auto";
-            desk.style.backgroundRepeat = "repeat";
-        }
-    }
-
-    /* ============================================================
-     SETTINGS WINDOW
-     ============================================================ */
-
-    function openSettingsWindow() {
-        // Single instance
-        const existing = state.windows.find((w) => w.title === "Настройки");
-        if (existing) {
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return;
-        }
-
-        const pending = structuredClone(state.settings);
-        let settingsWinId = null;
-
-        createWindow({
-            title: "Настройки",
-            icon: "icons/settings.svg",
-            width: 460,
-            height: 540,
-            content: "",
-            statusbar: false,
-            onCreated: (el, winData) => {
-                settingsWinId = winData.id;
-                const contentEl = /** @type {HTMLElement} */ (
-                    el.querySelector(".win98-window-content")
-                );
-                contentEl.style.background = "var(--win98-silver)";
-                contentEl.appendChild(
-                    buildSettingsForm(pending, () => settingsWinId),
-                );
-            },
-        });
-    }
-
-    /**
-     * Build the settings form. Live-preview applies changes to the desktop,
-     * but they are only committed to disk on OK.
-     */
-    function buildSettingsForm(pending, getWinId) {
-        const form = document.createElement("form");
-        form.className = "win98-form";
-        form.addEventListener("submit", (e) => e.preventDefault());
-
-        // UI type: "color" | "file" | "url" (maps to persisted type color|image)
-        let uiType =
-            pending.wallpaper.uiType ||
-            (pending.wallpaper.type === "color" ? "color" : "file");
-
-        /* ---------- Tab bar + panels ---------- */
-        const tabsWrap = document.createElement("div");
-        tabsWrap.className = "win98-tabs-wrap";
-        const tabBar = document.createElement("div");
-        tabBar.className = "win98-tabs";
-        const panels = document.createElement("div");
-        panels.className = "win98-tabpanels";
-
-        const TAB_DEFS = [
-            { id: "wp", label: "Обои" },
-            { id: "behavior", label: "Поведение" },
-            { id: "appearance", label: "Вид" },
-            { id: "about", label: "О системе" },
-        ];
-        const tabPanels = {};
-
-        TAB_DEFS.forEach((t) => {
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "win98-tab";
-            btn.dataset.tab = t.id;
-            btn.textContent = t.label;
-            btn.addEventListener("click", () => selectTab(t.id));
-            tabBar.appendChild(btn);
-
-            const panel = document.createElement("div");
-            panel.className = "win98-tabpanel";
-            panel.dataset.tabPanel = t.id;
-            panels.appendChild(panel);
-            tabPanels[t.id] = panel;
-        });
-
-        tabsWrap.appendChild(tabBar);
-        tabsWrap.appendChild(panels);
-        form.appendChild(tabsWrap);
-
-        function selectTab(id) {
-            tabBar
-                .querySelectorAll(".win98-tab")
-                .forEach((/** @type {HTMLElement} */ b) =>
-                    b.classList.toggle("active", b.dataset.tab === id),
-                );
-            panels
-                .querySelectorAll(".win98-tabpanel")
-                .forEach((/** @type {HTMLElement} */ p) =>
-                    p.classList.toggle("active", p.dataset.tabPanel === id),
-                );
-        }
-        selectTab("wp");
-
-        const commit = () => {
-            if (uiType !== "color" && !pending.wallpaper.imageData) {
-                setMsg(
-                    uiType === "url"
-                        ? "Укажите адрес изображения и нажмите «Скачать»."
-                        : "Выберите файл изображения.",
-                );
-                return; // не закрываем окно, пока обои не выбраны
-            }
-            previewFolderStyle = null;
-            previewFolderViewMode = null;
-            state.settings = pending;
-            _clearIconCache(); // new settings may change icon size/style
-            applyDesktopStyle();
-            saveSettings();
-            updateClock();
-            updateWeather();
-            renderBookmarks(state.treeRoot);
-            refreshOpenFolderWindows(state.treeRoot); // apply new view mode
-            const id = getWinId();
-            if (id) closeWindow(id);
-        };
-
-        const cancel = () => {
-            previewFolderStyle = null;
-            previewFolderViewMode = null;
-            _clearIconCache(); // restore memoized icons under the saved style
-            applyWallpaper(state.settings.wallpaper);
-            applyDesktopStyle();
-            updateClock();
-            renderBookmarks(state.treeRoot);
-            refreshOpenFolderWindows(state.treeRoot); // restore saved view mode
-            const id = getWinId();
-            if (id) closeWindow(id);
-        };
-
-        /* ---------- Тема groupbox (appearance tab) ----------
-           Radio: Classic / Olive / High Contrast / Custom. Every change
-           applies live through `livePreview(settings)` (applyDesktopStyle),
-           and cancel() above reverts it via applyTheme(state.settings). */
-        const buildThemeGroup = (a, livePreview) => {
-            const box = document.createElement("div");
-            box.className = "win98-groupbox";
-            const legend = document.createElement("div");
-            legend.className = "win98-groupbox-legend";
-            legend.textContent = "Тема";
-            box.appendChild(legend);
-
-            // Custom-color pickers (visible only for theme "custom")
-            const customBox = document.createElement("div");
-            CUSTOM_THEME_KEYS.forEach((k) => {
-                const row = document.createElement("div");
-                row.className = "wp-style-row";
-                row.style.justifyContent = "space-between";
-                const cap = document.createElement("span");
-                cap.textContent = k.label;
-                const swatch = document.createElement("input");
-                swatch.type = "color";
-                swatch.className = "wp-color-picker";
-                swatch.value = a.customColors[k.css] || k.def;
-                swatch.addEventListener("input", () => {
-                    a.customColors = a.customColors || {};
-                    a.customColors[k.css] = swatch.value;
-                    livePreview(a);
-                });
-                row.append(cap, swatch);
-                customBox.appendChild(row);
-            });
-
-            const curTheme = THEME_OPTIONS.some((t) => t.id === a.theme)
-                ? a.theme
-                : DEFAULT_SETTINGS.theme;
-            customBox.style.display = curTheme === "custom" ? "block" : "none";
-
-            THEME_OPTIONS.forEach((t) => {
-                const lbl = document.createElement("label");
-                lbl.className = "win98-radio";
-                lbl.style.alignItems = "flex-start";
-                const rad = document.createElement("input");
-                rad.type = "radio";
-                rad.name = "theme";
-                rad.value = t.id;
-                rad.checked = curTheme === t.id;
-                const txt = document.createElement("span");
-                const title = document.createElement("span");
-                title.style.fontWeight = "bold";
-                title.style.display = "block";
-                title.textContent = t.label;
-                const desc = document.createElement("span");
-                desc.style.color = "var(--win98-dark-gray)";
-                desc.style.fontSize = "10px";
-                desc.textContent = t.desc;
-                txt.append(title, desc);
-                rad.addEventListener("change", () => {
-                    if (!rad.checked) return;
-                    a.theme = t.id;
-                    customBox.style.display =
-                        t.id === "custom" ? "block" : "none";
-                    livePreview(a);
-                });
-                lbl.append(rad, txt);
-                box.appendChild(lbl);
-            });
-
-            box.appendChild(customBox);
-            return box;
-        };
-
-        /* ---------- Обои group ---------- */
-        const wg = document.createElement("div");
-        wg.className = "win98-groupbox";
-        const wgLegend = document.createElement("div");
-        wgLegend.className = "win98-groupbox-legend";
-        wgLegend.textContent = "Обои";
-        wg.appendChild(wgLegend);
-
-        // -- Цвет фона --
-        const colorRow = document.createElement("label");
-        colorRow.className = "win98-radio";
-        const colorRadio = document.createElement("input");
-        colorRadio.type = "radio";
-        colorRadio.name = "wp-type";
-        colorRadio.value = "color";
-        colorRadio.checked = uiType === "color";
-        const colorSpan = document.createElement("span");
-        colorSpan.textContent = "Цвет фона:";
-        const colorPicker = document.createElement("input");
-        colorPicker.type = "color";
-        colorPicker.className = "wp-color-picker";
-        colorPicker.value = pending.wallpaper.color || "#008080";
-        colorRow.append(colorRadio, colorSpan, colorPicker);
-        wg.appendChild(colorRow);
-
-        // -- Изображение с компьютера --
-        const fileRow = document.createElement("div");
-        fileRow.className = "win98-radio-row";
-        const fileRadio = document.createElement("input");
-        fileRadio.type = "radio";
-        fileRadio.name = "wp-type";
-        fileRadio.value = "file";
-        fileRadio.checked = uiType === "file";
-        const fileLabel = document.createElement("span");
-        fileLabel.textContent = "Изображение с компьютера:";
-        const fileBtn = document.createElement("button");
-        fileBtn.type = "button";
-        fileBtn.className = "win98-btn";
-        fileBtn.textContent = "Выбрать файл...";
-        const fileInput = document.createElement("input");
-        fileInput.type = "file";
-        fileInput.accept = "image/*";
-        fileInput.style.display = "none";
-        fileRow.append(fileRadio, fileLabel, fileBtn, fileInput);
-        wg.appendChild(fileRow);
-
-        // -- Изображение из интернета --
-        const urlRow = document.createElement("div");
-        urlRow.className = "win98-radio-row";
-        const urlRadio = document.createElement("input");
-        urlRadio.type = "radio";
-        urlRadio.name = "wp-type";
-        urlRadio.value = "url";
-        urlRadio.checked = uiType === "url";
-        const urlLabel = document.createElement("span");
-        urlLabel.textContent = "Изображение из интернета:";
-        const urlInput = document.createElement("input");
-        urlInput.type = "url";
-        urlInput.className = "win98-addressbar-input";
-        urlInput.placeholder = "https://example.com/oboi.png";
-        const dlBtn = document.createElement("button");
-        dlBtn.type = "button";
-        dlBtn.className = "win98-btn";
-        dlBtn.textContent = "Скачать";
-        urlRow.append(urlRadio, urlLabel, urlInput, dlBtn);
-        wg.appendChild(urlRow);
-
-        // -- Расположение --
-        const styleRow = document.createElement("div");
-        styleRow.className = "wp-style-row";
-        const STYLE_LABELS = ["Замостить", "Растянуть", "По центру"];
-        ["tile", "stretch", "center"].forEach((s, i) => {
-            const lbl = document.createElement("label");
-            lbl.className = "win98-radio";
-            const r = document.createElement("input");
-            r.type = "radio";
-            r.name = "wp-style";
-            r.value = s;
-            if (pending.wallpaper.imageStyle === s) r.checked = true;
-            const sp = document.createElement("span");
-            sp.textContent = STYLE_LABELS[i];
-            lbl.append(r, sp);
-            styleRow.appendChild(lbl);
-        });
-        wg.appendChild(styleRow);
-
-        // -- Масштаб (slider) --
-        const scaleRow = document.createElement("div");
-        scaleRow.className = "wp-scale-row";
-        const scaleLabel = document.createElement("label");
-        scaleLabel.className = "wp-scale-label";
-        scaleLabel.textContent = "Масштаб:";
-        const scaleSlider = document.createElement("input");
-        scaleSlider.type = "range";
-        scaleSlider.min = "10";
-        scaleSlider.max = "500";
-        scaleSlider.step = "10";
-        scaleSlider.className = "win98-range";
-        scaleSlider.value = String(
-            clampInt(Math.round(pending.wallpaper.scale || 100), 10, 500),
-        );
-        scaleSlider.disabled = uiType === "color";
-        const scaleValue = document.createElement("span");
-        scaleValue.className = "wp-scale-value";
-        scaleValue.textContent = scaleSlider.value + "%";
-        scaleRow.append(scaleLabel, scaleSlider, scaleValue);
-        wg.appendChild(scaleRow);
-
-        // -- Preview --
-        const preview = document.createElement("div");
-        preview.className = "wp-preview";
-        const previewImg = document.createElement("div");
-        previewImg.className = "wp-preview-img";
-        preview.appendChild(previewImg);
-        wg.appendChild(preview);
-
-        // -- Message line --
-        const msg = document.createElement("div");
-        msg.className = "settings-msg";
-        wg.appendChild(msg);
-
-        tabPanels.wp.appendChild(wg);
-
-        /* ---------- Открытие group ---------- */
-        const mg = document.createElement("div");
-        mg.className = "win98-groupbox";
-        const mgLegend = document.createElement("div");
-        mgLegend.className = "win98-groupbox-legend";
-        mgLegend.textContent = "Открытие";
-        mg.appendChild(mgLegend);
-
-        const singleLbl = document.createElement("label");
-        singleLbl.className = "win98-radio";
-        const singleRadio = document.createElement("input");
-        singleRadio.type = "radio";
-        singleRadio.name = "click-mode";
-        singleRadio.value = "single";
-        if (pending.clickMode === "single") singleRadio.checked = true;
-        singleLbl.append(
-            singleRadio,
-            document.createTextNode("Открывать одним кликом"),
-        );
-
-        const doubleLbl = document.createElement("label");
-        doubleLbl.className = "win98-radio";
-        const doubleRadio = document.createElement("input");
-        doubleRadio.type = "radio";
-        doubleRadio.name = "click-mode";
-        doubleRadio.value = "double";
-        if (pending.clickMode === "double") doubleRadio.checked = true;
-        doubleLbl.append(
-            doubleRadio,
-            document.createTextNode("Открывать двойным кликом"),
-        );
-
-        mg.append(singleLbl, doubleLbl);
-        tabPanels.behavior.appendChild(mg);
-
-        /* ---------- Часы group ---------- */
-        const clg = document.createElement("div");
-        clg.className = "win98-groupbox";
-        const clgLegend = document.createElement("div");
-        clgLegend.className = "win98-groupbox-legend";
-        clgLegend.textContent = "Часы";
-        clg.appendChild(clgLegend);
-
-        const dateLbl = document.createElement("label");
-        dateLbl.className = "win98-checkbox";
-        const dateCb = document.createElement("input");
-        dateCb.type = "checkbox";
-        dateCb.checked = !!pending.showClockDate;
-        dateLbl.append(dateCb, document.createTextNode("Показывать дату"));
-
-        const wdLbl = document.createElement("label");
-        wdLbl.className = "win98-checkbox";
-        const wdCb = document.createElement("input");
-        wdCb.type = "checkbox";
-        wdCb.checked = !!pending.showClockWeekday;
-        wdLbl.append(wdCb, document.createTextNode("Показывать день недели"));
-
-        clg.append(dateLbl, wdLbl);
-        tabPanels.behavior.appendChild(clg);
-
-        /* ---------- Вид group (icon size) ---------- */
-        const vg = document.createElement("div");
-        vg.className = "win98-groupbox";
-        const vgLegend = document.createElement("div");
-        vgLegend.className = "win98-groupbox-legend";
-        vgLegend.textContent = "Вид";
-        vg.appendChild(vgLegend);
-
-        const SIZE_LABELS = { 24: "Мелкие", 32: "Средние", 48: "Крупные" };
-        const sizeRow = document.createElement("div");
-        sizeRow.className = "wp-style-row";
-        ICON_SIZES.forEach((s) => {
-            const lbl = document.createElement("label");
-            lbl.className = "win98-radio";
-            const r = document.createElement("input");
-            r.type = "radio";
-            r.name = "icon-size";
-            r.value = String(s);
-            if (pending.iconSize === s) r.checked = true;
-            const sp = document.createElement("span");
-            sp.textContent = SIZE_LABELS[s] || s;
-            lbl.append(r, sp);
-            r.addEventListener("change", () => {
-                if (r.checked) {
-                    pending.iconSize = s;
-                    applyDesktopStyle(pending); // live preview
-                }
-            });
-            sizeRow.appendChild(lbl);
-        });
-        vg.appendChild(sizeRow);
-
-        /* ---------- Вид group (folder icon style) ---------- */
-        const fg = document.createElement("div");
-        fg.className = "win98-groupbox";
-        const fgLegend = document.createElement("div");
-        fgLegend.className = "win98-groupbox-legend";
-        fgLegend.textContent = "Иконки папок";
-        fg.appendChild(fgLegend);
-
-        const curFolderStyle = FOLDER_STYLES.some(
-            (s) => s.id === pending.folderIconStyle,
-        )
-            ? pending.folderIconStyle
-            : DEFAULT_SETTINGS.folderIconStyle;
-
-        FOLDER_STYLES.forEach((s) => {
-            const lbl = document.createElement("label");
-            lbl.className = "win98-radio";
-            lbl.style.display = "flex";
-            lbl.style.alignItems = "center";
-            lbl.style.gap = "6px";
-            lbl.style.marginBottom = "2px";
-            const rad = document.createElement("input");
-            rad.type = "radio";
-            rad.name = "folder-style";
-            rad.value = s.id;
-            if (curFolderStyle === s.id) rad.checked = true;
-            const prev = document.createElement("img");
-            prev.src = drawFolderIcon("#d4c044", false, 24, s.id);
-            prev.width = 24;
-            prev.height = 24;
-            prev.style.imageRendering = "pixelated";
-            prev.style.flexShrink = "0";
-            const sp = document.createElement("span");
-            sp.textContent = s.label;
-            rad.addEventListener("change", () => {
-                if (!rad.checked) return;
-                pending.folderIconStyle = s.id;
-                previewFolderStyle = s.id;
-                _clearIconCache(); // icons were memoized under the old style
-                renderBookmarks(state.treeRoot); // live preview on the desktop
-            });
-            lbl.append(rad, prev, sp);
-            fg.appendChild(lbl);
-        });
-        vg.appendChild(fg);
-
-        /* ---------- Вид group (folder view mode) ---------- */
-        const fm = document.createElement("div");
-        fm.className = "win98-groupbox";
-        const fmLegend = document.createElement("div");
-        fmLegend.className = "win98-groupbox-legend";
-        fmLegend.textContent = "Ссылки в папках";
-        fm.appendChild(fmLegend);
-
-        const VIEW_MODE_LABELS = [
-            { id: "icons", label: "Значки" },
-            { id: "list", label: "Список" },
-        ];
-        const curViewMode =
-            pending.folderViewMode === "list" ? "list" : "icons";
-        VIEW_MODE_LABELS.forEach((m) => {
-            const lbl = document.createElement("label");
-            lbl.className = "win98-radio";
-            const r = document.createElement("input");
-            r.type = "radio";
-            r.name = "folder-view-mode";
-            r.value = m.id;
-            if (curViewMode === m.id) r.checked = true;
-            const sp = document.createElement("span");
-            sp.textContent = m.label;
-            lbl.append(r, sp);
-            r.addEventListener("change", () => {
-                if (!r.checked) return;
-                pending.folderViewMode = m.id;
-                previewFolderViewMode = m.id; // live preview in open windows
-                refreshOpenFolderWindows(state.treeRoot);
-            });
-            fm.appendChild(lbl);
-        });
-        vg.appendChild(fm);
-
-        /* ---------- Вид group (UI font) ---------- */
-        const ufg = document.createElement("div");
-        ufg.className = "win98-groupbox";
-        const ufgLegend = document.createElement("div");
-        ufgLegend.className = "win98-groupbox-legend";
-        ufgLegend.textContent = "Шрифт интерфейса";
-        ufg.appendChild(ufgLegend);
-
-        const curFont = UI_FONTS.some((f) => f.value === pending.uiFont)
-            ? pending.uiFont
-            : DEFAULT_SETTINGS.uiFont;
-        UI_FONTS.forEach((f) => {
-            const lbl = document.createElement("label");
-            lbl.className = "win98-radio";
-            const rad = document.createElement("input");
-            rad.type = "radio";
-            rad.name = "ui-font";
-            rad.value = f.value;
-            if (curFont === f.value) rad.checked = true;
-            const sp = document.createElement("span");
-            sp.style.fontFamily = f.value; // каждый вариант набран своим шрифтом
-            sp.textContent = f.label;
-            rad.addEventListener("change", () => {
-                if (!rad.checked) return;
-                pending.uiFont = f.value;
-                applyDesktopStyle(pending); // live preview
-            });
-            lbl.append(rad, sp);
-            ufg.appendChild(lbl);
-        });
-        vg.appendChild(ufg);
-
-        // Numeric style settings with live preview
-        const makeNumRow = (label, key, min, max) => {
-            const row = document.createElement("div");
-            row.className = "wp-style-row";
-            row.style.justifyContent = "space-between";
-            const cap = document.createElement("span");
-            cap.textContent = label;
-            const inp = document.createElement("input");
-            inp.type = "number";
-            inp.min = String(min);
-            inp.max = String(max);
-            inp.value = String(pending[key] ?? DEFAULT_SETTINGS[key]);
-            inp.className = "win98-addressbar-input";
-            inp.style.width = "64px";
-            inp.addEventListener("change", () => {
-                const v = clampInt(inp.value, min, max);
-                if (v === null) {
-                    inp.value = String(pending[key] ?? DEFAULT_SETTINGS[key]);
-                    return;
-                }
-                pending[key] = v;
-                inp.value = String(v);
-                applyDesktopStyle(pending); // live preview
-            });
-            row.append(cap, inp);
-            return row;
-        };
-        vg.appendChild(makeNumRow("Размер текста, пкс", "labelSize", 9, 18));
-        vg.appendChild(
-            makeNumRow("Расстояние между иконками, пкс", "iconGap", 0, 32),
-        );
-        vg.appendChild(
-            makeNumRow("Отступ сверху и снизу, пкс", "desktopPadY", 0, 64),
-        );
-        vg.appendChild(
-            makeNumRow("Отступ слева и справа, пкс", "desktopPadX", 0, 64),
-        );
-
-        tabPanels.appearance.appendChild(
-            buildThemeGroup(pending, applyDesktopStyle),
-        );
-        tabPanels.appearance.appendChild(vg);
-
-        /* ---------- Надписи group (icon label background) ---------- */
-        const lg = document.createElement("div");
-        lg.className = "win98-groupbox";
-        const lgLegend = document.createElement("div");
-        lgLegend.className = "win98-groupbox-legend";
-        lgLegend.textContent = "Надписи";
-        lg.appendChild(lgLegend);
-
-        const shadowLbl = document.createElement("label");
-        shadowLbl.className = "win98-checkbox";
-        const shadowCb = document.createElement("input");
-        shadowCb.type = "checkbox";
-        shadowCb.checked = !!pending.iconLabelShadow;
-        shadowLbl.append(
-            shadowCb,
-            document.createTextNode(
-                "Тени для подписей значков на рабочем столе",
-            ),
-        );
-        shadowLbl.addEventListener("change", () => {
-            pending.iconLabelShadow = shadowCb.checked;
-            applyDesktopStyle(pending); // live preview on the desktop
-        });
-        lg.appendChild(shadowLbl);
-        tabPanels.appearance.appendChild(lg);
-
-        /* ---------- Погода group ---------- */
-        const wxg = document.createElement("div");
-        wxg.className = "win98-groupbox";
-        const wxgLegend = document.createElement("div");
-        wxgLegend.className = "win98-groupbox-legend";
-        wxgLegend.textContent = "Погода";
-        wxg.appendChild(wxgLegend);
-
-        const cityLbl = document.createElement("label");
-        cityLbl.className = "win98-radio";
-        const cityInput = document.createElement("input");
-        cityInput.type = "text";
-        cityInput.className = "win98-addressbar-input";
-        cityInput.value = pending.weatherCity || "";
-        cityInput.placeholder = "Город";
-        cityInput.style.width = "200px";
-        const cityTip = document.createElement("div");
-        cityTip.className = "settings-msg";
-        cityTip.style.marginLeft = "0";
-        cityTip.textContent = "Город для отображения погоды в панели задач";
-
-        wxg.append(cityLbl, cityInput, cityTip);
-        tabPanels.behavior.appendChild(wxg);
-
-        /* ---------- О системе group ---------- */
-        const abg = document.createElement("div");
-        abg.className = "win98-groupbox";
-        const abgLegend = document.createElement("div");
-        abgLegend.className = "win98-groupbox-legend";
-        abgLegend.textContent = "О системе";
-        abg.appendChild(abgLegend);
-
-        const aboutTitle = document.createElement("div");
-        aboutTitle.className = "about-title";
-        aboutTitle.textContent = "Win98 Bookmarks Desktop";
-
-        const aboutDesc = document.createElement("div");
-        aboutDesc.className = "about-desc";
-        aboutDesc.textContent =
-            "Дополнение для Chrome, превращающее новую вкладку в рабочий стол Windows 98: закладки и папки отображаются значками на рабочем столе, двойной клик открывает окна, поиск и настройки — в меню «Пуск».";
-
-        const aboutRows = document.createElement("div");
-        aboutRows.className = "about-rows";
-        [
-            ["Автор", "Herman Guilliman"],
-            ["Год", "2026"],
-            ["Поддержка", "hermanguilliman@proton.me"],
-        ].forEach(([k, v]) => {
-            const row = document.createElement("div");
-            row.className = "about-row";
-            const kEl = document.createElement("span");
-            kEl.className = "about-row-key";
-            kEl.textContent = k + ":";
-            const vEl = document.createElement("span");
-            vEl.className = "about-row-value";
-            vEl.textContent = v;
-            row.append(kEl, vEl);
-            aboutRows.appendChild(row);
-        });
-
-        abg.append(aboutTitle, aboutDesc, aboutRows);
-        tabPanels.about.appendChild(abg);
-
-        /* ---------- Dialog buttons ---------- */
-        const btnRow = document.createElement("div");
-        btnRow.className = "win98-dialog-buttons";
-        const okBtn = document.createElement("button");
-        okBtn.type = "button";
-        okBtn.className = "win98-btn";
-        okBtn.textContent = "OK";
-        const cancelBtn = document.createElement("button");
-        cancelBtn.type = "button";
-        cancelBtn.className = "win98-btn";
-        cancelBtn.textContent = "Отмена";
-        btnRow.append(okBtn, cancelBtn);
-        form.appendChild(btnRow);
-
-        /* ---------- Helpers ---------- */
-        const updateEnabled = () => {
-            fileBtn.disabled = uiType !== "file";
-            urlInput.disabled = uiType !== "url";
-            dlBtn.disabled = uiType !== "url";
-            styleRow
-                .querySelectorAll("input")
-                .forEach((r) => (r.disabled = uiType === "color"));
-            scaleSlider.disabled = uiType === "color";
-        };
-
-        const renderPreview = () => {
-            const isImg = uiType !== "color" && pending.wallpaper.imageData;
-            previewImg.style.backgroundImage = isImg
-                ? `url(${pending.wallpaper.imageData})`
-                : "none";
-            previewImg.style.backgroundColor =
-                pending.wallpaper.color || "#008080";
-            const sty = pending.wallpaper.imageStyle || "tile";
-            const scale =
-                clampInt(Math.round(pending.wallpaper.scale || 100), 10, 500) /
-                100;
-            const applyStyle = (size) => {
-                if (sty === "stretch") {
-                    previewImg.style.backgroundSize = "100% 100%";
-                    previewImg.style.backgroundRepeat = "no-repeat";
-                    previewImg.style.backgroundPosition = "0 0";
-                    return;
-                }
-                if (size && scale !== 1) {
-                    previewImg.style.backgroundSize = `${Math.max(1, Math.round(size.w * scale))}px ${Math.max(1, Math.round(size.h * scale))}px`;
-                } else {
-                    previewImg.style.backgroundSize = "auto";
-                }
-                previewImg.style.backgroundRepeat =
-                    sty === "tile" ? "repeat" : "no-repeat";
-                previewImg.style.backgroundPosition =
-                    sty === "center" ? "center center" : "0 0";
-            };
-            if (isImg && scale !== 1) {
-                applyStyle(null);
-                resolveImageSize(pending.wallpaper.imageData).then(applyStyle);
-            } else {
-                applyStyle(null);
-            }
-        };
-
-        const setMsg = (text, isError = true) => {
-            msg.textContent = text || "";
-            msg.classList.toggle("settings-error", isError);
-            msg.classList.toggle("settings-success", !isError);
-        };
-
-        const liveApply = () => applyWallpaper(pending.wallpaper);
-
-        /* ---------- Events ---------- */
-        [colorRadio, fileRadio, urlRadio].forEach((r) => {
-            r.addEventListener("change", () => {
-                if (!r.checked) return;
-                uiType = r.value;
-                pending.wallpaper.type = uiType === "color" ? "color" : "image";
-                pending.wallpaper.uiType = uiType;
-                updateEnabled();
-                renderPreview();
-                liveApply();
-            });
-        });
-
-        colorPicker.addEventListener("input", () => {
-            pending.wallpaper.color = colorPicker.value;
-            renderPreview();
-            liveApply();
-        });
-
-        fileBtn.addEventListener("click", () => fileInput.click());
-        fileInput.addEventListener("change", () => {
-            const file = fileInput.files && fileInput.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-                pending.wallpaper.imageData = reader.result;
-                pending.wallpaper.type = "image";
-                pending.wallpaper.uiType = "file";
-                uiType = "file";
-                fileRadio.checked = true;
-                updateEnabled();
-                renderPreview();
-                liveApply();
-                setMsg("Обои выбраны. Нажмите OK, чтобы сохранить.", false);
-            };
-            reader.onerror = () => setMsg("Не удалось прочитать файл.");
-            reader.readAsDataURL(file);
-        });
-
-        dlBtn.addEventListener("click", async () => {
-            const u = urlInput.value.trim();
-            if (!u) {
-                setMsg("Введите адрес изображения.");
-                return;
-            }
-            dlBtn.disabled = true;
-            dlBtn.textContent = "Загружаем...";
-            setMsg("");
-            try {
-                const resp = await fetch(u, { mode: "cors" });
-                if (!resp.ok) throw new Error("HTTP " + resp.status);
-                const blob = await resp.blob();
-                const reader = new FileReader();
-                const dataUrl = await new Promise((res, rej) => {
-                    reader.onload = () => res(reader.result);
-                    reader.onerror = () => rej(new Error("read error"));
-                    reader.readAsDataURL(blob);
-                });
-                pending.wallpaper.imageData = dataUrl;
-                pending.wallpaper.type = "image";
-                pending.wallpaper.uiType = "url";
-                uiType = "url";
-                urlRadio.checked = true;
-                updateEnabled();
-                renderPreview();
-                liveApply();
-                setMsg("Обои скачаны и сохранены локально. Нажмите OK.", false);
-            } catch (err) {
-                setMsg(
-                    "Не удалось загрузить: сервер не разрешает доступ (CORS) или адрес неверный.",
-                );
-            } finally {
-                dlBtn.disabled = uiType !== "url";
-                dlBtn.textContent = "Скачать";
-            }
-        });
-
-        styleRow.querySelectorAll("input").forEach((r) => {
-            r.addEventListener("change", () => {
-                if (r.checked) {
-                    pending.wallpaper.imageStyle = r.value;
-                    renderPreview();
-                    liveApply();
-                }
-            });
-        });
-
-        scaleSlider.addEventListener("input", () => {
-            pending.wallpaper.scale = clampInt(
-                Math.round(+scaleSlider.value || 100),
-                10,
-                500,
+        const win = createWindow({
+          winType: "all-bookmarks",
+          title: "Все закладки",
+          icon: drawFolderIcon("#d4c044", true),
+          width: 650,
+          height: 450,
+          toolbar: toolbarHtml,
+          bookmarkId: ALL_ROOT_ID,
+          addressbar: true,
+          addressbarValue: "Все закладки",
+          content: "",
+          statusbar: true,
+          statusText: "",
+          onCreated: (el, winData) => {
+            winData.currentNode = buildAllBookmarksNode(state.treeRoot);
+            winData.navStack = [];
+            renderFolderContent(winData, winData.currentNode);
+            updateNavButtons(winData);
+            el.querySelector('[data-nav="back"]')?.addEventListener(
+              "click",
+              () => goBack(winData)
             );
-            scaleValue.textContent = scaleSlider.value + "%";
-            renderPreview();
-            liveApply();
+            el.querySelector('[data-nav="up"]')?.addEventListener(
+              "click",
+              () => goUp(winData)
+            );
+            el.querySelector('[data-nav="refresh"]')?.addEventListener(
+              "click",
+              () => {
+                chrome.bookmarks.getTree((t) => {
+                  state.treeRoot = t[0];
+                  state.nodeIndex = buildNodeIndex(t[0]);
+                  const target = resolveNavNode(
+                    winData.currentNode,
+                    t[0]
+                  );
+                  if (target)
+                    navigateInWindow(winData, target, {
+                      fromHistory: true
+                    });
+                  else updateNavButtons(winData);
+                });
+              }
+            );
+            el.querySelector('[data-nav="view"]')?.addEventListener(
+              "click",
+              () => setFolderViewMode(
+                currentFolderViewMode() === "list" ? "icons" : "list"
+              )
+            );
+          }
         });
-
-        singleRadio.addEventListener("change", () => {
-            if (singleRadio.checked) pending.clickMode = "single";
+        resolve(win);
+      });
+    });
+  }
+  async function loadSettings() {
+    try {
+      const stored = await chrome.storage.local.get("settings");
+      state.settings = mergeSettings(stored.settings);
+    } catch (err) {
+      state.settings = mergeSettings(null);
+    }
+    applyWallpaper(state.settings.wallpaper);
+    applyDesktopStyle();
+    applyTaskbarSettings();
+    updateClock();
+  }
+  function applyTheme(src) {
+    const s = src || state.settings || DEFAULT_SETTINGS;
+    const el = document.documentElement;
+    const themeId = s.theme || DEFAULT_SETTINGS.theme;
+    themeResetKeys().forEach((name) => el.style.removeProperty(name));
+    const colors = themeColorsFor(themeId, s.customColors || {});
+    if (!colors) return;
+    Object.entries(colors).forEach(([name, value]) => {
+      if (value) el.style.setProperty(name, value);
+    });
+  }
+  function applyDesktopStyle(src) {
+    applyTheme(src);
+    const s = src || state.settings || DEFAULT_SETTINGS;
+    const el = document.documentElement;
+    el.style.setProperty(
+      "--win98-icon-size",
+      (s.iconSize || DEFAULT_SETTINGS.iconSize) + "px"
+    );
+    el.style.setProperty(
+      "--win98-label-size",
+      (s.labelSize ?? DEFAULT_SETTINGS.labelSize) + "px"
+    );
+    el.style.setProperty(
+      "--win98-icon-gap",
+      (s.iconGap ?? DEFAULT_SETTINGS.iconGap) + "px"
+    );
+    el.style.setProperty(
+      "--win98-desktop-pad-x",
+      (s.desktopPadX ?? DEFAULT_SETTINGS.desktopPadX) + "px"
+    );
+    el.style.setProperty(
+      "--win98-desktop-pad-y",
+      (s.desktopPadY ?? DEFAULT_SETTINGS.desktopPadY) + "px"
+    );
+    el.style.setProperty(
+      "--win98-label-shadow",
+      s.iconLabelShadow ? "1px 1px 1px rgba(0,0,0,0.7)" : "none"
+    );
+    el.style.setProperty(
+      "--win98-font",
+      s.uiFont || DEFAULT_SETTINGS.uiFont
+    );
+  }
+  function saveSettings() {
+    return chrome.storage.local.set({ settings: state.settings }).catch(() => {
+    });
+  }
+  function applyTaskbarSettings() {
+    const s = state.settings || DEFAULT_SETTINGS;
+    $taskbar.classList.toggle("taskbar-small", !!s.taskbarSmallIcons);
+    $clock.style.display = s.showClock !== false ? "" : "none";
+    if (s.taskbarAutoHide) {
+      $taskbar.classList.add("taskbar-autohide");
+    } else {
+      $taskbar.classList.remove("taskbar-autohide");
+      $taskbar.classList.remove("taskbar-force-show");
+    }
+  }
+  function resolveImageSize(dataUrl) {
+    if (!state.wallpaperSizeCache) state.wallpaperSizeCache = /* @__PURE__ */ new Map();
+    let pending = state.wallpaperSizeCache.get(dataUrl);
+    if (!pending) {
+      pending = new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+        img.onerror = () => resolve(null);
+        img.src = dataUrl;
+      });
+      state.wallpaperSizeCache.set(dataUrl, pending);
+    }
+    return pending;
+  }
+  function applyWallpaper(wp) {
+    wp = wp || state.settings && state.settings.wallpaper || DEFAULT_SETTINGS.wallpaper;
+    const desk = document.getElementById("desktop");
+    desk.style.backgroundPosition = "0 0";
+    if (wp.type !== "color" && wp.imageData) {
+      desk.style.backgroundImage = `url(${wp.imageData})`;
+      desk.style.backgroundColor = wp.color || "#008080";
+      const sty = wp.imageStyle || "tile";
+      const scale = clampInt(Math.round(wp.scale || 100), 10, 500) / 100;
+      const applyTileOrCenter = (size) => {
+        if (size && scale !== 1) {
+          const w = Math.max(1, Math.round(size.w * scale));
+          const h = Math.max(1, Math.round(size.h * scale));
+          desk.style.backgroundSize = `${w}px ${h}px`;
+        } else {
+          desk.style.backgroundSize = "auto";
+        }
+        desk.style.backgroundRepeat = sty === "tile" ? "repeat" : "no-repeat";
+        desk.style.backgroundPosition = sty === "center" ? "center center" : "0 0";
+      };
+      if (sty === "stretch") {
+        desk.style.backgroundSize = "100% 100%";
+        desk.style.backgroundRepeat = "no-repeat";
+      } else if (scale !== 1) {
+        desk.style.backgroundSize = "auto";
+        resolveImageSize(wp.imageData).then(applyTileOrCenter);
+      } else {
+        applyTileOrCenter(null);
+      }
+    } else {
+      desk.style.backgroundImage = "none";
+      desk.style.backgroundColor = wp.color || "#008080";
+      desk.style.backgroundSize = "auto";
+      desk.style.backgroundRepeat = "repeat";
+    }
+  }
+  function openSettingsWindow() {
+    const existing = state.windows.find((w) => w.title === "Настройки");
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+    const pending = structuredClone(state.settings);
+    let settingsWinId = null;
+    createWindow({
+      title: "Настройки",
+      icon: "icons/settings.svg",
+      width: 460,
+      height: 540,
+      content: "",
+      statusbar: false,
+      onCreated: (el, winData) => {
+        settingsWinId = winData.id;
+        const contentEl = (
+          /** @type {HTMLElement} */
+          el.querySelector(".win98-window-content")
+        );
+        contentEl.style.background = "var(--win98-silver)";
+        contentEl.appendChild(
+          buildSettingsForm(pending, () => settingsWinId)
+        );
+      }
+    });
+  }
+  function buildSettingsForm(pending, getWinId) {
+    const form = document.createElement("form");
+    form.className = "win98-form";
+    form.addEventListener("submit", (e) => e.preventDefault());
+    let uiType = pending.wallpaper.uiType || (pending.wallpaper.type === "color" ? "color" : "file");
+    const tabsWrap = document.createElement("div");
+    tabsWrap.className = "win98-tabs-wrap";
+    const tabBar = document.createElement("div");
+    tabBar.className = "win98-tabs";
+    const panels = document.createElement("div");
+    panels.className = "win98-tabpanels";
+    const TAB_DEFS = [
+      { id: "wp", label: "Обои" },
+      { id: "behavior", label: "Поведение" },
+      { id: "appearance", label: "Вид" },
+      { id: "about", label: "О системе" }
+    ];
+    const tabPanels = {};
+    TAB_DEFS.forEach((t) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "win98-tab";
+      btn.dataset.tab = t.id;
+      btn.textContent = t.label;
+      btn.addEventListener("click", () => selectTab(t.id));
+      tabBar.appendChild(btn);
+      const panel = document.createElement("div");
+      panel.className = "win98-tabpanel";
+      panel.dataset.tabPanel = t.id;
+      panels.appendChild(panel);
+      tabPanels[t.id] = panel;
+    });
+    tabsWrap.appendChild(tabBar);
+    tabsWrap.appendChild(panels);
+    form.appendChild(tabsWrap);
+    function selectTab(id) {
+      tabBar.querySelectorAll(".win98-tab").forEach(
+        (b) => b.classList.toggle("active", b.dataset.tab === id)
+      );
+      panels.querySelectorAll(".win98-tabpanel").forEach(
+        (p) => p.classList.toggle("active", p.dataset.tabPanel === id)
+      );
+    }
+    selectTab("wp");
+    const commit = () => {
+      if (uiType !== "color" && !pending.wallpaper.imageData) {
+        setMsg(
+          uiType === "url" ? "Укажите адрес изображения и нажмите «Скачать»." : "Выберите файл изображения."
+        );
+        return;
+      }
+      previewFolderStyle = null;
+      previewFolderViewMode = null;
+      state.settings = pending;
+      _clearIconCache();
+      applyDesktopStyle();
+      saveSettings();
+      updateClock();
+      updateWeather();
+      renderBookmarks(state.treeRoot);
+      refreshOpenFolderWindows(state.treeRoot);
+      const id = getWinId();
+      if (id) closeWindow(id);
+    };
+    const cancel = () => {
+      previewFolderStyle = null;
+      previewFolderViewMode = null;
+      _clearIconCache();
+      applyWallpaper(state.settings.wallpaper);
+      applyDesktopStyle();
+      updateClock();
+      renderBookmarks(state.treeRoot);
+      refreshOpenFolderWindows(state.treeRoot);
+      const id = getWinId();
+      if (id) closeWindow(id);
+    };
+    const buildThemeGroup = (a, livePreview) => {
+      const box = document.createElement("div");
+      box.className = "win98-groupbox";
+      const legend = document.createElement("div");
+      legend.className = "win98-groupbox-legend";
+      legend.textContent = "Тема";
+      box.appendChild(legend);
+      const customBox = document.createElement("div");
+      CUSTOM_THEME_KEYS.forEach((k) => {
+        const row = document.createElement("div");
+        row.className = "wp-style-row";
+        row.style.justifyContent = "space-between";
+        const cap = document.createElement("span");
+        cap.textContent = k.label;
+        const swatch = document.createElement("input");
+        swatch.type = "color";
+        swatch.className = "wp-color-picker";
+        swatch.value = a.customColors[k.css] || k.def;
+        swatch.addEventListener("input", () => {
+          a.customColors = a.customColors || {};
+          a.customColors[k.css] = swatch.value;
+          livePreview(a);
         });
-        doubleRadio.addEventListener("change", () => {
-            if (doubleRadio.checked) pending.clickMode = "double";
+        row.append(cap, swatch);
+        customBox.appendChild(row);
+      });
+      const curTheme = THEME_OPTIONS.some((t) => t.id === a.theme) ? a.theme : DEFAULT_SETTINGS.theme;
+      customBox.style.display = curTheme === "custom" ? "block" : "none";
+      THEME_OPTIONS.forEach((t) => {
+        const lbl = document.createElement("label");
+        lbl.className = "win98-radio";
+        lbl.style.alignItems = "flex-start";
+        const rad = document.createElement("input");
+        rad.type = "radio";
+        rad.name = "theme";
+        rad.value = t.id;
+        rad.checked = curTheme === t.id;
+        const txt = document.createElement("span");
+        const title = document.createElement("span");
+        title.style.fontWeight = "bold";
+        title.style.display = "block";
+        title.textContent = t.label;
+        const desc = document.createElement("span");
+        desc.style.color = "var(--win98-dark-gray)";
+        desc.style.fontSize = "10px";
+        desc.textContent = t.desc;
+        txt.append(title, desc);
+        rad.addEventListener("change", () => {
+          if (!rad.checked) return;
+          a.theme = t.id;
+          customBox.style.display = t.id === "custom" ? "block" : "none";
+          livePreview(a);
         });
-
-        cityInput.addEventListener("change", () => {
-            const v = cityInput.value.trim();
-            if (v) pending.weatherCity = v;
-        });
-
-        dateCb.addEventListener("change", () => {
-            pending.showClockDate = dateCb.checked;
-            updateClock(pending);
-        });
-        wdCb.addEventListener("change", () => {
-            pending.showClockWeekday = wdCb.checked;
-            updateClock(pending);
-        });
-
-        okBtn.addEventListener("click", commit);
-        cancelBtn.addEventListener("click", cancel);
-
-        // Initial state
+        lbl.append(rad, txt);
+        box.appendChild(lbl);
+      });
+      box.appendChild(customBox);
+      return box;
+    };
+    const wg = document.createElement("div");
+    wg.className = "win98-groupbox";
+    const wgLegend = document.createElement("div");
+    wgLegend.className = "win98-groupbox-legend";
+    wgLegend.textContent = "Обои";
+    wg.appendChild(wgLegend);
+    const colorRow = document.createElement("label");
+    colorRow.className = "win98-radio";
+    const colorRadio = document.createElement("input");
+    colorRadio.type = "radio";
+    colorRadio.name = "wp-type";
+    colorRadio.value = "color";
+    colorRadio.checked = uiType === "color";
+    const colorSpan = document.createElement("span");
+    colorSpan.textContent = "Цвет фона:";
+    const colorPicker = document.createElement("input");
+    colorPicker.type = "color";
+    colorPicker.className = "wp-color-picker";
+    colorPicker.value = pending.wallpaper.color || "#008080";
+    colorRow.append(colorRadio, colorSpan, colorPicker);
+    wg.appendChild(colorRow);
+    const fileRow = document.createElement("div");
+    fileRow.className = "win98-radio-row";
+    const fileRadio = document.createElement("input");
+    fileRadio.type = "radio";
+    fileRadio.name = "wp-type";
+    fileRadio.value = "file";
+    fileRadio.checked = uiType === "file";
+    const fileLabel = document.createElement("span");
+    fileLabel.textContent = "Изображение с компьютера:";
+    const fileBtn = document.createElement("button");
+    fileBtn.type = "button";
+    fileBtn.className = "win98-btn";
+    fileBtn.textContent = "Выбрать файл...";
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.display = "none";
+    fileRow.append(fileRadio, fileLabel, fileBtn, fileInput);
+    wg.appendChild(fileRow);
+    const urlRow = document.createElement("div");
+    urlRow.className = "win98-radio-row";
+    const urlRadio = document.createElement("input");
+    urlRadio.type = "radio";
+    urlRadio.name = "wp-type";
+    urlRadio.value = "url";
+    urlRadio.checked = uiType === "url";
+    const urlLabel = document.createElement("span");
+    urlLabel.textContent = "Изображение из интернета:";
+    const urlInput = document.createElement("input");
+    urlInput.type = "url";
+    urlInput.className = "win98-addressbar-input";
+    urlInput.placeholder = "https://example.com/oboi.png";
+    const dlBtn = document.createElement("button");
+    dlBtn.type = "button";
+    dlBtn.className = "win98-btn";
+    dlBtn.textContent = "Скачать";
+    urlRow.append(urlRadio, urlLabel, urlInput, dlBtn);
+    wg.appendChild(urlRow);
+    const styleRow = document.createElement("div");
+    styleRow.className = "wp-style-row";
+    const STYLE_LABELS = ["Замостить", "Растянуть", "По центру"];
+    ["tile", "stretch", "center"].forEach((s, i) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      const r = document.createElement("input");
+      r.type = "radio";
+      r.name = "wp-style";
+      r.value = s;
+      if (pending.wallpaper.imageStyle === s) r.checked = true;
+      const sp = document.createElement("span");
+      sp.textContent = STYLE_LABELS[i];
+      lbl.append(r, sp);
+      styleRow.appendChild(lbl);
+    });
+    wg.appendChild(styleRow);
+    const scaleRow = document.createElement("div");
+    scaleRow.className = "wp-scale-row";
+    const scaleLabel = document.createElement("label");
+    scaleLabel.className = "wp-scale-label";
+    scaleLabel.textContent = "Масштаб:";
+    const scaleSlider = document.createElement("input");
+    scaleSlider.type = "range";
+    scaleSlider.min = "10";
+    scaleSlider.max = "500";
+    scaleSlider.step = "10";
+    scaleSlider.className = "win98-range";
+    scaleSlider.value = String(
+      clampInt(Math.round(pending.wallpaper.scale || 100), 10, 500)
+    );
+    scaleSlider.disabled = uiType === "color";
+    const scaleValue = document.createElement("span");
+    scaleValue.className = "wp-scale-value";
+    scaleValue.textContent = scaleSlider.value + "%";
+    scaleRow.append(scaleLabel, scaleSlider, scaleValue);
+    wg.appendChild(scaleRow);
+    const preview = document.createElement("div");
+    preview.className = "wp-preview";
+    const previewImg = document.createElement("div");
+    previewImg.className = "wp-preview-img";
+    preview.appendChild(previewImg);
+    wg.appendChild(preview);
+    const msg = document.createElement("div");
+    msg.className = "settings-msg";
+    wg.appendChild(msg);
+    tabPanels.wp.appendChild(wg);
+    const mg = document.createElement("div");
+    mg.className = "win98-groupbox";
+    const mgLegend = document.createElement("div");
+    mgLegend.className = "win98-groupbox-legend";
+    mgLegend.textContent = "Открытие";
+    mg.appendChild(mgLegend);
+    const singleLbl = document.createElement("label");
+    singleLbl.className = "win98-radio";
+    const singleRadio = document.createElement("input");
+    singleRadio.type = "radio";
+    singleRadio.name = "click-mode";
+    singleRadio.value = "single";
+    if (pending.clickMode === "single") singleRadio.checked = true;
+    singleLbl.append(
+      singleRadio,
+      document.createTextNode("Открывать одним кликом")
+    );
+    const doubleLbl = document.createElement("label");
+    doubleLbl.className = "win98-radio";
+    const doubleRadio = document.createElement("input");
+    doubleRadio.type = "radio";
+    doubleRadio.name = "click-mode";
+    doubleRadio.value = "double";
+    if (pending.clickMode === "double") doubleRadio.checked = true;
+    doubleLbl.append(
+      doubleRadio,
+      document.createTextNode("Открывать двойным кликом")
+    );
+    mg.append(singleLbl, doubleLbl);
+    tabPanels.behavior.appendChild(mg);
+    const clg = document.createElement("div");
+    clg.className = "win98-groupbox";
+    const clgLegend = document.createElement("div");
+    clgLegend.className = "win98-groupbox-legend";
+    clgLegend.textContent = "Часы";
+    clg.appendChild(clgLegend);
+    const dateLbl = document.createElement("label");
+    dateLbl.className = "win98-checkbox";
+    const dateCb = document.createElement("input");
+    dateCb.type = "checkbox";
+    dateCb.checked = !!pending.showClockDate;
+    dateLbl.append(dateCb, document.createTextNode("Показывать дату"));
+    const wdLbl = document.createElement("label");
+    wdLbl.className = "win98-checkbox";
+    const wdCb = document.createElement("input");
+    wdCb.type = "checkbox";
+    wdCb.checked = !!pending.showClockWeekday;
+    wdLbl.append(wdCb, document.createTextNode("Показывать день недели"));
+    clg.append(dateLbl, wdLbl);
+    tabPanels.behavior.appendChild(clg);
+    const vg = document.createElement("div");
+    vg.className = "win98-groupbox";
+    const vgLegend = document.createElement("div");
+    vgLegend.className = "win98-groupbox-legend";
+    vgLegend.textContent = "Вид";
+    vg.appendChild(vgLegend);
+    const SIZE_LABELS = { 24: "Мелкие", 32: "Средние", 48: "Крупные" };
+    const sizeRow = document.createElement("div");
+    sizeRow.className = "wp-style-row";
+    ICON_SIZES.forEach((s) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      const r = document.createElement("input");
+      r.type = "radio";
+      r.name = "icon-size";
+      r.value = String(s);
+      if (pending.iconSize === s) r.checked = true;
+      const sp = document.createElement("span");
+      sp.textContent = SIZE_LABELS[s] || s;
+      lbl.append(r, sp);
+      r.addEventListener("change", () => {
+        if (r.checked) {
+          pending.iconSize = s;
+          applyDesktopStyle(pending);
+        }
+      });
+      sizeRow.appendChild(lbl);
+    });
+    vg.appendChild(sizeRow);
+    const fg = document.createElement("div");
+    fg.className = "win98-groupbox";
+    const fgLegend = document.createElement("div");
+    fgLegend.className = "win98-groupbox-legend";
+    fgLegend.textContent = "Иконки папок";
+    fg.appendChild(fgLegend);
+    const curFolderStyle = FOLDER_STYLES.some(
+      (s) => s.id === pending.folderIconStyle
+    ) ? pending.folderIconStyle : DEFAULT_SETTINGS.folderIconStyle;
+    FOLDER_STYLES.forEach((s) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      lbl.style.display = "flex";
+      lbl.style.alignItems = "center";
+      lbl.style.gap = "6px";
+      lbl.style.marginBottom = "2px";
+      const rad = document.createElement("input");
+      rad.type = "radio";
+      rad.name = "folder-style";
+      rad.value = s.id;
+      if (curFolderStyle === s.id) rad.checked = true;
+      const prev = document.createElement("img");
+      prev.src = drawFolderIcon("#d4c044", false, 24, s.id);
+      prev.width = 24;
+      prev.height = 24;
+      prev.style.imageRendering = "pixelated";
+      prev.style.flexShrink = "0";
+      const sp = document.createElement("span");
+      sp.textContent = s.label;
+      rad.addEventListener("change", () => {
+        if (!rad.checked) return;
+        pending.folderIconStyle = s.id;
+        previewFolderStyle = s.id;
+        _clearIconCache();
+        renderBookmarks(state.treeRoot);
+      });
+      lbl.append(rad, prev, sp);
+      fg.appendChild(lbl);
+    });
+    vg.appendChild(fg);
+    const fm = document.createElement("div");
+    fm.className = "win98-groupbox";
+    const fmLegend = document.createElement("div");
+    fmLegend.className = "win98-groupbox-legend";
+    fmLegend.textContent = "Ссылки в папках";
+    fm.appendChild(fmLegend);
+    const VIEW_MODE_LABELS = [
+      { id: "icons", label: "Значки" },
+      { id: "list", label: "Список" }
+    ];
+    const curViewMode = pending.folderViewMode === "list" ? "list" : "icons";
+    VIEW_MODE_LABELS.forEach((m) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      const r = document.createElement("input");
+      r.type = "radio";
+      r.name = "folder-view-mode";
+      r.value = m.id;
+      if (curViewMode === m.id) r.checked = true;
+      const sp = document.createElement("span");
+      sp.textContent = m.label;
+      lbl.append(r, sp);
+      r.addEventListener("change", () => {
+        if (!r.checked) return;
+        pending.folderViewMode = m.id;
+        previewFolderViewMode = m.id;
+        refreshOpenFolderWindows(state.treeRoot);
+      });
+      fm.appendChild(lbl);
+    });
+    vg.appendChild(fm);
+    const ufg = document.createElement("div");
+    ufg.className = "win98-groupbox";
+    const ufgLegend = document.createElement("div");
+    ufgLegend.className = "win98-groupbox-legend";
+    ufgLegend.textContent = "Шрифт интерфейса";
+    ufg.appendChild(ufgLegend);
+    const curFont = UI_FONTS.some((f) => f.value === pending.uiFont) ? pending.uiFont : DEFAULT_SETTINGS.uiFont;
+    UI_FONTS.forEach((f) => {
+      const lbl = document.createElement("label");
+      lbl.className = "win98-radio";
+      const rad = document.createElement("input");
+      rad.type = "radio";
+      rad.name = "ui-font";
+      rad.value = f.value;
+      if (curFont === f.value) rad.checked = true;
+      const sp = document.createElement("span");
+      sp.style.fontFamily = f.value;
+      sp.textContent = f.label;
+      rad.addEventListener("change", () => {
+        if (!rad.checked) return;
+        pending.uiFont = f.value;
+        applyDesktopStyle(pending);
+      });
+      lbl.append(rad, sp);
+      ufg.appendChild(lbl);
+    });
+    vg.appendChild(ufg);
+    const makeNumRow = (label, key, min, max) => {
+      const row = document.createElement("div");
+      row.className = "wp-style-row";
+      row.style.justifyContent = "space-between";
+      const cap = document.createElement("span");
+      cap.textContent = label;
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = String(min);
+      inp.max = String(max);
+      inp.value = String(pending[key] ?? DEFAULT_SETTINGS[key]);
+      inp.className = "win98-addressbar-input";
+      inp.style.width = "64px";
+      inp.addEventListener("change", () => {
+        const v = clampInt(inp.value, min, max);
+        if (v === null) {
+          inp.value = String(pending[key] ?? DEFAULT_SETTINGS[key]);
+          return;
+        }
+        pending[key] = v;
+        inp.value = String(v);
+        applyDesktopStyle(pending);
+      });
+      row.append(cap, inp);
+      return row;
+    };
+    vg.appendChild(makeNumRow("Размер текста, пкс", "labelSize", 9, 18));
+    vg.appendChild(
+      makeNumRow("Расстояние между иконками, пкс", "iconGap", 0, 32)
+    );
+    vg.appendChild(
+      makeNumRow("Отступ сверху и снизу, пкс", "desktopPadY", 0, 64)
+    );
+    vg.appendChild(
+      makeNumRow("Отступ слева и справа, пкс", "desktopPadX", 0, 64)
+    );
+    tabPanels.appearance.appendChild(
+      buildThemeGroup(pending, applyDesktopStyle)
+    );
+    tabPanels.appearance.appendChild(vg);
+    const lg = document.createElement("div");
+    lg.className = "win98-groupbox";
+    const lgLegend = document.createElement("div");
+    lgLegend.className = "win98-groupbox-legend";
+    lgLegend.textContent = "Надписи";
+    lg.appendChild(lgLegend);
+    const shadowLbl = document.createElement("label");
+    shadowLbl.className = "win98-checkbox";
+    const shadowCb = document.createElement("input");
+    shadowCb.type = "checkbox";
+    shadowCb.checked = !!pending.iconLabelShadow;
+    shadowLbl.append(
+      shadowCb,
+      document.createTextNode(
+        "Тени для подписей значков на рабочем столе"
+      )
+    );
+    shadowLbl.addEventListener("change", () => {
+      pending.iconLabelShadow = shadowCb.checked;
+      applyDesktopStyle(pending);
+    });
+    lg.appendChild(shadowLbl);
+    tabPanels.appearance.appendChild(lg);
+    const wxg = document.createElement("div");
+    wxg.className = "win98-groupbox";
+    const wxgLegend = document.createElement("div");
+    wxgLegend.className = "win98-groupbox-legend";
+    wxgLegend.textContent = "Погода";
+    wxg.appendChild(wxgLegend);
+    const cityLbl = document.createElement("label");
+    cityLbl.className = "win98-radio";
+    const cityInput = document.createElement("input");
+    cityInput.type = "text";
+    cityInput.className = "win98-addressbar-input";
+    cityInput.value = pending.weatherCity || "";
+    cityInput.placeholder = "Город";
+    cityInput.style.width = "200px";
+    const cityTip = document.createElement("div");
+    cityTip.className = "settings-msg";
+    cityTip.style.marginLeft = "0";
+    cityTip.textContent = "Город для отображения погоды в панели задач";
+    wxg.append(cityLbl, cityInput, cityTip);
+    tabPanels.behavior.appendChild(wxg);
+    const abg = document.createElement("div");
+    abg.className = "win98-groupbox";
+    const abgLegend = document.createElement("div");
+    abgLegend.className = "win98-groupbox-legend";
+    abgLegend.textContent = "О системе";
+    abg.appendChild(abgLegend);
+    const aboutTitle = document.createElement("div");
+    aboutTitle.className = "about-title";
+    aboutTitle.textContent = "Win98 Bookmarks Desktop";
+    const aboutDesc = document.createElement("div");
+    aboutDesc.className = "about-desc";
+    aboutDesc.textContent = "Дополнение для Chrome, превращающее новую вкладку в рабочий стол Windows 98: закладки и папки отображаются значками на рабочем столе, двойной клик открывает окна, поиск и настройки — в меню «Пуск».";
+    const aboutRows = document.createElement("div");
+    aboutRows.className = "about-rows";
+    [
+      ["Автор", "Herman Guilliman"],
+      ["Год", "2026"],
+      ["Поддержка", "hermanguilliman@proton.me"]
+    ].forEach(([k, v]) => {
+      const row = document.createElement("div");
+      row.className = "about-row";
+      const kEl = document.createElement("span");
+      kEl.className = "about-row-key";
+      kEl.textContent = k + ":";
+      const vEl = document.createElement("span");
+      vEl.className = "about-row-value";
+      vEl.textContent = v;
+      row.append(kEl, vEl);
+      aboutRows.appendChild(row);
+    });
+    abg.append(aboutTitle, aboutDesc, aboutRows);
+    tabPanels.about.appendChild(abg);
+    const btnRow = document.createElement("div");
+    btnRow.className = "win98-dialog-buttons";
+    const okBtn = document.createElement("button");
+    okBtn.type = "button";
+    okBtn.className = "win98-btn";
+    okBtn.textContent = "OK";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "win98-btn";
+    cancelBtn.textContent = "Отмена";
+    btnRow.append(okBtn, cancelBtn);
+    form.appendChild(btnRow);
+    const updateEnabled = () => {
+      fileBtn.disabled = uiType !== "file";
+      urlInput.disabled = uiType !== "url";
+      dlBtn.disabled = uiType !== "url";
+      styleRow.querySelectorAll("input").forEach((r) => r.disabled = uiType === "color");
+      scaleSlider.disabled = uiType === "color";
+    };
+    const renderPreview = () => {
+      const isImg = uiType !== "color" && pending.wallpaper.imageData;
+      previewImg.style.backgroundImage = isImg ? `url(${pending.wallpaper.imageData})` : "none";
+      previewImg.style.backgroundColor = pending.wallpaper.color || "#008080";
+      const sty = pending.wallpaper.imageStyle || "tile";
+      const scale = clampInt(Math.round(pending.wallpaper.scale || 100), 10, 500) / 100;
+      const applyStyle = (size) => {
+        if (sty === "stretch") {
+          previewImg.style.backgroundSize = "100% 100%";
+          previewImg.style.backgroundRepeat = "no-repeat";
+          previewImg.style.backgroundPosition = "0 0";
+          return;
+        }
+        if (size && scale !== 1) {
+          previewImg.style.backgroundSize = `${Math.max(1, Math.round(size.w * scale))}px ${Math.max(1, Math.round(size.h * scale))}px`;
+        } else {
+          previewImg.style.backgroundSize = "auto";
+        }
+        previewImg.style.backgroundRepeat = sty === "tile" ? "repeat" : "no-repeat";
+        previewImg.style.backgroundPosition = sty === "center" ? "center center" : "0 0";
+      };
+      if (isImg && scale !== 1) {
+        applyStyle(null);
+        resolveImageSize(pending.wallpaper.imageData).then(applyStyle);
+      } else {
+        applyStyle(null);
+      }
+    };
+    const setMsg = (text, isError = true) => {
+      msg.textContent = text || "";
+      msg.classList.toggle("settings-error", isError);
+      msg.classList.toggle("settings-success", !isError);
+    };
+    const liveApply = () => applyWallpaper(pending.wallpaper);
+    [colorRadio, fileRadio, urlRadio].forEach((r) => {
+      r.addEventListener("change", () => {
+        if (!r.checked) return;
+        uiType = r.value;
+        pending.wallpaper.type = uiType === "color" ? "color" : "image";
+        pending.wallpaper.uiType = uiType;
         updateEnabled();
         renderPreview();
-
-        return form;
-    }
-
-    /* ============================================================
-     NOTEPAD (taskbar quick launch → notes with autosave)
-     ============================================================ */
-
-    const NOTEPAD_STORAGE_KEY = "notepadText";
-    const NOTEPAD_SAVE_DEBOUNCE_MS = 500;
-    let notepadSaveTimer = 0;
-    let notepadTextLoaded = false;
-    let notepadText = "";
-    let notepadTextarea = null;
-
-    async function loadNotepadText() {
-        try {
-            const stored = await chrome.storage.local.get(NOTEPAD_STORAGE_KEY);
-            notepadText =
-                typeof stored[NOTEPAD_STORAGE_KEY] === "string"
-                    ? stored[NOTEPAD_STORAGE_KEY]
-                    : "";
-        } catch {
-            notepadText = "";
+        liveApply();
+      });
+    });
+    colorPicker.addEventListener("input", () => {
+      pending.wallpaper.color = colorPicker.value;
+      renderPreview();
+      liveApply();
+    });
+    fileBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        pending.wallpaper.imageData = reader.result;
+        pending.wallpaper.type = "image";
+        pending.wallpaper.uiType = "file";
+        uiType = "file";
+        fileRadio.checked = true;
+        updateEnabled();
+        renderPreview();
+        liveApply();
+        setMsg("Обои выбраны. Нажмите OK, чтобы сохранить.", false);
+      };
+      reader.onerror = () => setMsg("Не удалось прочитать файл.");
+      reader.readAsDataURL(file);
+    });
+    dlBtn.addEventListener("click", async () => {
+      const u = urlInput.value.trim();
+      if (!u) {
+        setMsg("Введите адрес изображения.");
+        return;
+      }
+      dlBtn.disabled = true;
+      dlBtn.textContent = "Загружаем...";
+      setMsg("");
+      try {
+        const resp = await fetch(u, { mode: "cors" });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const blob = await resp.blob();
+        const reader = new FileReader();
+        const dataUrl = await new Promise((res, rej) => {
+          reader.onload = () => res(reader.result);
+          reader.onerror = () => rej(new Error("read error"));
+          reader.readAsDataURL(blob);
+        });
+        pending.wallpaper.imageData = dataUrl;
+        pending.wallpaper.type = "image";
+        pending.wallpaper.uiType = "url";
+        uiType = "url";
+        urlRadio.checked = true;
+        updateEnabled();
+        renderPreview();
+        liveApply();
+        setMsg("Обои скачаны и сохранены локально. Нажмите OK.", false);
+      } catch (err) {
+        setMsg(
+          "Не удалось загрузить: сервер не разрешает доступ (CORS) или адрес неверный."
+        );
+      } finally {
+        dlBtn.disabled = uiType !== "url";
+        dlBtn.textContent = "Скачать";
+      }
+    });
+    styleRow.querySelectorAll("input").forEach((r) => {
+      r.addEventListener("change", () => {
+        if (r.checked) {
+          pending.wallpaper.imageStyle = r.value;
+          renderPreview();
+          liveApply();
         }
-        notepadTextLoaded = true;
+      });
+    });
+    scaleSlider.addEventListener("input", () => {
+      pending.wallpaper.scale = clampInt(
+        Math.round(+scaleSlider.value || 100),
+        10,
+        500
+      );
+      scaleValue.textContent = scaleSlider.value + "%";
+      renderPreview();
+      liveApply();
+    });
+    singleRadio.addEventListener("change", () => {
+      if (singleRadio.checked) pending.clickMode = "single";
+    });
+    doubleRadio.addEventListener("change", () => {
+      if (doubleRadio.checked) pending.clickMode = "double";
+    });
+    cityInput.addEventListener("change", () => {
+      const v = cityInput.value.trim();
+      if (v) pending.weatherCity = v;
+    });
+    dateCb.addEventListener("change", () => {
+      pending.showClockDate = dateCb.checked;
+      updateClock(pending);
+    });
+    wdCb.addEventListener("change", () => {
+      pending.showClockWeekday = wdCb.checked;
+      updateClock(pending);
+    });
+    okBtn.addEventListener("click", commit);
+    cancelBtn.addEventListener("click", cancel);
+    updateEnabled();
+    renderPreview();
+    return form;
+  }
+  var NOTEPAD_STORAGE_KEY = "notepadText";
+  var NOTEPAD_SAVE_DEBOUNCE_MS = 500;
+  var notepadSaveTimer = 0;
+  var notepadTextLoaded = false;
+  var notepadText = "";
+  var notepadTextarea = null;
+  async function loadNotepadText() {
+    try {
+      const stored = await chrome.storage.local.get(NOTEPAD_STORAGE_KEY);
+      notepadText = typeof stored[NOTEPAD_STORAGE_KEY] === "string" ? stored[NOTEPAD_STORAGE_KEY] : "";
+    } catch {
+      notepadText = "";
     }
-
-    function scheduleNotepadSave() {
-        clearTimeout(notepadSaveTimer);
-        notepadSaveTimer = setTimeout(flushNotepadSave, NOTEPAD_SAVE_DEBOUNCE_MS);
+    notepadTextLoaded = true;
+  }
+  function scheduleNotepadSave() {
+    clearTimeout(notepadSaveTimer);
+    notepadSaveTimer = setTimeout(flushNotepadSave, NOTEPAD_SAVE_DEBOUNCE_MS);
+  }
+  function flushNotepadSave() {
+    clearTimeout(notepadSaveTimer);
+    notepadSaveTimer = 0;
+    const text = notepadTextarea ? notepadTextarea.value : notepadText;
+    notepadText = text;
+    chrome.storage.local.set({ [NOTEPAD_STORAGE_KEY]: text }).catch(() => {
+    });
+  }
+  function openNotepad() {
+    const existing = state.windows.find((w) => w.winType === "notepad");
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
     }
-
-    function flushNotepadSave() {
-        clearTimeout(notepadSaveTimer);
-        notepadSaveTimer = 0;
-        const text = notepadTextarea ? notepadTextarea.value : notepadText;
-        notepadText = text;
-        chrome.storage.local
-            .set({ [NOTEPAD_STORAGE_KEY]: text })
-            .catch(() => {});
-    }
-
-    function openNotepad() {
-        const existing = state.windows.find((w) => w.winType === "notepad");
-        if (existing) {
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return;
-        }
-        createWindow({
-            winType: "notepad",
-            title: "Блокнот",
-            icon: "icons/notepad.png",
-            width: 500,
-            height: 380,
-            content: `
+    createWindow({
+      winType: "notepad",
+      title: "Блокнот",
+      icon: "icons/notepad.png",
+      width: 500,
+      height: 380,
+      content: `
         <div class="notepad-menubar">
           <button type="button" class="notepad-menu-btn" data-notepad-menu="file">Файл</button>
           <button type="button" class="notepad-menu-btn" data-notepad-menu="edit">Правка</button>
           <button type="button" class="notepad-menu-btn" data-notepad-menu="help">Справка</button>
         </div>
         <textarea class="notepad-textarea" spellcheck="false" wrap="off"></textarea>`,
-            statusbar: true,
-            statusText: "Готово",
-            onCreated: (el, winData) => initNotepadWindow(el, winData),
-        });
+      statusbar: true,
+      statusText: "Готово",
+      onCreated: (el, winData) => initNotepadWindow(el, winData)
+    });
+  }
+  function initNotepadWindow(el, winData) {
+    el.classList.add("notepad-window");
+    const ta = el.querySelector(".notepad-textarea");
+    const statusField = el.querySelector(".win98-statusbar-field");
+    notepadTextarea = ta;
+    const updateStatus = () => updateNotepadStatus(ta, statusField);
+    let userTyped = false;
+    if (!notepadTextLoaded) {
+      loadNotepadText().then(() => {
+        if (!userTyped) ta.value = notepadText;
+        updateStatus();
+      });
+    } else {
+      ta.value = notepadText;
     }
-
-    function initNotepadWindow(el, winData) {
-        el.classList.add("notepad-window");
-        const ta = el.querySelector(".notepad-textarea");
-        const statusField = el.querySelector(".win98-statusbar-field");
-        notepadTextarea = ta;
-
-        const updateStatus = () => updateNotepadStatus(ta, statusField);
-        let userTyped = false;
-
-        if (!notepadTextLoaded) {
-            loadNotepadText().then(() => {
-                if (!userTyped) ta.value = notepadText;
-                updateStatus();
-            });
-        } else {
-            ta.value = notepadText;
+    ta.addEventListener("input", () => {
+      userTyped = true;
+      scheduleNotepadSave();
+      updateStatus();
+    });
+    ta.addEventListener("keyup", updateStatus);
+    ta.addEventListener("click", updateStatus);
+    ta.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && (e.key.toLowerCase() === "s" || e.key.toLowerCase() === "ы")) {
+        e.preventDefault();
+        flushNotepadSave();
+        statusField.textContent = "Сохранено";
+        setTimeout(updateStatus, 1200);
+      }
+    });
+    el.querySelectorAll(".notepad-menu-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (activeContextMenu && activeContextMenu._notepadOpener === btn) {
+          hideContextMenu();
+          return;
         }
-
-        ta.addEventListener("input", () => {
-            userTyped = true;
-            scheduleNotepadSave();
-            updateStatus();
-        });
-        ta.addEventListener("keyup", updateStatus);
-        ta.addEventListener("click", updateStatus);
-
-        // Ctrl+S (also on a Russian keyboard layout) saves right away
-        ta.addEventListener("keydown", (e) => {
-            if (
-                e.ctrlKey &&
-                (e.key.toLowerCase() === "s" ||
-                    e.key.toLowerCase() === "ы")
-            ) {
-                e.preventDefault();
-                flushNotepadSave();
-                statusField.textContent = "Сохранено";
-                setTimeout(updateStatus, 1200);
-            }
-        });
-
-        // Menu bar: reuse the Win98 context menu as a dropdown (fixed-position
-        // menus need stopPropagation so the document click handler doesn't
-        // immediately close what we just opened).
-        el.querySelectorAll(".notepad-menu-btn").forEach((btn) => {
-            btn.addEventListener("click", (e) => {
-                e.stopPropagation();
-                if (
-                    activeContextMenu &&
-                    activeContextMenu._notepadOpener === btn
-                ) {
-                    hideContextMenu();
-                    return;
-                }
-                const rect = btn.getBoundingClientRect();
-                showContextMenu(
-                    rect.left,
-                    rect.bottom,
-                    notepadMenuItems(btn.dataset.notepadMenu, {
-                        winData,
-                        ta,
-                        statusField,
-                    }),
-                );
-                if (activeContextMenu) {
-                    activeContextMenu._notepadOpener = btn;
-                }
-            });
-        });
-
-        setTimeout(() => ta.focus(), 50);
-    }
-
-    function updateNotepadStatus(ta, field) {
-        const text = ta.value;
-        const pos = ta.selectionStart;
-        const line = text.slice(0, pos).split("\n").length;
-        const col = pos - text.lastIndexOf("\n", pos - 1);
-        field.textContent = `Стр: ${line}, Стб: ${col}`;
-    }
-
-    function notepadMenuItems(menuId, ctx) {
-        const { winData, ta, statusField } = ctx;
-        const flashSaved = () => {
-            statusField.textContent = "Сохранено";
-            setTimeout(() => updateNotepadStatus(ta, statusField), 1200);
-        };
-        const clearAll = () => {
-            ta.value = "";
-            flushNotepadSave();
-            updateNotepadStatus(ta, statusField);
-        };
-        if (menuId === "file") {
-            return [
-                {
-                    label: "Новый",
-                    action: () => {
-                        if (ta.value.trim()) {
-                            openConfirmDialog("Блокнот", "Очистить содержимое?", clearAll);
-                        } else {
-                            clearAll();
-                        }
-                    },
-                },
-                { type: "separator" },
-                {
-                    label: "Сохранить",
-                    action: () => {
-                        flushNotepadSave();
-                        flashSaved();
-                    },
-                },
-                { type: "separator" },
-                { label: "Закрыть", action: () => closeWindow(winData.id) },
-            ];
-        }
-        if (menuId === "edit") {
-            return [{ label: "Выделить всё", action: () => ta.select() }];
-        }
-        // help
-        return [
-            {
-                label: "О программе",
-                action: () =>
-                    openMessageBox(
-                        "О программе",
-                        "Блокнот — простые заметки с автосохранением.",
-                        "icons/notepad.png",
-                    ),
-            },
-        ];
-    }
-
-    /* ============================================================
-     CALCULATOR
-     ============================================================ */
-
-    function openCalculator() {
-        const existing = state.windows.find(
-            (w) => w.winType === "calculator",
+        const rect = btn.getBoundingClientRect();
+        showContextMenu(
+          rect.left,
+          rect.bottom,
+          notepadMenuItems(btn.dataset.notepadMenu, {
+            winData,
+            ta,
+            statusField
+          })
         );
-        if (existing) {
-            if (existing.minimized) restoreWindow(existing.id);
-            else bringToFront(existing.id);
-            return;
+        if (activeContextMenu) {
+          activeContextMenu._notepadOpener = btn;
         }
-        createWindow({
-            winType: "calculator",
-            title: "Калькулятор",
-            icon: drawCalcIcon(),
-            width: 250,
-            height: 322,
-            statusbar: false,
-            content: `
+      });
+    });
+    setTimeout(() => ta.focus(), 50);
+  }
+  function updateNotepadStatus(ta, field) {
+    const text = ta.value;
+    const pos = ta.selectionStart;
+    const line = text.slice(0, pos).split("\n").length;
+    const col = pos - text.lastIndexOf("\n", pos - 1);
+    field.textContent = `Стр: ${line}, Стб: ${col}`;
+  }
+  function notepadMenuItems(menuId, ctx) {
+    const { winData, ta, statusField } = ctx;
+    const flashSaved = () => {
+      statusField.textContent = "Сохранено";
+      setTimeout(() => updateNotepadStatus(ta, statusField), 1200);
+    };
+    const clearAll = () => {
+      ta.value = "";
+      flushNotepadSave();
+      updateNotepadStatus(ta, statusField);
+    };
+    if (menuId === "file") {
+      return [
+        {
+          label: "Новый",
+          action: () => {
+            if (ta.value.trim()) {
+              openConfirmDialog("Блокнот", "Очистить содержимое?", clearAll);
+            } else {
+              clearAll();
+            }
+          }
+        },
+        { type: "separator" },
+        {
+          label: "Сохранить",
+          action: () => {
+            flushNotepadSave();
+            flashSaved();
+          }
+        },
+        { type: "separator" },
+        { label: "Закрыть", action: () => closeWindow(winData.id) }
+      ];
+    }
+    if (menuId === "edit") {
+      return [{ label: "Выделить всё", action: () => ta.select() }];
+    }
+    return [
+      {
+        label: "О программе",
+        action: () => openMessageBox(
+          "О программе",
+          "Блокнот — простые заметки с автосохранением.",
+          "icons/notepad.png"
+        )
+      }
+    ];
+  }
+  function openCalculator() {
+    const existing = state.windows.find(
+      (w) => w.winType === "calculator"
+    );
+    if (existing) {
+      if (existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+    createWindow({
+      winType: "calculator",
+      title: "Калькулятор",
+      icon: drawCalcIcon(),
+      width: 250,
+      height: 322,
+      statusbar: false,
+      content: `
               <div class="calc-display" id="calc-display">0</div>
               <div class="calc-keys">
                 <button data-key="MC">MC</button><button data-key="MR">MR</button><button data-key="MS">MS</button><button data-key="M+" class="calc-span2">M+</button>
@@ -5570,238 +4447,189 @@
                 <button data-key="1/x">1/x</button><button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button><button data-key="-">-</button>
                 <button data-key="±">±</button><button data-key="0">0</button><button data-key=".">.</button><button data-key="+">+</button><button data-key="=">=</button>
               </div>`,
-            onCreated: (el, winData) => {
-                el.classList.add("calc-window");
-                initCalcWindow(el, winData);
-            },
-        });
-    }
-
-    function initCalcWindow(el, winData) {
-        const calc = {
-            display: "0",
-            acc: null,
-            op: null,
-            fresh: true,
-            error: false,
-            mem: 0,
-        };
-        el._calc = calc;
-        const displayEl = el.querySelector("#calc-display");
-        const render = () => {
-            displayEl.textContent = calc.display;
-        };
-
-        el.querySelector(".calc-keys").addEventListener("click", (e) => {
-            const btn = /** @type {HTMLElement | null} */ (
-                eventTargetElement(e).closest("button[data-key]")
-            );
-            if (!btn) return;
-            calcInput(calc, btn.dataset.key);
-            render();
-        });
-
-        // Keyboard support — only while this window is the active one
-        const onKey = (e) => {
-            if (state.activeWindowId !== winData.id) return;
-            const map = { Escape: "C", Backspace: "Back", Enter: "=" };
-            const k = map[e.key] || e.key;
-            if (
-                /^[0-9.]$/.test(k) ||
-                ["+", "-", "*", "/", "%", "="].includes(k)
-            ) {
-                e.preventDefault();
-                calcInput(calc, k);
-                render();
-            }
-        };
-        el._calcKeyHandler = onKey;
-        document.addEventListener("keydown", onKey);
-    }
-
-    function calcInput(calc, key) {
-        if (calc.error && key !== "C" && key !== "CE") {
-            calcInput(calc, "C");
-        }
-        const num = () => {
-            const v = parseFloat(calc.display);
-            return Number.isFinite(v) ? v : 0;
-        };
-        const fmt = (v) => {
-            if (!Number.isFinite(v)) return "Ошибка";
-            return String(parseFloat(v.toPrecision(12)));
-        };
-
-        if (/^[0-9]$/.test(key)) {
-            if (calc.error) return;
-            if (calc.fresh) {
-                calc.display = key;
-                calc.fresh = false;
-            } else {
-                calc.display =
-                    (calc.display === "0" ? "" : calc.display) + key;
-            }
-            if (calc.display.length > 16) calc.display = calc.display.slice(0, 16);
-        } else if (key === ".") {
-            if (calc.error) return;
-            if (calc.fresh) {
-                calc.display = "0.";
-                calc.fresh = false;
-            } else if (!calc.display.includes(".")) {
-                calc.display += ".";
-            }
-        } else if (["+", "-", "*", "/"].includes(key)) {
-            if (calc.acc !== null && calc.op && !calc.fresh) {
-                const res = evalOp(calc.acc, num(), calc.op);
-                if (res === null) {
-                    calc.error = true;
-                    calc.display = "Ошибка";
-                    return;
-                }
-                calc.acc = res;
-                calc.display = fmt(res);
-            } else {
-                calc.acc = num();
-            }
-            calc.op = key;
-            calc.fresh = true;
-        } else if (key === "=") {
-            if (calc.error) return;
-            if (calc.acc !== null && calc.op) {
-                const res = evalOp(calc.acc, num(), calc.op);
-                if (res === null) {
-                    calc.error = true;
-                    calc.display = "Ошибка";
-                    return;
-                }
-                calc.display = fmt(res);
-                calc.acc = null;
-                calc.op = null;
-            }
-            calc.fresh = true;
-        } else if (key === "C") {
-            Object.assign(calc, {
-                display: "0",
-                acc: null,
-                op: null,
-                fresh: true,
-                error: false,
-            });
-        } else if (key === "CE") {
-            calc.display = "0";
-            calc.fresh = true;
-            calc.error = false;
-        } else if (key === "Back") {
-            if (calc.fresh || calc.error) return;
-            calc.display =
-                calc.display.length > 1 ? calc.display.slice(0, -1) : "0";
-            if (calc.display === "-") calc.display = "0";
-        } else if (key === "sqrt") {
-            const v = num();
-            if (v < 0) {
-                calc.error = true;
-                calc.display = "Ошибка";
-                return;
-            }
-            calc.display = fmt(Math.sqrt(v));
-            calc.fresh = true;
-        } else if (key === "%") {
-            if (calc.acc !== null && calc.op) {
-                calc.display = fmt((calc.acc * num()) / 100);
-            }
-            calc.fresh = true;
-        } else if (key === "1/x") {
-            const v = num();
-            if (v === 0) {
-                calc.error = true;
-                calc.display = "Ошибка";
-                return;
-            }
-            calc.display = fmt(1 / v);
-            calc.fresh = true;
-        } else if (key === "±") {
-            if (calc.error) return;
-            if (calc.display !== "0") {
-                calc.display = calc.display.startsWith("-")
-                    ? calc.display.slice(1)
-                    : "-" + calc.display;
-            }
-        } else if (key === "MC") {
-            calc.mem = 0;
-        } else if (key === "MR") {
-            calc.display = fmt(calc.mem);
-            calc.fresh = true;
-        } else if (key === "MS") {
-            calc.mem = num();
-        } else if (key === "M+") {
-            calc.mem += num();
-        }
-    }
-
-    function evalOp(a, b, op) {
-        switch (op) {
-            case "+":
-                return a + b;
-            case "-":
-                return a - b;
-            case "*":
-                return a * b;
-            case "/":
-                return b === 0 ? null : a / b;
-        }
-        return null;
-    }
-
-    /* ============================================================
-     UTILITIES
-     ============================================================ */
-
-    const _ESCAPE_RE = /[&<>"']/g;
-    const _ESCAPE_MAP = {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
+      onCreated: (el, winData) => {
+        el.classList.add("calc-window");
+        initCalcWindow(el, winData);
+      }
+    });
+  }
+  function initCalcWindow(el, winData) {
+    const calc = {
+      display: "0",
+      acc: null,
+      op: null,
+      fresh: true,
+      error: false,
+      mem: 0
     };
-    function escapeHtml(str) {
-        return String(str).replace(_ESCAPE_RE, (ch) => _ESCAPE_MAP[ch]);
+    el._calc = calc;
+    const displayEl = el.querySelector("#calc-display");
+    const render = () => {
+      displayEl.textContent = calc.display;
+    };
+    el.querySelector(".calc-keys").addEventListener("click", (e) => {
+      const btn = (
+        /** @type {HTMLElement | null} */
+        eventTargetElement(e).closest("button[data-key]")
+      );
+      if (!btn) return;
+      calcInput(calc, btn.dataset.key);
+      render();
+    });
+    const onKey = (e) => {
+      if (state.activeWindowId !== winData.id) return;
+      const map = { Escape: "C", Backspace: "Back", Enter: "=" };
+      const k = map[e.key] || e.key;
+      if (/^[0-9.]$/.test(k) || ["+", "-", "*", "/", "%", "="].includes(k)) {
+        e.preventDefault();
+        calcInput(calc, k);
+        render();
+      }
+    };
+    el._calcKeyHandler = onKey;
+    document.addEventListener("keydown", onKey);
+  }
+  function calcInput(calc, key) {
+    if (calc.error && key !== "C" && key !== "CE") {
+      calcInput(calc, "C");
     }
-
-    /** Clamp an integer to [min,max]; returns null if not a finite number */
-    function clampInt(v, min, max) {
-        const n = Number(v);
-        if (!Number.isFinite(n)) return null;
-        return Math.min(max, Math.max(min, Math.round(n)));
+    const num = () => {
+      const v = parseFloat(calc.display);
+      return Number.isFinite(v) ? v : 0;
+    };
+    const fmt = (v) => {
+      if (!Number.isFinite(v)) return "Ошибка";
+      return String(parseFloat(v.toPrecision(12)));
+    };
+    if (/^[0-9]$/.test(key)) {
+      if (calc.error) return;
+      if (calc.fresh) {
+        calc.display = key;
+        calc.fresh = false;
+      } else {
+        calc.display = (calc.display === "0" ? "" : calc.display) + key;
+      }
+      if (calc.display.length > 16) calc.display = calc.display.slice(0, 16);
+    } else if (key === ".") {
+      if (calc.error) return;
+      if (calc.fresh) {
+        calc.display = "0.";
+        calc.fresh = false;
+      } else if (!calc.display.includes(".")) {
+        calc.display += ".";
+      }
+    } else if (["+", "-", "*", "/"].includes(key)) {
+      if (calc.acc !== null && calc.op && !calc.fresh) {
+        const res = evalOp(calc.acc, num(), calc.op);
+        if (res === null) {
+          calc.error = true;
+          calc.display = "Ошибка";
+          return;
+        }
+        calc.acc = res;
+        calc.display = fmt(res);
+      } else {
+        calc.acc = num();
+      }
+      calc.op = key;
+      calc.fresh = true;
+    } else if (key === "=") {
+      if (calc.error) return;
+      if (calc.acc !== null && calc.op) {
+        const res = evalOp(calc.acc, num(), calc.op);
+        if (res === null) {
+          calc.error = true;
+          calc.display = "Ошибка";
+          return;
+        }
+        calc.display = fmt(res);
+        calc.acc = null;
+        calc.op = null;
+      }
+      calc.fresh = true;
+    } else if (key === "C") {
+      Object.assign(calc, {
+        display: "0",
+        acc: null,
+        op: null,
+        fresh: true,
+        error: false
+      });
+    } else if (key === "CE") {
+      calc.display = "0";
+      calc.fresh = true;
+      calc.error = false;
+    } else if (key === "Back") {
+      if (calc.fresh || calc.error) return;
+      calc.display = calc.display.length > 1 ? calc.display.slice(0, -1) : "0";
+      if (calc.display === "-") calc.display = "0";
+    } else if (key === "sqrt") {
+      const v = num();
+      if (v < 0) {
+        calc.error = true;
+        calc.display = "Ошибка";
+        return;
+      }
+      calc.display = fmt(Math.sqrt(v));
+      calc.fresh = true;
+    } else if (key === "%") {
+      if (calc.acc !== null && calc.op) {
+        calc.display = fmt(calc.acc * num() / 100);
+      }
+      calc.fresh = true;
+    } else if (key === "1/x") {
+      const v = num();
+      if (v === 0) {
+        calc.error = true;
+        calc.display = "Ошибка";
+        return;
+      }
+      calc.display = fmt(1 / v);
+      calc.fresh = true;
+    } else if (key === "±") {
+      if (calc.error) return;
+      if (calc.display !== "0") {
+        calc.display = calc.display.startsWith("-") ? calc.display.slice(1) : "-" + calc.display;
+      }
+    } else if (key === "MC") {
+      calc.mem = 0;
+    } else if (key === "MR") {
+      calc.display = fmt(calc.mem);
+      calc.fresh = true;
+    } else if (key === "MS") {
+      calc.mem = num();
+    } else if (key === "M+") {
+      calc.mem += num();
     }
-
-    /* ============================================================
-     INIT
-     ============================================================ */
-
-    function init() {
-        // Render bare time immediately; date/weekday appear only after settings
-        // are loaded, so disabled toggles never flash back on at startup.
-        updateClock({});
-        // Align the first tick to the next 10s boundary so the minute never
-        // appears to "jump" right after the tab opens.
-        setTimeout(() => {
-            updateClock();
-            setInterval(updateClock, CLOCK_INTERVAL_MS);
-        }, CLOCK_INTERVAL_MS - (Date.now() % CLOCK_INTERVAL_MS));
-        attachDesktopIconEvents();
-        attachBookmarkListeners();
-        attachNodeDragGlobals();
-        updateWeather(); // reads cache + refreshes in the background right away
-        loadSettings()
-            .then(loadBookmarks)
-            .then(() => restoreSavedWindows());
+  }
+  function evalOp(a, b, op) {
+    switch (op) {
+      case "+":
+        return a + b;
+      case "-":
+        return a - b;
+      case "*":
+        return a * b;
+      case "/":
+        return b === 0 ? null : a / b;
     }
-
-    // Start
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", init);
-    } else {
-        init();
-    }
+    return null;
+  }
+  function init() {
+    updateClock({});
+    setTimeout(() => {
+      updateClock();
+      setInterval(updateClock, CLOCK_INTERVAL_MS);
+    }, CLOCK_INTERVAL_MS - Date.now() % CLOCK_INTERVAL_MS);
+    attachDesktopIconEvents();
+    attachBookmarkListeners();
+    attachNodeDragGlobals();
+    updateWeather();
+    loadSettings().then(loadBookmarks).then(() => restoreSavedWindows());
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();

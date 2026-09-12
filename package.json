@@ -1,12 +1,18 @@
 {
   "name": "win98-newtab",
   "private": true,
-  "description": "Dev-only type checking for the win98-newtab Chrome extension (no build, no bundling)",
+  "description": "Win98 new-tab Chrome extension. TypeScript source lives in src/, bundled by esbuild into win98-newtab/newtab.js (the only file Chrome loads).",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.lib.json",
+    "test": "vitest run",
+    "verify": "npm run typecheck && npm test && npm run build && node --check win98-newtab/newtab.js"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
-    "typescript": "^5.6.0"
+    "@types/node": "^22.20.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0",
+    "vitest": "^5.0.0"
   }
 }
