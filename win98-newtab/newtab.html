@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Новая вкладка</title>
-  <link rel="stylesheet" href="win98.css?v=33">
+  <link rel="stylesheet" href="win98.css?v=35">
 </head>
 
 <body>
@@ -43,6 +43,13 @@
       <span class="start-menu-sidebar-text"><strong>Windows</strong>98</span>
     </div>
     <div class="start-menu-content">
+      <div class="start-menu-item start-menu-item-programs" id="menu-programs">
+        <img id="menu-programs-img" src="" alt="" width="32" height="32" draggable="false">
+        <div>
+          <div class="start-menu-item-title">Программы</div>
+        </div>
+      </div>
+      <div class="start-menu-separator"></div>
       <div class="start-menu-item" id="menu-all-bookmarks">
         <img src="icons/all_bookmarks.png" alt="" width="32" height="32" draggable="false">
         <div>
@@ -66,9 +73,15 @@
         </div>
       </div>
     </div>
+    <div class="start-menu-flyout" id="start-menu-flyout">
+      <div class="start-menu-flyout-item" data-action="notepad">Блокнот</div>
+      <div class="start-menu-flyout-item" data-action="calculator">Калькулятор</div>
+      <div class="start-menu-separator"></div>
+      <div class="start-menu-flyout-item" data-action="all-bookmarks">Все закладки</div>
+    </div>
   </div>
 
-  <script src="newtab.js?v=33"></script>
+  <script src="newtab.js?v=35"></script>
 </body>
 
 </html>

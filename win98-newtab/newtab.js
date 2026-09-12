@@ -41,6 +41,9 @@
         iconLabelShadow: true,
         folderViewMode: "icons",
         uiFont: "Tahoma, 'MS Sans Serif', 'Segoe UI', sans-serif",
+        taskbarAutoHide: false,
+        taskbarSmallIcons: false,
+        showClock: true,
         wallpaper: {
             type: "color",
             color: "#008080",
@@ -76,6 +79,7 @@
     const $weather = document.getElementById("weather");
     const $menuAllBookmarks = document.getElementById("menu-all-bookmarks");
     const $launcherNotepad = document.getElementById("launcher-notepad");
+    const $taskbar = document.getElementById("taskbar");
 
     /* ============================================================
      ICON GENERATION (Canvas → DataURL)
@@ -258,11 +262,13 @@
         folder: new Map(),
         page: new Map(),
         computer: new Map(),
+        calc: new Map(),
     };
     function _clearIconCache() {
         _iconCache.folder.clear();
         _iconCache.page.clear();
         _iconCache.computer.clear();
+        _iconCache.calc.clear();
     }
 
     function drawFolderIcon(
@@ -485,6 +491,62 @@
         ctx.fillStyle = "#808080";
         r(4, 27, 9, 1);
         r(15, 27, 12, 1);
+
+        return c.toDataURL();
+    }
+
+    /** Generate a calculator icon (gray body, LCD, key grid) on canvas */
+    function drawCalcIcon(size = currentIconSize()) {
+        const key = `calc|${size}`;
+        const cached = _iconCache.calc.get(key);
+        if (cached !== undefined) return cached;
+        const dataUrl = _drawCalcIcon(size);
+        _iconCache.calc.set(key, dataUrl);
+        return dataUrl;
+    }
+
+    function _drawCalcIcon(size) {
+        const c = document.createElement("canvas");
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext("2d");
+        const k = size / 32;
+        const r = (x, y, w, h) => ctx.fillRect(x * k, y * k, w * k, h * k);
+
+        // Body outline
+        ctx.fillStyle = "#000000";
+        r(3, 2, 26, 28);
+        // Silver face
+        ctx.fillStyle = "#c0c0c0";
+        r(4, 3, 24, 26);
+        ctx.fillStyle = "#ffffff";
+        r(4, 3, 24, 1);
+        r(4, 3, 1, 26);
+        ctx.fillStyle = "#848484";
+        r(27, 3, 1, 26);
+        r(4, 28, 24, 1);
+
+        // Display (green LCD)
+        ctx.fillStyle = "#6a8c96";
+        r(6, 4, 20, 6);
+        ctx.fillStyle = "#cde3e8";
+        r(7, 5, 18, 4);
+
+        // Key grid: 6 rows × 4 columns
+        for (let row = 0; row < 6; row++) {
+            for (let col = 0; col < 4; col++) {
+                const bx = 5 + col * 6;
+                const by = 12 + row * 3;
+                ctx.fillStyle = "#808080";
+                ctx.fillRect(bx * k, by * k, 5 * k, 2 * k);
+                ctx.fillRect((bx + 1) * k, (by + 1) * k, 4 * k, 1 * k);
+                ctx.fillStyle = "#e8e8e8";
+                ctx.fillRect(bx * k, by * k, 5 * k, 1 * k);
+                ctx.fillRect(bx * k, by * k, 1 * k, 2 * k);
+                ctx.fillStyle = "#a0a0a0";
+                ctx.fillRect(bx * k, (by + 1) * k, 3 * k, 1 * k);
+            }
+        }
 
         return c.toDataURL();
     }
@@ -925,7 +987,7 @@
       ${opts.toolbar ? `<div class="win98-toolbar">${opts.toolbar}</div>` : ""}
       ${opts.addressbar ? `<div class="win98-addressbar"><label>Адрес:</label><input class="win98-addressbar-input" type="text" value="${escapeHtml(opts.addressbarValue || "")}" readonly></div>` : ""}
       <div class="win98-window-content">${opts.content || ""}</div>
-      ${opts.statusbar !== false ? `<div class="win98-statusbar"><div class="win98-statusbar-field">${escapeHtml(opts.statusText || "")}</div></div>` : ""}
+      ${opts.statusbar !== false ? `<div class="win98-statusbar"><div class="win98-statusbar-field">${escapeHtml(opts.statusText || "")}</div>${opts.statusText2 != null ? `<div class="win98-statusbar-field win98-statusbar-field2">${escapeHtml(opts.statusText2)}</div>` : ""}</div>` : ""}
       <div class="win98-resize-handle"></div>
     `;
 
@@ -1020,17 +1082,84 @@
         if (tbBtn) tbBtn.classList.add("active");
     }
 
+    /** Animate a window shrinking into its taskbar button (Win98 minimize). */
+    function animateWindowToButton(el, btn, onEnd) {
+        const reduced =
+            window.matchMedia &&
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (!btn || reduced) {
+            onEnd();
+            return;
+        }
+        const wRect = el.getBoundingClientRect();
+        const bRect = btn.getBoundingClientRect();
+        if (!wRect.width || !wRect.height) {
+            onEnd();
+            return;
+        }
+        const dx =
+            bRect.left + bRect.width / 2 - (wRect.left + wRect.width / 2);
+        const dy =
+            bRect.top + bRect.height / 2 - (wRect.top + wRect.height / 2);
+        el.style.transition = "transform 0.18s ease-in";
+        el.style.transformOrigin = "center center";
+        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.06)`;
+        const handler = () => {
+            el.removeEventListener("transitionend", handler);
+            el.style.transition = "";
+            el.style.transform = "";
+            el.style.transformOrigin = "";
+            onEnd();
+        };
+        el.addEventListener("transitionend", handler);
+        // Fallback in case the transition never fires
+        setTimeout(() => {
+            if (el.style.transform) handler();
+        }, 250);
+    }
+
+    /** Animate a window growing back from its taskbar button (Win98 restore). */
+    function animateWindowFromButton(el, btn) {
+        const reduced =
+            window.matchMedia &&
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (!btn || reduced) return;
+        const wRect = el.getBoundingClientRect();
+        const bRect = btn.getBoundingClientRect();
+        if (!wRect.width || !wRect.height) return;
+        const dx =
+            bRect.left + bRect.width / 2 - (wRect.left + wRect.width / 2);
+        const dy =
+            bRect.top + bRect.height / 2 - (wRect.top + wRect.height / 2);
+        el.style.transition = "none";
+        el.style.transformOrigin = "center center";
+        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.06)`;
+        void el.offsetWidth; // force reflow so the start position applies
+        el.style.transition = "transform 0.18s ease-out";
+        el.style.transform = "";
+        const handler = () => {
+            el.removeEventListener("transitionend", handler);
+            el.style.transition = "";
+            el.style.transformOrigin = "";
+        };
+        el.addEventListener("transitionend", handler);
+    }
+
     function minimizeWindow(id) {
         const winData = state.windows.find((w) => w.id === id);
-        if (!winData) return;
+        if (!winData || winData.minimized) return;
         winData.minimized = true;
-        winData.el.style.display = "none";
         if (state.activeWindowId === id) {
             state.activeWindowId = null;
             // Focus next visible
             const visible = state.windows.filter((w) => !w.minimized);
             if (visible.length) bringToFront(visible[visible.length - 1].id);
         }
+        const btn = document.getElementById(`tb-${id}`);
+        animateWindowToButton(winData.el, btn, () => {
+            // Only hide if still minimized — a restore mid-animation wins
+            if (winData.minimized) winData.el.style.display = "none";
+        });
         updateTaskbarButtons();
     }
 
@@ -1039,6 +1168,8 @@
         if (!winData) return;
         winData.minimized = false;
         winData.el.style.display = "";
+        const btn = document.getElementById(`tb-${id}`);
+        animateWindowFromButton(winData.el, btn);
         bringToFront(id);
         updateTaskbarButtons();
     }
@@ -1080,6 +1211,11 @@
         if (winData.winType === "notepad") {
             flushNotepadSave();
             notepadTextarea = null;
+        }
+
+        // Remove the calculator's document-level keyboard listener
+        if (winData.el && winData.el._calcKeyHandler) {
+            document.removeEventListener("keydown", winData.el._calcKeyHandler);
         }
 
         const tbBtn = document.getElementById(`tb-${id}`);
@@ -1541,6 +1677,8 @@
                     ? `Корневых папок: ${folders}`
                     : `${folders} пап(ок), ${bookmarks} элемент(ов)`;
         }
+        const sf2 = el.querySelector(".win98-statusbar-field2");
+        if (sf2) sf2.textContent = `Объектов: ${items.length}`;
     }
 
     /** Navigate an open folder window to another folder (same window, no new window) */
@@ -1638,6 +1776,16 @@
                 winData.navStack = [];
                 renderFolderContent(winData, node);
                 updateNavButtons(winData);
+
+                // Second statusbar field: «Объектов: N» (Win98 Explorer style)
+                const statusBar = el.querySelector(".win98-statusbar");
+                if (statusBar) {
+                    const objField = document.createElement("div");
+                    objField.className =
+                        "win98-statusbar-field win98-statusbar-field2";
+                    objField.textContent = "Объектов: 0";
+                    statusBar.appendChild(objField);
+                }
 
                 el.querySelector('[data-nav="back"]')?.addEventListener(
                     "click",
@@ -2436,11 +2584,20 @@
     function toggleStartMenu() {
         state.startMenuOpen = !state.startMenuOpen;
         $startMenu.style.display = state.startMenuOpen ? "flex" : "none";
+        // With auto-hide, keep the taskbar visible while the menu is open
+        if (state.startMenuOpen && state.settings && state.settings.taskbarAutoHide) {
+            $taskbar.classList.add("taskbar-force-show");
+        }
     }
 
     function closeStartMenu() {
         state.startMenuOpen = false;
         $startMenu.style.display = "none";
+        const flyout = document.getElementById("start-menu-flyout");
+        if (flyout) flyout.style.display = "none";
+        if (state.settings && state.settings.taskbarAutoHide) {
+            $taskbar.classList.remove("taskbar-force-show");
+        }
     }
 
     /* ============================================================
@@ -2688,6 +2845,238 @@
 
     // Quick launch: notepad
     $launcherNotepad.addEventListener("click", () => openNotepad());
+
+    /* ---------- Start menu: «Программы» flyout ---------- */
+    const $menuPrograms = document.getElementById("menu-programs");
+    const $menuProgramsImg = document.getElementById("menu-programs-img");
+    const $flyout = document.getElementById("start-menu-flyout");
+    if ($menuProgramsImg) {
+        // Orange folder icon = the classic Win98 «Программы» icon
+        $menuProgramsImg.src = drawFolderIcon("#c89644", false);
+    }
+    let flyoutTimer = null;
+    function showFlyout() {
+        clearTimeout(flyoutTimer);
+        if ($flyout) $flyout.style.display = "block";
+    }
+    function hideFlyoutDelayed() {
+        flyoutTimer = setTimeout(() => {
+            if ($flyout) $flyout.style.display = "none";
+        }, 200);
+    }
+    if ($menuPrograms) {
+        $menuPrograms.addEventListener("mouseenter", showFlyout);
+        $menuPrograms.addEventListener("mouseleave", hideFlyoutDelayed);
+        $menuPrograms.addEventListener("click", (e) => {
+            e.stopPropagation();
+            showFlyout();
+        });
+    }
+    if ($flyout) {
+        $flyout.addEventListener("mouseenter", showFlyout);
+        $flyout.addEventListener("mouseleave", hideFlyoutDelayed);
+        $flyout.addEventListener("click", (e) => {
+            const item = e.target.closest(".start-menu-flyout-item");
+            if (!item || !item.dataset.action) return;
+            closeStartMenu();
+            const actionMap = {
+                notepad: openNotepad,
+                calculator: openCalculator,
+                "all-bookmarks": openAllBookmarksWindow,
+            };
+            const action = actionMap[item.dataset.action];
+            if (action) action();
+        });
+    }
+
+    /* ---------- Taskbar right-click menu ---------- */
+    $taskbar.addEventListener("contextmenu", (e) => {
+        if (e.target.closest("#start-btn")) return;
+        e.preventDefault();
+        const visible = state.windows.filter((w) => !w.minimized);
+        showContextMenu(e.clientX, e.clientY, [
+            {
+                label: "Каскад окон",
+                disabled: visible.length === 0,
+                action: () => cascadeWindows(visible),
+            },
+            {
+                label: "Стопкой",
+                disabled: visible.length === 0,
+                action: () => tileWindows(visible),
+            },
+            { type: "separator" },
+            { label: "Свойства панели задач", action: openTaskbarProperties },
+        ]);
+    });
+
+    /** Cascade all visible windows like Win98 «Каскад окон» */
+    function cascadeWindows(wins) {
+        if (!wins.length) return;
+        wins.forEach((w, i) => {
+            w.el.classList.remove("maximized");
+            w.maximized = false;
+            w.el.style.left = 28 + i * 24 + "px";
+            w.el.style.top = 28 + i * 24 + "px";
+            w.el.style.width = Math.min(420, window.innerWidth - 60) + "px";
+            w.el.style.height = Math.min(320, window.innerHeight - 90) + "px";
+            bringToFront(w.id);
+        });
+    }
+
+    /** Tile all visible windows across the desktop like Win98 «Стопкой» */
+    function tileWindows(wins) {
+        if (!wins.length) return;
+        const cols = Math.ceil(Math.sqrt(wins.length));
+        const rows = Math.ceil(wins.length / cols);
+        const areaW = window.innerWidth;
+        const areaH = Math.max(1, window.innerHeight - 28);
+        const wW = Math.floor(areaW / cols);
+        const hH = Math.floor(areaH / rows);
+        wins.forEach((w, i) => {
+            w.el.classList.remove("maximized");
+            w.maximized = false;
+            w.el.style.left = (i % cols) * wW + "px";
+            w.el.style.top = Math.floor(i / cols) * hH + "px";
+            w.el.style.width = wW + "px";
+            w.el.style.height = hH + "px";
+            bringToFront(w.id);
+        });
+    }
+
+    /** «Свойства панели задач» — classic Win98 checkboxes with real behavior */
+    function openTaskbarProperties() {
+        const body = document.createElement("div");
+        body.className = "win98-dialog";
+        const makeCheck = (label, key) => {
+            const wrap = document.createElement("div");
+            wrap.className = "win98-dialog-row";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = !!(state.settings && state.settings[key]);
+            cb.id = "taskbar-prop-" + key;
+            const lbl = document.createElement("label");
+            lbl.htmlFor = cb.id;
+            lbl.textContent = " " + label;
+            wrap.append(cb, lbl);
+            return { wrap, cb, key };
+        };
+        const checks = [
+            makeCheck("Автоскрытие панели задач", "taskbarAutoHide"),
+            makeCheck("Мелкие значки на панели задач", "taskbarSmallIcons"),
+            makeCheck("Показывать часы", "showClock"),
+        ];
+        checks.forEach((c) => body.appendChild(c.wrap));
+        openDialog({
+            title: "Свойства панели задач",
+            width: 320,
+            height: 240,
+            body,
+            buttons: [
+                {
+                    label: "OK",
+                    onClick: () => {
+                        checks.forEach((c) => {
+                            state.settings[c.key] = c.cb.checked;
+                        });
+                        saveSettings();
+                        applyTaskbarSettings();
+                    },
+                },
+                { label: "Отмена" },
+            ],
+        });
+    }
+
+    /* ---------- Taskbar auto-hide hover behavior ---------- */
+    document.addEventListener("mousemove", (e) => {
+        if (state.settings && state.settings.taskbarAutoHide) {
+            if (e.clientY >= window.innerHeight - 6) {
+                $taskbar.classList.add("taskbar-force-show");
+            }
+        }
+    });
+    $taskbar.addEventListener("mouseleave", () => {
+        if (
+            state.settings &&
+            state.settings.taskbarAutoHide &&
+            !state.startMenuOpen
+        ) {
+            $taskbar._hideTimer = setTimeout(
+                () => $taskbar.classList.remove("taskbar-force-show"),
+                300,
+            );
+        }
+    });
+    $taskbar.addEventListener("mouseenter", () =>
+        clearTimeout($taskbar._hideTimer),
+    );
+
+    /* ---------- Marquee selection on the desktop ---------- */
+    let marqueeEl = null;
+    let marqueeStart = null;
+
+    function deselectAllDesktopIcons() {
+        $desktopIcons
+            .querySelectorAll(".desktop-icon.selected")
+            .forEach((d) => d.classList.remove("selected"));
+        state.selectedDesktopEl = null;
+    }
+
+    function selectIconsInRect(rect) {
+        deselectAllDesktopIcons();
+        $desktopIcons.querySelectorAll(".desktop-icon").forEach((icon) => {
+            if (!icon._node) return;
+            const r = icon.getBoundingClientRect();
+            if (
+                r.right < rect.left ||
+                r.left > rect.right ||
+                r.bottom < rect.top ||
+                r.top > rect.bottom
+            ) {
+                return;
+            }
+            icon.classList.add("selected");
+        });
+    }
+
+    function onMarqueeMove(e) {
+        if (!marqueeStart) return;
+        const dx = e.clientX - marqueeStart.x;
+        const dy = e.clientY - marqueeStart.y;
+        if (Math.abs(dx) < 4 && Math.abs(dy) < 4 && !marqueeEl) return;
+        if (!marqueeEl) {
+            marqueeEl = document.createElement("div");
+            marqueeEl.className = "desktop-marquee";
+            document.body.appendChild(marqueeEl);
+        }
+        const x = Math.min(marqueeStart.x, e.clientX);
+        const y = Math.min(marqueeStart.y, e.clientY);
+        marqueeEl.style.left = x + "px";
+        marqueeEl.style.top = y + "px";
+        marqueeEl.style.width = Math.abs(dx) + "px";
+        marqueeEl.style.height = Math.abs(dy) + "px";
+        selectIconsInRect(marqueeEl.getBoundingClientRect());
+    }
+
+    function onMarqueeUp() {
+        document.removeEventListener("mousemove", onMarqueeMove);
+        document.removeEventListener("mouseup", onMarqueeUp);
+        marqueeStart = null;
+        if (marqueeEl) {
+            marqueeEl.remove();
+            marqueeEl = null;
+        }
+    }
+
+    $desktop.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest(".desktop-icon")) return;
+        if (e.target.closest(".win98-window")) return;
+        marqueeStart = { x: e.clientX, y: e.clientY };
+        document.addEventListener("mousemove", onMarqueeMove);
+        document.addEventListener("mouseup", onMarqueeUp);
+    });
 
     // Close menus on outside click
     document.addEventListener("click", (e) => {
@@ -2939,6 +3328,15 @@
         if (UI_FONTS.some((f) => f.value === partial.uiFont)) {
             base.uiFont = partial.uiFont;
         }
+        if (typeof partial.taskbarAutoHide === "boolean") {
+            base.taskbarAutoHide = partial.taskbarAutoHide;
+        }
+        if (typeof partial.taskbarSmallIcons === "boolean") {
+            base.taskbarSmallIcons = partial.taskbarSmallIcons;
+        }
+        if (typeof partial.showClock === "boolean") {
+            base.showClock = partial.showClock;
+        }
         if (partial.wallpaper) {
             const wp = partial.wallpaper;
             if (wp.type === "color" || wp.type === "image")
@@ -2963,6 +3361,7 @@
         }
         applyWallpaper(state.settings.wallpaper);
         applyDesktopStyle();
+        applyTaskbarSettings();
         updateClock();
     }
 
@@ -3007,6 +3406,19 @@
         return chrome.storage.local
             .set({ settings: state.settings })
             .catch(() => {});
+    }
+
+    /** Apply taskbar-related settings (auto-hide, small icons, clock visibility) */
+    function applyTaskbarSettings() {
+        const s = state.settings || DEFAULT_SETTINGS;
+        $taskbar.classList.toggle("taskbar-small", !!s.taskbarSmallIcons);
+        $clock.style.display = s.showClock !== false ? "" : "none";
+        if (s.taskbarAutoHide) {
+            $taskbar.classList.add("taskbar-autohide");
+        } else {
+            $taskbar.classList.remove("taskbar-autohide");
+            $taskbar.classList.remove("taskbar-force-show");
+        }
     }
 
     /** Apply wallpaper to the desktop background */
@@ -3977,6 +4389,216 @@
                     ),
             },
         ];
+    }
+
+    /* ============================================================
+     CALCULATOR
+     ============================================================ */
+
+    function openCalculator() {
+        const existing = state.windows.find(
+            (w) => w.winType === "calculator",
+        );
+        if (existing) {
+            if (existing.minimized) restoreWindow(existing.id);
+            else bringToFront(existing.id);
+            return;
+        }
+        createWindow({
+            winType: "calculator",
+            title: "Калькулятор",
+            icon: drawCalcIcon(),
+            width: 250,
+            height: 322,
+            statusbar: false,
+            content: `
+              <div class="calc-display" id="calc-display">0</div>
+              <div class="calc-keys">
+                <button data-key="MC">MC</button><button data-key="MR">MR</button><button data-key="MS">MS</button><button data-key="M+" class="calc-span2">M+</button>
+                <button data-key="Back" class="calc-span2">Back</button><button data-key="CE">CE</button><button data-key="C">C</button>
+                <button data-key="sqrt">√</button><button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button><button data-key="/">/</button>
+                <button data-key="%">%</button><button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button><button data-key="*">*</button>
+                <button data-key="1/x">1/x</button><button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button><button data-key="-">-</button>
+                <button data-key="±">±</button><button data-key="0">0</button><button data-key=".">.</button><button data-key="+">+</button><button data-key="=">=</button>
+              </div>`,
+            onCreated: (el, winData) => {
+                el.classList.add("calc-window");
+                initCalcWindow(el, winData);
+            },
+        });
+    }
+
+    function initCalcWindow(el, winData) {
+        const calc = {
+            display: "0",
+            acc: null,
+            op: null,
+            fresh: true,
+            error: false,
+            mem: 0,
+        };
+        el._calc = calc;
+        const displayEl = el.querySelector("#calc-display");
+        const render = () => {
+            displayEl.textContent = calc.display;
+        };
+
+        el.querySelector(".calc-keys").addEventListener("click", (e) => {
+            const btn = e.target.closest("button[data-key]");
+            if (!btn) return;
+            calcInput(calc, btn.dataset.key);
+            render();
+        });
+
+        // Keyboard support — only while this window is the active one
+        const onKey = (e) => {
+            if (state.activeWindowId !== winData.id) return;
+            const map = { Escape: "C", Backspace: "Back", Enter: "=" };
+            const k = map[e.key] || e.key;
+            if (
+                /^[0-9.]$/.test(k) ||
+                ["+", "-", "*", "/", "%", "="].includes(k)
+            ) {
+                e.preventDefault();
+                calcInput(calc, k);
+                render();
+            }
+        };
+        el._calcKeyHandler = onKey;
+        document.addEventListener("keydown", onKey);
+    }
+
+    function calcInput(calc, key) {
+        if (calc.error && key !== "C" && key !== "CE") {
+            calcInput(calc, "C");
+        }
+        const num = () => {
+            const v = parseFloat(calc.display);
+            return Number.isFinite(v) ? v : 0;
+        };
+        const fmt = (v) => {
+            if (!Number.isFinite(v)) return "Ошибка";
+            return String(parseFloat(v.toPrecision(12)));
+        };
+
+        if (/^[0-9]$/.test(key)) {
+            if (calc.error) return;
+            if (calc.fresh) {
+                calc.display = key;
+                calc.fresh = false;
+            } else {
+                calc.display =
+                    (calc.display === "0" ? "" : calc.display) + key;
+            }
+            if (calc.display.length > 16) calc.display = calc.display.slice(0, 16);
+        } else if (key === ".") {
+            if (calc.error) return;
+            if (calc.fresh) {
+                calc.display = "0.";
+                calc.fresh = false;
+            } else if (!calc.display.includes(".")) {
+                calc.display += ".";
+            }
+        } else if (["+", "-", "*", "/"].includes(key)) {
+            if (calc.acc !== null && calc.op && !calc.fresh) {
+                const res = evalOp(calc.acc, num(), calc.op);
+                if (res === null) {
+                    calc.error = true;
+                    calc.display = "Ошибка";
+                    return;
+                }
+                calc.acc = res;
+                calc.display = fmt(res);
+            } else {
+                calc.acc = num();
+            }
+            calc.op = key;
+            calc.fresh = true;
+        } else if (key === "=") {
+            if (calc.error) return;
+            if (calc.acc !== null && calc.op) {
+                const res = evalOp(calc.acc, num(), calc.op);
+                if (res === null) {
+                    calc.error = true;
+                    calc.display = "Ошибка";
+                    return;
+                }
+                calc.display = fmt(res);
+                calc.acc = null;
+                calc.op = null;
+            }
+            calc.fresh = true;
+        } else if (key === "C") {
+            Object.assign(calc, {
+                display: "0",
+                acc: null,
+                op: null,
+                fresh: true,
+                error: false,
+            });
+        } else if (key === "CE") {
+            calc.display = "0";
+            calc.fresh = true;
+            calc.error = false;
+        } else if (key === "Back") {
+            if (calc.fresh || calc.error) return;
+            calc.display =
+                calc.display.length > 1 ? calc.display.slice(0, -1) : "0";
+            if (calc.display === "-") calc.display = "0";
+        } else if (key === "sqrt") {
+            const v = num();
+            if (v < 0) {
+                calc.error = true;
+                calc.display = "Ошибка";
+                return;
+            }
+            calc.display = fmt(Math.sqrt(v));
+            calc.fresh = true;
+        } else if (key === "%") {
+            if (calc.acc !== null && calc.op) {
+                calc.display = fmt((calc.acc * num()) / 100);
+            }
+            calc.fresh = true;
+        } else if (key === "1/x") {
+            const v = num();
+            if (v === 0) {
+                calc.error = true;
+                calc.display = "Ошибка";
+                return;
+            }
+            calc.display = fmt(1 / v);
+            calc.fresh = true;
+        } else if (key === "±") {
+            if (calc.error) return;
+            if (calc.display !== "0") {
+                calc.display = calc.display.startsWith("-")
+                    ? calc.display.slice(1)
+                    : "-" + calc.display;
+            }
+        } else if (key === "MC") {
+            calc.mem = 0;
+        } else if (key === "MR") {
+            calc.display = fmt(calc.mem);
+            calc.fresh = true;
+        } else if (key === "MS") {
+            calc.mem = num();
+        } else if (key === "M+") {
+            calc.mem += num();
+        }
+    }
+
+    function evalOp(a, b, op) {
+        switch (op) {
+            case "+":
+                return a + b;
+            case "-":
+                return a - b;
+            case "*":
+                return a * b;
+            case "/":
+                return b === 0 ? null : a / b;
+        }
+        return null;
     }
 
     /* ============================================================
