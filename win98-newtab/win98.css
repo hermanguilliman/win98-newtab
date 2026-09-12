@@ -17,6 +17,9 @@
     --win98-white: #ffffff;
     --win98-black: #000000;
     --win98-dark-gray: #808080;
+    /* Softened dark edge of 3D borders/shadows — original Win98 reads softer
+       than pure black on modern flat panels; text stays --win98-black */
+    --win98-shadow: #606060;
     --win98-navy: #000080;
     --win98-highlight: #0000aa;
     --win98-title-active: linear-gradient(90deg, #000080, #1084d0);
@@ -50,7 +53,7 @@ body {
 /* ---------- Win98 3D Border Mixins ---------- */
 .win98-border-outset {
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow:
         inset 1px 1px 0 var(--win98-dark-gray),
@@ -62,7 +65,7 @@ body {
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
     box-shadow:
-        inset 1px 1px 0 var(--win98-black),
+        inset 1px 1px 0 var(--win98-shadow),
         inset -1px -1px 0 var(--win98-silver);
 }
 
@@ -151,7 +154,7 @@ body {
     position: absolute;
     background: var(--win98-silver);
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow:
         inset 1px 1px 0 var(--win98-dark-gray),
@@ -215,7 +218,7 @@ body {
     height: 14px;
     background: var(--win98-btn-face);
     border: 1px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
     display: flex;
@@ -231,8 +234,8 @@ body {
 }
 
 .win98-titlebar-btn:active {
-    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
-        var(--win98-black);
+    border-color: var(--win98-shadow) var(--win98-white) var(--win98-white)
+        var(--win98-shadow);
     box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
     padding: 1px 0 0 1px;
 }
@@ -245,7 +248,7 @@ body {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     margin: 2px;
 }
 
@@ -286,7 +289,7 @@ body {
 .win98-toolbar-btn {
     background: var(--win98-btn-face);
     border: 1px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
     padding: 2px 6px;
@@ -299,8 +302,8 @@ body {
 }
 
 .win98-toolbar-btn:active {
-    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
-        var(--win98-black);
+    border-color: var(--win98-shadow) var(--win98-white) var(--win98-white)
+        var(--win98-shadow);
     box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
     padding: 3px 5px 1px 7px;
 }
@@ -340,7 +343,7 @@ body {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     background: var(--win98-white);
     font-family: var(--win98-font);
     font-size: 11px;
@@ -571,8 +574,8 @@ body {
 }
 
 .taskbar-win-btn.active {
-    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
-        var(--win98-black);
+    border-color: var(--win98-shadow) var(--win98-white) var(--win98-white)
+        var(--win98-shadow);
     box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
     background: var(--win98-silver);
     font-weight: bold;
@@ -626,7 +629,7 @@ body {
     border: 1px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     margin-left: auto;
     flex-shrink: 0;
 }
@@ -815,7 +818,7 @@ body {
 .win98-btn {
     background: var(--win98-btn-face);
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
     font-family: var(--win98-font);
@@ -824,8 +827,8 @@ body {
 }
 
 .win98-btn:active {
-    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
-        var(--win98-black);
+    border-color: var(--win98-shadow) var(--win98-white) var(--win98-white)
+        var(--win98-shadow);
     box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
     padding: 1px 0 0 1px;
 }
@@ -849,7 +852,7 @@ body {
 ::-webkit-scrollbar-thumb {
     background: var(--win98-silver);
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
 }
@@ -857,7 +860,7 @@ body {
 ::-webkit-scrollbar-button {
     background: var(--win98-silver);
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
     display: block;
@@ -866,8 +869,8 @@ body {
 }
 
 ::-webkit-scrollbar-button:active {
-    border-color: var(--win98-black) var(--win98-white) var(--win98-white)
-        var(--win98-black);
+    border-color: var(--win98-shadow) var(--win98-white) var(--win98-white)
+        var(--win98-shadow);
     box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
 }
 
@@ -890,7 +893,7 @@ body {
     position: fixed;
     background: var(--win98-silver);
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow:
         inset 1px 1px 0 var(--win98-dark-gray),
@@ -977,7 +980,7 @@ body {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     background: var(--win98-white);
     color: var(--win98-black);
     font-family: "Lucida Console", "Courier New", monospace;
@@ -1025,7 +1028,7 @@ body {
     border: 2px inset;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     padding: 2px;
 }
 
@@ -1202,7 +1205,7 @@ body {
     background: var(--win98-silver);
     border-top: 2px solid var(--win98-white);
     border-left: 2px solid var(--win98-white);
-    border-right: 2px solid var(--win98-black);
+    border-right: 2px solid var(--win98-shadow);
     color: var(--win98-black);
     position: relative;
 }
@@ -1231,7 +1234,7 @@ body {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     padding: 4px;
     margin-top: -1px;
 }
@@ -1262,7 +1265,7 @@ body {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     background: var(--win98-silver);
     padding: 14px 8px 8px;
     margin-top: 8px;
@@ -1439,7 +1442,7 @@ input[type="radio"]:disabled:checked::after {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
 }
 
 .win98-range:disabled {
@@ -1461,7 +1464,7 @@ input[type="radio"]:disabled:checked::after {
     border-radius: 0;
     background: var(--win98-silver);
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow: inset -1px 0 0 var(--win98-dark-gray);
 }
@@ -1474,7 +1477,7 @@ input[type="radio"]:disabled:checked::after {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     background: var(--win98-white);
     cursor: pointer;
 }
@@ -1498,7 +1501,7 @@ input[type="radio"]:disabled:checked::after {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     background-color: var(--win98-wp-preview);
 }
 
@@ -1695,7 +1698,7 @@ input[type="radio"]:disabled:checked::after {
     min-width: 160px;
     background: var(--win98-silver);
     border: 2px solid;
-    border-color: var(--win98-white) var(--win98-black) var(--win98-black)
+    border-color: var(--win98-white) var(--win98-shadow) var(--win98-shadow)
         var(--win98-white);
     box-shadow:
         inset 1px 1px 0 var(--win98-dark-gray),
@@ -1779,7 +1782,7 @@ body:has(#taskbar.taskbar-autohide) #desktop {
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
-    box-shadow: inset 1px 1px 0 var(--win98-black);
+    box-shadow: inset 1px 1px 0 var(--win98-shadow);
     overflow: hidden;
     white-space: nowrap;
 }
