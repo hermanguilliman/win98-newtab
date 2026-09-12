@@ -7,8 +7,92 @@
 (() => {
     "use strict";
 
+    /* ============================================================
+       Types (JSDoc — checked by `tsc --noEmit`, see tsconfig.json)
+       ============================================================ */
+
+    /** Chrome bookmarks tree node (also used for the synthetic «Все закладки» root). */
+    /** @typedef {chrome.bookmarks.BookmarkTreeNode} BookmarkNode */
+
+    /**
+     * @typedef {object} WallpaperSettings
+     * @property {"color"|"image"} type
+     * @property {string} color
+     * @property {string|null} imageData
+     * @property {"stretch"|"tile"|"center"} imageStyle
+     * @property {number} scale
+     * @property {"color"|"file"|"url"} uiType
+     */
+
+    /**
+     * @typedef {object} Settings
+     * @property {"single"|"double"} clickMode
+     * @property {number} iconSize
+     * @property {number} labelSize
+     * @property {number} iconGap
+     * @property {number} desktopPadX
+     * @property {number} desktopPadY
+     * @property {"classic"|"glossy"|"outlined"} folderIconStyle
+     * @property {string} weatherCity
+     * @property {boolean} showClockDate
+     * @property {boolean} showClockWeekday
+     * @property {boolean} iconLabelShadow
+     * @property {"icons"|"list"} folderViewMode
+     * @property {string} uiFont
+     * @property {boolean} taskbarAutoHide
+     * @property {boolean} taskbarSmallIcons
+     * @property {boolean} showClock
+     * @property {WallpaperSettings} wallpaper
+     */
+
+    /**
+     * A single open window (folder windows, dialogs, apps, …).
+     * `el` lives only after createWindow() builds the DOM.
+     * @typedef {object} WinData
+     * @property {number} id
+     * @property {string} title
+     * @property {string} icon
+     * @property {number} x
+     * @property {number} y
+     * @property {number} w
+     * @property {number} h
+     * @property {HTMLDivElement} [el]
+     * @property {boolean} minimized
+     * @property {boolean} maximized
+     * @property {{x: number, y: number, w: number, h: number}|null} prevBounds
+     * @property {string|null} winType
+     * @property {string|null} bookmarkId
+     * @property {boolean} dialog
+     * @property {BookmarkNode|null} [currentNode]
+     * @property {(BookmarkNode|null)[]} [navStack]
+     * @property {() => void} [searchFilter]
+     * @property {HTMLButtonElement} [okButton]
+     * @property {number} [_savedIndex]
+     */
+
+    /** Desktop icon / folder item div carrying its bookmark node. */
+    /** @typedef {HTMLDivElement & { _node?: BookmarkNode }} IconEl */
+
+    /** Search window UI (div + its expando fields). */
+    /** @typedef {HTMLDivElement & { filter: () => void, input: HTMLInputElement }} SearchUI */
+
+    /** Search index entry: bookmark node with precomputed lowercased search fields. */
+    /** @typedef {BookmarkNode & { _tl?: string, _ul?: string, _pl?: string, isFolder?: boolean, path?: string }} SearchNode */
+
+    /**
+     * Resolve an event target to an Element. TS types `EventTarget` without
+     * `closest`; all listeners in this file attach to element targets, so the
+     * runtime result is identical to the original direct call.
+     * @param {Event} e
+     * @returns {Element | null}
+     */
+    function eventTargetElement(e) {
+        return e.target instanceof Element ? e.target : null;
+    }
+
     /* ---------- State ---------- */
     const state = {
+        /** @type {WinData[]} */
         windows: [],
         windowIdCounter: 0,
         zCounter: 100,
@@ -16,17 +100,23 @@
         startMenuOpen: false,
         dragState: null,
         resizeState: null,
+        /** @type {Settings | null} */
         settings: null,
+        /** @type {BookmarkNode | null} */
         treeRoot: null,
         bookmarksRefreshTimer: 0,
+        /** @type {SearchNode[]} */
         searchNodes: [],
+        /** @type {Map<string, BookmarkNode> | null} */
         nodeIndex: null,
+        /** @type {IconEl | null} */
         selectedDesktopEl: null,
         weatherData: null,
         clipUrl: null,
     };
 
     /* ---------- Default settings ---------- */
+    /** @type {Settings} */
     const DEFAULT_SETTINGS = {
         clickMode: "double",
         iconSize: 32,
@@ -80,6 +170,7 @@
     const $weather = document.getElementById("weather");
     const $menuAllBookmarks = document.getElementById("menu-all-bookmarks");
     const $launcherNotepad = document.getElementById("launcher-notepad");
+    /** @type {HTMLElement & { _hideTimer?: number }} */
     const $taskbar = document.getElementById("taskbar");
 
     /* ============================================================
@@ -562,6 +653,91 @@
         }
     }
 
+    /**
+     * Fetch a favicon and re-render it with a transparent background.
+     * Google's favicon service returns opaque white PNGs when the site's icon
+     * is a framed/square image; we trim near-white opaque margins so the icon
+     * blends into the wallpaper like a real Win98 shortcut (no white box).
+     * Resolves with a data URL, rejects when the fetch/decode fails.
+     * @param {string} url
+     * @param {number} size
+     * @returns {Promise<string>}
+     */
+    async function faviconDataUrl(url, size) {
+        const resp = await fetch(url, { mode: "cors" });
+        if (!resp.ok) throw new Error("favicon HTTP " + resp.status);
+        const blob = await resp.blob();
+        const bmp = await createImageBitmap(blob);
+        const w = bmp.width;
+        const h = bmp.height;
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(bmp, 0, 0);
+        const d = ctx.getImageData(0, 0, w, h).data;
+
+        // Near-white opaque pixels are treated as background (a white canvas
+        // the site drew around its icon). Everything else is content.
+        const isBg = (i) =>
+            d[i + 3] >= 248 &&
+            d[i] >= 242 &&
+            d[i + 1] >= 242 &&
+            d[i + 2] >= 242;
+        let minX = w,
+            minY = h,
+            maxX = -1,
+            maxY = -1;
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const i = (y * w + x) * 4;
+                if (d[i + 3] >= 24 && !isBg(i)) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+
+        // Nothing trimmed when the content already fills the canvas (or the
+        // icon is entirely white — return it as-is rather than a transparent blank).
+        let sx = 0,
+            sy = 0,
+            sw = w,
+            sh = h;
+        if (
+            maxX >= 0 &&
+            (minX > 0 || minY > 0 || maxX < w - 1 || maxY < h - 1)
+        ) {
+            sx = minX;
+            sy = minY;
+            sw = maxX - minX + 1;
+            sh = maxY - minY + 1;
+        }
+
+        const out = document.createElement("canvas");
+        out.width = size;
+        out.height = size;
+        const octx = out.getContext("2d");
+        octx.imageSmoothingEnabled = true;
+        const scale = size / Math.max(sw, sh);
+        const dw = sw * scale;
+        const dh = sh * scale;
+        octx.drawImage(
+            c,
+            sx,
+            sy,
+            sw,
+            sh,
+            (size - dw) / 2,
+            (size - dh) / 2,
+            dw,
+            dh,
+        );
+        return out.toDataURL();
+    }
+
     /** Color palette for folders */
     const FOLDER_COLORS = [
         "#d4c044",
@@ -808,6 +984,7 @@
     }
 
     /** Fill the weather details window content from state.weatherData */
+    /** @param {WinData} winData */
     function renderWeatherWindow(winData) {
         const el = winData.el;
         const ce = el.querySelector(".win98-window-content");
@@ -917,7 +1094,8 @@
             statusbar: true,
             statusText: "Загрузка данных...",
             onCreated: (el, winData) => {
-                el.querySelector(".win98-window-content").style.background =
+                /** @type {HTMLElement} */
+                (el.querySelector(".win98-window-content")).style.background =
                     "var(--win98-silver)";
                 renderWeatherWindow(winData);
             },
@@ -933,6 +1111,28 @@
      WINDOW MANAGEMENT
      ============================================================ */
 
+    /**
+     * @typedef {object} CreateWindowOpts
+     * @property {string} [title]
+     * @property {string} [icon]
+     * @property {number} [x]
+     * @property {number} [y]
+     * @property {number} [width]
+     * @property {number} [height]
+     * @property {boolean} [dialog]
+     * @property {string} [content]
+     * @property {string} [toolbar]
+     * @property {boolean} [addressbar]
+     * @property {string} [addressbarValue]
+     * @property {boolean} [statusbar]
+     * @property {string} [statusText]
+     * @property {string} [statusText2]
+     * @property {string} [winType]
+     * @property {string} [bookmarkId]
+     * @property {(el: HTMLDivElement, winData: WinData) => void} [onCreated]
+     */
+
+    /** @param {CreateWindowOpts} opts @returns {WinData} */
     function createWindow(opts) {
         const id = ++state.windowIdCounter;
         const w = opts.width || 500;
@@ -955,6 +1155,7 @@
         // re-generate the same canvas three times below.
         const resolvedIcon = opts.icon || drawPageIcon();
 
+        /** @type {WinData} */
         const winData = {
             id,
             title: opts.title || "Window",
@@ -1004,13 +1205,13 @@
         // Title bar events
         const titlebar = el.querySelector(".win98-titlebar");
         titlebar.addEventListener("mousedown", (e) => {
-            if (e.target.closest(".win98-titlebar-btn")) return;
+            if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
             bringToFront(id);
-            startDrag(e, winData);
+            startDrag(/** @type {MouseEvent} */ (e), winData);
         });
         titlebar.addEventListener("dblclick", (e) => {
             if (isDialog) return;
-            if (e.target.closest(".win98-titlebar-btn")) return;
+            if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
             toggleMaximize(id);
         });
 
@@ -1033,7 +1234,7 @@
         resizeHandle?.addEventListener("mousedown", (e) => {
             e.stopPropagation();
             bringToFront(id);
-            startResize(e, winData);
+            startResize(/** @type {MouseEvent} */ (e), winData);
         });
 
         // Click to focus
@@ -1106,7 +1307,7 @@
         const winData = state.windows.find((w) => w.id === id);
         if (!winData) return;
 
-        winData.el.style.zIndex = ++state.zCounter;
+        winData.el.style.zIndex = String(++state.zCounter);
 
         // Update titlebar active state
         state.windows.forEach((w) => {
@@ -1261,8 +1462,11 @@
         }
 
         // Remove the calculator's document-level keyboard listener
-        if (winData.el && winData.el._calcKeyHandler) {
-            document.removeEventListener("keydown", winData.el._calcKeyHandler);
+        const calcEl = /** @type {HTMLDivElement & { _calcKeyHandler?: (e: Event) => void }} */ (
+            winData.el
+        );
+        if (calcEl && calcEl._calcKeyHandler) {
+            document.removeEventListener("keydown", calcEl._calcKeyHandler);
         }
 
         const tbBtn = document.getElementById(`tb-${id}`);
@@ -1482,6 +1686,7 @@
      DRAG & RESIZE
      ============================================================ */
 
+    /** @param {MouseEvent} e @param {WinData} winData */
     function startDrag(e, winData) {
         if (winData.maximized) return;
         const rect = winData.el.getBoundingClientRect();
@@ -1521,6 +1726,7 @@
         scheduleWindowStateSave();
     }
 
+    /** @param {MouseEvent} e @param {WinData} winData */
     function startResize(e, winData) {
         if (winData.maximized) return;
         state.resizeState = {
@@ -1626,6 +1832,7 @@
     }
 
     /** Build an id→node index for O(1) lookups (rebuilt after every tree refresh) */
+    /** @param {BookmarkNode} root @returns {Map<string, BookmarkNode>} */
     function buildNodeIndex(root) {
         const map = new Map();
         (function walk(n) {
@@ -1675,7 +1882,9 @@
         });
     }
 
+    /** @param {BookmarkNode} node @returns {IconEl} */
     function createDesktopIcon(node) {
+        /** @type {IconEl} */
         const div = document.createElement("div");
         div.className = "desktop-icon";
 
@@ -1691,13 +1900,20 @@
             );
             colorIdx++;
         } else {
-            // Try favicon, fallback to page icon
+            // Try favicon, fallback to page icon. Show the original favicon
+            // immediately (usually cached), then swap in a background-cleaned
+            // copy once fetched — Google wraps some icons in a white PNG.
             const favUrl = getFaviconUrl(node.url);
             if (favUrl) {
-                img.src = favUrl;
                 img.onerror = () => {
                     img.src = drawPageIcon();
                 };
+                img.src = favUrl;
+                faviconDataUrl(favUrl, currentIconSize())
+                    .then((clean) => {
+                        img.src = clean;
+                    })
+                    .catch(() => {});
             } else {
                 img.src = drawPageIcon();
             }
@@ -1729,14 +1945,14 @@
         container — one listener set total instead of four per desktop icon. */
     function attachDesktopIconEvents() {
         $desktopIcons.addEventListener("click", (e) => {
-            const div = e.target.closest(".desktop-icon");
+            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
             if (!div) return;
             const node = div._node;
             if (!node) return;
             if (isSingleClickMode()) {
                 const prev = Number(div.dataset.lastClick || 0);
                 const now = Date.now();
-                div.dataset.lastClick = now;
+                div.dataset.lastClick = String(now);
                 if (now - prev < CLICK_DEBOUNCE_MS) return; // part of a double-click
                 openNode(node);
             } else {
@@ -1745,21 +1961,21 @@
         });
 
         $desktopIcons.addEventListener("dblclick", (e) => {
-            const div = e.target.closest(".desktop-icon");
+            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
             if (!div || !div._node) return;
             if (!isSingleClickMode()) openNode(div._node);
         });
 
         // Middle mouse button → open bookmark in a background tab
         $desktopIcons.addEventListener("auxclick", (e) => {
-            const div = e.target.closest(".desktop-icon");
+            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
             if (!div || !div._node) return;
             handleAuxClick(e, div._node);
         });
 
         // Right-click context menu
         $desktopIcons.addEventListener("contextmenu", (e) => {
-            const div = e.target.closest(".desktop-icon");
+            const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
             if (!div || !div._node) return;
             e.preventDefault();
             selectDesktopIcon(div);
@@ -1772,6 +1988,7 @@
     }
 
     /** Open a bookmark node (URL → navigate, folder → window) */
+    /** @param {BookmarkNode} node */
     function openNode(node) {
         if (node.url) {
             window.location.href = node.url;
@@ -1803,6 +2020,7 @@
      ============================================================ */
 
     /** Build the synthetic top-level node that lists the Chrome root folders */
+    /** @param {BookmarkNode} tree @returns {BookmarkNode} */
     function buildAllBookmarksNode(tree) {
         return {
             id: ALL_ROOT_ID,
@@ -1859,6 +2077,7 @@
      * Render the children of `node` into an already-open folder window and keep
      * the title / addressbar / statusbar / nav buttons in sync.
      */
+    /** @param {WinData} winData @param {BookmarkNode} node */
     function renderFolderContent(winData, node) {
         const el = winData.el;
         if (!el) return;
@@ -1872,14 +2091,19 @@
             contentEl.appendChild(fc);
         }
         // Empty area drops append to the folder currently shown in this window
-        wireFolderBackgroundDrop(fc, winData);
+        wireFolderBackgroundDrop(
+            /** @type {HTMLElement & { _dropWired?: boolean }} */ (fc),
+            winData,
+        );
 
         const items = (node.children || []).filter((n) => isVisibleNode(n));
         fc.innerHTML = "";
         const viewMode = currentFolderViewMode();
         fc.classList.toggle("folder-view-list", viewMode === "list");
         // Toolbar view toggle shows the mode it will switch to
-        const viewBtn = el.querySelector('[data-nav="view"]');
+        const viewBtn = /** @type {HTMLElement} */ (
+            el.querySelector('[data-nav="view"]')
+        );
         if (viewBtn) {
             const target = viewMode === "list" ? "Значки" : "Список";
             const sp = viewBtn.querySelector("span");
@@ -1911,7 +2135,7 @@
             const tbSpan = tbBtn.querySelector("span");
             if (tbSpan) tbSpan.textContent = node.title || "Папка";
         }
-        const ab = el.querySelector(".win98-addressbar-input");
+        const ab = /** @type {HTMLInputElement} */ (el.querySelector(".win98-addressbar-input"));
         if (ab) ab.value = getNodePath(node);
         const sf = el.querySelector(".win98-statusbar-field");
         if (sf) {
@@ -1927,6 +2151,7 @@
     }
 
     /** Navigate an open folder window to another folder (same window, no new window) */
+    /** @param {WinData} winData @param {BookmarkNode} node @param {{fromHistory?: boolean}} [opts] */
     function navigateInWindow(winData, node, opts) {
         opts = opts || {};
         if (!winData || !node) return;
@@ -1942,6 +2167,7 @@
         scheduleWindowStateSave();
     }
 
+    /** @param {WinData} winData */
     function goBack(winData) {
         const prev = winData.navStack.pop();
         if (!prev) return;
@@ -1949,6 +2175,7 @@
         if (target) navigateInWindow(winData, target, { fromHistory: true });
     }
 
+    /** @param {WinData} winData */
     function goUp(winData) {
         const cur = winData.currentNode;
         if (!cur) return;
@@ -1965,12 +2192,13 @@
     }
 
     /** «Назад» disabled without history; «Вверх» disabled at the top level (no previous level) */
+    /** @param {WinData} winData */
     function updateNavButtons(winData) {
         const el = winData.el;
         if (!el) return;
-        const back = el.querySelector('[data-nav="back"]');
+        const back = /** @type {HTMLButtonElement} */ (el.querySelector('[data-nav="back"]'));
         if (back) back.disabled = winData.navStack.length === 0;
-        const up = el.querySelector('[data-nav="up"]');
+        const up = /** @type {HTMLButtonElement} */ (el.querySelector('[data-nav="up"]'));
         if (up) {
             const cur = winData.currentNode;
             up.disabled = !cur || cur.id === ALL_ROOT_ID;
@@ -2054,8 +2282,15 @@
         });
     }
 
+    /**
+     * @param {BookmarkNode} node
+     * @param {BookmarkNode} parentNode
+     * @param {{navigateTo?: (folder: BookmarkNode) => void}} [options]
+     * @returns {IconEl}
+     */
     function createFolderItem(node, parentNode, options) {
         options = options || {};
+        /** @type {IconEl} */
         const div = document.createElement("div");
         div.className = "folder-item";
         div.dataset.bookmarkId = String(node.id || "");
@@ -2072,10 +2307,15 @@
         } else {
             const favUrl = getFaviconUrl(node.url);
             if (favUrl) {
-                img.src = favUrl;
                 img.onerror = () => {
                     img.src = drawPageIcon();
                 };
+                img.src = favUrl;
+                faviconDataUrl(favUrl, currentIconSize())
+                    .then((clean) => {
+                        img.src = clean;
+                    })
+                    .catch(() => {});
             } else {
                 img.src = drawPageIcon();
             }
@@ -2106,7 +2346,7 @@
             if (isSingleClickMode()) {
                 const prev = Number(div.dataset.lastClick || 0);
                 const now = Date.now();
-                div.dataset.lastClick = now;
+                div.dataset.lastClick = String(now);
                 if (now - prev < CLICK_DEBOUNCE_MS) return; // part of a double-click
                 openItem();
             } else {
@@ -2326,6 +2566,7 @@
 
     /** Make the empty area of a folder window a drop zone that appends the
         dragged node to the folder currently displayed in that window. */
+    /** @param {HTMLElement & { _dropWired?: boolean }} fc @param {WinData} winData */
     function wireFolderBackgroundDrop(fc, winData) {
         if (fc._dropWired) return;
         fc._dropWired = true;
@@ -2350,7 +2591,7 @@
 
         fc.addEventListener("dragleave", (e) => {
             // Ignore transitions onto child items inside the same container.
-            if (!fc.contains(e.relatedTarget)) {
+            if (!fc.contains(/** @type {Node | null} */ (e.relatedTarget))) {
                 fc.classList.remove("drop-append");
             }
         });
@@ -2572,6 +2813,7 @@
      ============================================================ */
 
     function openDialog(opts) {
+        /** @type {HTMLDivElement & { okButton?: HTMLButtonElement }} */
         const body = document.createElement("div");
         body.className = "win98-dialog";
         if (opts.body instanceof HTMLElement) body.appendChild(opts.body);
@@ -2590,7 +2832,7 @@
             content: "",
             statusbar: false,
             onCreated: (el) => {
-                const ce = el.querySelector(".win98-window-content");
+                const ce = /** @type {HTMLElement} */ (el.querySelector(".win98-window-content"));
                 ce.classList.add("win98-dialog-container");
                 ce.style.background = "var(--win98-silver)";
                 // Buttons go directly into ce (outside the scrollable body)
@@ -2605,12 +2847,22 @@
                         if (b.close !== false) closeWindow(winData.id);
                     });
                     btnRow.appendChild(btn);
-                    if (i === 0) body.okButton = btn;
+                    // Expose the first button as the dialog's OK button so
+                    // prompt dialogs can trigger it from the keyboard (Enter).
+                    if (i === 0) {
+                        body.okButton = btn;
+                    }
                 });
                 ce.appendChild(body);
                 ce.appendChild(btnRow);
             },
         });
+
+        // NOTE: `winData` must NOT be referenced inside onCreated above — it is
+        // called synchronously from createWindow, before the const initializes
+        // (temporal dead zone) → ReferenceError → dialog renders titlebar-only.
+        // Also mirror the OK button onto winData for the Enter handler below.
+        winData.okButton = body.okButton;
 
         // Win98 dialogs size to their content — no empty space, no needless
         // scrollbars. Cap at the viewport so small screens still work, and
@@ -2642,11 +2894,11 @@
         if (!winData) return;
         if (
             e.key === "Enter" &&
-            !e.target.closest("input,textarea,select,button")
+            !eventTargetElement(e).closest("input,textarea,select,button")
         ) {
             e.preventDefault();
-            const ok = winData.el.querySelector(
-                ".win98-dialog-buttons .win98-btn",
+            const ok = /** @type {HTMLButtonElement} */ (
+                winData.el.querySelector(".win98-dialog-buttons .win98-btn")
             );
             if (ok) ok.click();
         } else if (e.key === "Escape") {
@@ -2724,7 +2976,7 @@
         input.addEventListener("keydown", (e) => {
             if (e.key === "Enter") {
                 e.preventDefault();
-                if (body.okButton) body.okButton.click();
+                if (winData.okButton) winData.okButton.click();
             } else if (e.key === "Escape") {
                 e.preventDefault();
                 closeWindow(winData.id);
@@ -2862,7 +3114,7 @@
             statusbar: true,
             statusText: "Найдено: 0",
             onCreated: (el, winData) => {
-                const ce = el.querySelector(".win98-window-content");
+                const ce = /** @type {HTMLElement} */ (el.querySelector(".win98-window-content"));
                 ce.style.background = "var(--win98-silver)";
                 const ui = buildSearchUI(winData);
                 ce.appendChild(ui);
@@ -2872,8 +3124,9 @@
         });
     }
 
+    /** @param {WinData} winData @returns {SearchUI} */
     function buildSearchUI(winData) {
-        const wrap = document.createElement("div");
+        const wrap = /** @type {SearchUI} */ (document.createElement("div"));
         wrap.className = "search-wrap";
 
         const row = document.createElement("div");
@@ -2953,11 +3206,19 @@
                     );
                 } else {
                     const fav = getFaviconUrl(n.url);
-                    img.src = fav || drawPageIcon(24);
-                    if (fav)
-                        img.onerror = () => {
-                            img.src = drawPageIcon(24);
-                        };
+                    img.onerror = () => {
+                        img.src = drawPageIcon(24);
+                    };
+                    if (fav) {
+                        img.src = fav;
+                        faviconDataUrl(fav, 24)
+                            .then((clean) => {
+                                img.src = clean;
+                            })
+                            .catch(() => {});
+                    } else {
+                        img.src = drawPageIcon(24);
+                    }
                 }
                 const text = document.createElement("div");
                 text.className = "search-result-text";
@@ -3021,6 +3282,7 @@
         });
 
         renderList("");
+        // Expando hooks consumed by refreshSearchWindow() / the window onCreated
         wrap.filter = () => renderList(input.value);
         wrap.input = input;
         return wrap;
@@ -3138,7 +3400,8 @@
             content: "",
             statusbar: false,
             onCreated: (el, winData) => {
-                el.querySelector(".win98-window-content").style.background =
+                /** @type {HTMLElement} */
+                (el.querySelector(".win98-window-content")).style.background =
                     "var(--win98-silver)";
                 renderCalendar(winData);
             },
@@ -3257,7 +3520,7 @@
 
     // Desktop right-click
     $desktop.addEventListener("contextmenu", (e) => {
-        if (e.target.closest(".desktop-icon")) return;
+        if (eventTargetElement(e).closest(".desktop-icon")) return;
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
             { label: "Обновить", action: () => refreshAllBookmarks() },
@@ -3385,7 +3648,9 @@
 
     /* ---------- Start menu: «Программы» flyout ---------- */
     const $menuPrograms = document.getElementById("menu-programs");
-    const $menuProgramsImg = document.getElementById("menu-programs-img");
+    const $menuProgramsImg = /** @type {HTMLImageElement | null} */ (
+        document.getElementById("menu-programs-img")
+    );
     const $flyout = document.getElementById("start-menu-flyout");
     if ($menuProgramsImg) {
         // Orange folder icon = the classic Win98 «Программы» icon
@@ -3413,9 +3678,12 @@
         $flyout.addEventListener("mouseenter", showFlyout);
         $flyout.addEventListener("mouseleave", hideFlyoutDelayed);
         $flyout.addEventListener("click", (e) => {
-            const item = e.target.closest(".start-menu-flyout-item");
+            const item = /** @type {HTMLElement | null} */ (
+                eventTargetElement(e).closest(".start-menu-flyout-item")
+            );
             if (!item || !item.dataset.action) return;
             closeStartMenu();
+            /** @type {Record<string, () => void>} */
             const actionMap = {
                 notepad: openNotepad,
                 calculator: openCalculator,
@@ -3428,7 +3696,7 @@
 
     /* ---------- Taskbar right-click menu ---------- */
     $taskbar.addEventListener("contextmenu", (e) => {
-        if (e.target.closest("#start-btn")) return;
+        if (eventTargetElement(e).closest("#start-btn")) return;
         e.preventDefault();
         const visible = state.windows.filter((w) => !w.minimized);
         showContextMenu(e.clientX, e.clientY, [
@@ -3563,7 +3831,7 @@
 
     function selectIconsInRect(rect) {
         deselectAllDesktopIcons();
-        $desktopIcons.querySelectorAll(".desktop-icon").forEach((icon) => {
+        $desktopIcons.querySelectorAll(".desktop-icon").forEach((/** @type {IconEl} */ icon) => {
             if (!icon._node) return;
             const r = icon.getBoundingClientRect();
             if (
@@ -3609,8 +3877,8 @@
 
     $desktop.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
-        if (e.target.closest(".desktop-icon")) return;
-        if (e.target.closest(".win98-window")) return;
+        if (eventTargetElement(e).closest(".desktop-icon")) return;
+        if (eventTargetElement(e).closest(".win98-window")) return;
         marqueeStart = { x: e.clientX, y: e.clientY };
         document.addEventListener("mousemove", onMarqueeMove);
         document.addEventListener("mouseup", onMarqueeUp);
@@ -3619,12 +3887,12 @@
     // Close menus on outside click
     document.addEventListener("click", (e) => {
         if (
-            !e.target.closest("#start-menu") &&
-            !e.target.closest("#start-btn")
+            !eventTargetElement(e).closest("#start-menu") &&
+            !eventTargetElement(e).closest("#start-btn")
         ) {
             closeStartMenu();
         }
-        if (!e.target.closest(".win98-context-menu")) {
+        if (!eventTargetElement(e).closest(".win98-context-menu")) {
             hideContextMenu();
         }
     });
@@ -3825,6 +4093,7 @@
      SETTINGS (storage + wallpaper + click mode)
      ============================================================ */
 
+    /** @param {Partial<Settings> | null} partial @returns {Settings} */
     function mergeSettings(partial) {
         const base = structuredClone(DEFAULT_SETTINGS);
         if (!partial) return base;
@@ -4053,7 +4322,9 @@
             statusbar: false,
             onCreated: (el, winData) => {
                 settingsWinId = winData.id;
-                const contentEl = el.querySelector(".win98-window-content");
+                const contentEl = /** @type {HTMLElement} */ (
+                    el.querySelector(".win98-window-content")
+                );
                 contentEl.style.background = "var(--win98-silver)";
                 contentEl.appendChild(
                     buildSettingsForm(pending, () => settingsWinId),
@@ -4115,12 +4386,12 @@
         function selectTab(id) {
             tabBar
                 .querySelectorAll(".win98-tab")
-                .forEach((b) =>
+                .forEach((/** @type {HTMLElement} */ b) =>
                     b.classList.toggle("active", b.dataset.tab === id),
                 );
             panels
                 .querySelectorAll(".win98-tabpanel")
-                .forEach((p) =>
+                .forEach((/** @type {HTMLElement} */ p) =>
                     p.classList.toggle("active", p.dataset.tabPanel === id),
                 );
         }
@@ -5067,7 +5338,9 @@
         };
 
         el.querySelector(".calc-keys").addEventListener("click", (e) => {
-            const btn = e.target.closest("button[data-key]");
+            const btn = /** @type {HTMLElement | null} */ (
+                eventTargetElement(e).closest("button[data-key]")
+            );
             if (!btn) return;
             calcInput(calc, btn.dataset.key);
             render();
