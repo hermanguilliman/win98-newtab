@@ -980,8 +980,8 @@ body {
     box-shadow: inset 1px 1px 0 var(--win98-black);
     background: var(--win98-white);
     color: var(--win98-black);
-    font-family: "Courier New", monospace;
-    font-size: 13px;
+    font-family: "Lucida Console", "Courier New", monospace;
+    font-size: 14px;
     line-height: 1.35;
     padding: 4px;
     resize: none;
