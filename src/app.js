@@ -18,6 +18,7 @@ import {
 import { THEME_OPTIONS, CUSTOM_THEME_KEYS, shadeColor, themeColorsFor, themeResetKeys } from "./lib/theme";
 import { DEFAULT_SETTINGS, mergeSettings, ICON_SIZES, FOLDER_STYLES, UI_FONTS } from "./lib/settings";
 import { buildSearchIndex, filterSearchNodes } from "./lib/search";
+import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
 
 /* ============================================================
    Types (JSDoc — checked by `tsc --noEmit`, see tsconfig.json)
@@ -52,8 +53,9 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
      * @property {number} [_savedIndex]
      */
 
-    /** Desktop icon / folder item div carrying its bookmark node. */
-    /** @typedef {HTMLDivElement & { _node?: BookmarkNode }} IconEl */
+    /** Desktop icon / folder item div. The bookmark node lives in the iconNodes
+        WeakMap (src/lib/iconNodes.ts) — never as an expando on the element. */
+    /** @typedef {HTMLDivElement} IconEl */
 
     /** Search window UI (div + its expando fields). */
     /** @typedef {HTMLDivElement & { filter: () => void, input: HTMLInputElement }} SearchUI */
@@ -1834,7 +1836,7 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
 
         // Event handling is delegated on $desktopIcons (see init) — listeners are
         // attached once on the container rather than once per icon.
-        div._node = node;
+        setNodeForIcon(div, node);
         return div;
     }
 
@@ -1853,7 +1855,7 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
         $desktopIcons.addEventListener("click", (e) => {
             const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
             if (!div) return;
-            const node = div._node;
+            const node = getNodeForIcon(div);
             if (!node) return;
             if (isSingleClickMode()) {
                 const prev = Number(div.dataset.lastClick || 0);
@@ -1868,27 +1870,33 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
 
         $desktopIcons.addEventListener("dblclick", (e) => {
             const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
-            if (!div || !div._node) return;
-            if (!isSingleClickMode()) openNode(div._node);
+            if (!div) return;
+            const node = getNodeForIcon(div);
+            if (!node) return;
+            if (!isSingleClickMode()) openNode(node);
         });
 
         // Middle mouse button → open bookmark in a background tab
         $desktopIcons.addEventListener("auxclick", (e) => {
             const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
-            if (!div || !div._node) return;
-            handleAuxClick(e, div._node);
+            if (!div) return;
+            const node = getNodeForIcon(div);
+            if (!node) return;
+            handleAuxClick(e, node);
         });
 
         // Right-click context menu
         $desktopIcons.addEventListener("contextmenu", (e) => {
             const div = /** @type {IconEl | null} */ (eventTargetElement(e).closest(".desktop-icon"));
-            if (!div || !div._node) return;
+            if (!div) return;
+            const node = getNodeForIcon(div);
+            if (!node) return;
             e.preventDefault();
             selectDesktopIcon(div);
             showContextMenu(
                 e.clientX,
                 e.clientY,
-                buildNodeContextMenuItems(div._node),
+                buildNodeContextMenuItems(node),
             );
         });
     }
@@ -2361,7 +2369,6 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
             moveBookmarkTo(drag.id, node.parentId, idx);
         });
 
-        div._node = node;
         return div;
     }
 
@@ -3672,7 +3679,7 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
     function selectIconsInRect(rect) {
         deselectAllDesktopIcons();
         $desktopIcons.querySelectorAll(".desktop-icon").forEach((/** @type {IconEl} */ icon) => {
-            if (!icon._node) return;
+            if (!getNodeForIcon(icon)) return;
             const r = icon.getBoundingClientRect();
             if (
                 r.right < rect.left ||
@@ -3802,20 +3809,21 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
             e.preventDefault();
             return;
         }
-        if (e.key === "Enter" && sel && sel._node) {
+        const node = sel ? getNodeForIcon(sel) : undefined;
+        if (e.key === "Enter" && node) {
             e.preventDefault();
-            openNode(sel._node);
+            openNode(node);
             return;
         }
         // Alt+Enter — «Свойства» выделенного ярлыка
-        if (e.altKey && e.key === "Enter" && sel && sel._node) {
+        if (e.altKey && e.key === "Enter" && node) {
             e.preventDefault();
-            openProperties(sel._node);
+            openProperties(node);
             return;
         }
-        if ((e.key === "Delete" || e.key === "Del") && sel && sel._node) {
+        if ((e.key === "Delete" || e.key === "Del") && node) {
             e.preventDefault();
-            deleteNode(sel._node);
+            deleteNode(node);
             return;
         }
         if (
@@ -3824,12 +3832,11 @@ import { buildSearchIndex, filterSearchNodes } from "./lib/search";
                 e.key === "C" ||
                 e.key === "с" ||
                 e.key === "С") &&
-            sel &&
-            sel._node &&
-            sel._node.url
+            node &&
+            node.url
         ) {
-            copyText(sel._node.url);
-            state.clipUrl = sel._node.url;
+            copyText(node.url);
+            state.clipUrl = node.url;
         }
     });
 

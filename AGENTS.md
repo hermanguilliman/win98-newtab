@@ -16,14 +16,14 @@ Source layout:
 - **Everything at once**: `npm run verify` (typecheck + test + build + `node --check`).
 - Validate JSON with `ConvertFrom-Json` / `JSON.parse`.
 - The extension only runs inside the new-tab context; testing navigation/opening behaviors requires bookmark permission to be granted.
-- `newtab.html` loads `win98.css` and `newtab.js` with matching `?v=NN` query params (currently `v=54`). When you change either file, bump BOTH to the next integer, otherwise the new-tab page may serve stale cached assets. Comment-only edits in `src/` don't need a bump; runtime-affecting edits do.
+- **Cache busting is automatic**: after bundling, `scripts/build.mjs` injects short SHA-256 hashes of `win98.css` and `newtab.js` into `newtab.html` as `?v=<hash>` query params. You never bump versions by hand — any runtime-affecting change gets a fresh hash on the next build (and both params only change when their own file changed). Commit the built `newtab.html` together with the bundle so the unpacked extension is self-contained.
 
 ## Type definitions (JSDoc, at the top of `src/app.js`)
 
 - `BookmarkNode` = `import("./lib/bookmarks").BookmarkNode` (structural subset of `chrome.bookmarks.BookmarkTreeNode`; also covers the synthetic «Все закладки» node).
 - `Settings` / `WallpaperSettings` — `import("./lib/settings")`; `mergeSettings()` returns `Settings`, `DEFAULT_SETTINGS` is typed `Settings`.
 - `WinData` — one open window; `el`, `currentNode`, `navStack`, `searchFilter`, `okButton` (`_savedIndex` etc.) are optional expandos. `okButton` is set by `openDialog` on the FIRST dialog button and used by `openPromptDialog`'s Enter handler.
-- `IconEl` = `HTMLDivElement & { _node?: BookmarkNode }` — desktop icons and folder items carry the node; cast `closest(".desktop-icon")` results to it.
+- `IconEl` = `HTMLDivElement` — desktop icons and folder items; the bookmark node is NOT stored on the element, it lives in the `iconNodes` module's `WeakMap` (`setNodeForIcon`/`getNodeForIcon`; cast `closest(".desktop-icon")` results to it and call `getNodeForIcon(div)`).
 - `SearchUI` = search-window wrap div with `filter`/`input` expandos; `SearchNode` = `import("./lib/search")` — index entry with `_tl`/`_ul`/`_pl`/`isFolder`/`path`.
 - `state` fields are annotated inline (windows/settings/treeRoot/searchNodes/nodeIndex/selectedDesktopEl). `nodeIndex` is a **Map** (`Map<string, BookmarkNode>`), not an object.
 - `eventTargetElement(e)` — helper for the `e.target.closest(...)` pattern (TS types `EventTarget` without `closest`); use it for new listeners instead of reaching for `e.target.closest` directly.
@@ -35,6 +35,7 @@ Source layout:
 - `theme.ts` — `THEME_OPTIONS`, `THEME_COLORS`, `CUSTOM_THEME_KEYS`, `shadeColor`, and the palettes resolver `themeColorsFor(themeId, customColors)` + reset set `themeResetKeys()`.
 - `settings.ts` — `Settings` shape, `DEFAULT_SETTINGS`, choice lists (`ICON_SIZES`/`FOLDER_STYLES`/`UI_FONTS` — also used by the settings form) and the whitelist `mergeSettings()`.
 - `search.ts` — `SearchNode`, `buildSearchIndex(tree)`, `scoreNode`, `filterSearchNodes(nodes, filter, limit)` (ranking + trim; used by the search window's live filter).
+- `iconNodes.ts` — `setNodeForIcon(el, node)` / `getNodeForIcon(el)`; a `WeakMap<Element, BookmarkNode>` that keeps the bookmark node off the DOM element (no expandos). Desktop icons (`createDesktopIcon`) and folder items (`createFolderItem`) are registered here; delegated handlers, marquee selection and keyboard navigation read back via `getNodeForIcon`. Callers cast `closest(...)` results to `IconEl` first.
 
 When moving more logic out of `app.js` into `src/lib`, keep it free of `chrome.*`/DOM and add tests in `tests/`; the strict pass (tsconfig.lib.json) will enforce it.
 

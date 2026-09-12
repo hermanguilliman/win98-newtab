@@ -358,6 +358,15 @@
     return list.slice(0, limit);
   }
 
+  // src/lib/iconNodes.ts
+  var iconNodes = /* @__PURE__ */ new WeakMap();
+  function setNodeForIcon(el, node) {
+    if (el) iconNodes.set(el, node);
+  }
+  function getNodeForIcon(el) {
+    return el && iconNodes.get(el) || void 0;
+  }
+
   // src/app.js
   function eventTargetElement(e) {
     return e.target instanceof Element ? e.target : null;
@@ -1712,7 +1721,7 @@
     label.textContent = node.title || node.url || "Без названия";
     div.appendChild(img);
     div.appendChild(label);
-    div._node = node;
+    setNodeForIcon(div, node);
     return div;
   }
   function selectDesktopIcon(el) {
@@ -1728,7 +1737,7 @@
         eventTargetElement(e).closest(".desktop-icon")
       );
       if (!div) return;
-      const node = div._node;
+      const node = getNodeForIcon(div);
       if (!node) return;
       if (isSingleClickMode()) {
         const prev = Number(div.dataset.lastClick || 0);
@@ -1745,29 +1754,35 @@
         /** @type {IconEl | null} */
         eventTargetElement(e).closest(".desktop-icon")
       );
-      if (!div || !div._node) return;
-      if (!isSingleClickMode()) openNode(div._node);
+      if (!div) return;
+      const node = getNodeForIcon(div);
+      if (!node) return;
+      if (!isSingleClickMode()) openNode(node);
     });
     $desktopIcons.addEventListener("auxclick", (e) => {
       const div = (
         /** @type {IconEl | null} */
         eventTargetElement(e).closest(".desktop-icon")
       );
-      if (!div || !div._node) return;
-      handleAuxClick(e, div._node);
+      if (!div) return;
+      const node = getNodeForIcon(div);
+      if (!node) return;
+      handleAuxClick(e, node);
     });
     $desktopIcons.addEventListener("contextmenu", (e) => {
       const div = (
         /** @type {IconEl | null} */
         eventTargetElement(e).closest(".desktop-icon")
       );
-      if (!div || !div._node) return;
+      if (!div) return;
+      const node = getNodeForIcon(div);
+      if (!node) return;
       e.preventDefault();
       selectDesktopIcon(div);
       showContextMenu(
         e.clientX,
         e.clientY,
-        buildNodeContextMenuItems(div._node)
+        buildNodeContextMenuItems(node)
       );
     });
   }
@@ -2135,7 +2150,6 @@
       if (idx < 0) return;
       moveBookmarkTo(drag.id, node.parentId, idx);
     });
-    div._node = node;
     return div;
   }
   function clearDropTargets() {
@@ -3215,7 +3229,7 @@
   function selectIconsInRect(rect) {
     deselectAllDesktopIcons();
     $desktopIcons.querySelectorAll(".desktop-icon").forEach((icon) => {
-      if (!icon._node) return;
+      if (!getNodeForIcon(icon)) return;
       const r = icon.getBoundingClientRect();
       if (r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom) {
         return;
@@ -3305,24 +3319,25 @@
       e.preventDefault();
       return;
     }
-    if (e.key === "Enter" && sel && sel._node) {
+    const node = sel ? getNodeForIcon(sel) : void 0;
+    if (e.key === "Enter" && node) {
       e.preventDefault();
-      openNode(sel._node);
+      openNode(node);
       return;
     }
-    if (e.altKey && e.key === "Enter" && sel && sel._node) {
+    if (e.altKey && e.key === "Enter" && node) {
       e.preventDefault();
-      openProperties(sel._node);
+      openProperties(node);
       return;
     }
-    if ((e.key === "Delete" || e.key === "Del") && sel && sel._node) {
+    if ((e.key === "Delete" || e.key === "Del") && node) {
       e.preventDefault();
-      deleteNode(sel._node);
+      deleteNode(node);
       return;
     }
-    if (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") && sel && sel._node && sel._node.url) {
-      copyText(sel._node.url);
-      state.clipUrl = sel._node.url;
+    if (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") && node && node.url) {
+      copyText(node.url);
+      state.clipUrl = node.url;
     }
   });
   function openAllBookmarksWindow() {
