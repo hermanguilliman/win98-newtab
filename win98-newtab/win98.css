@@ -591,6 +591,31 @@ body {
     white-space: nowrap;
 }
 
+/* ---------- «Show desktop» strip (far right, like modern OS) ----------
+   A thin vertical strip with no icon: click minimizes all windows,
+   click again restores the ones that were open. */
+#show-desktop-btn {
+    align-self: stretch;
+    width: 5px;
+    margin-left: 2px;
+    padding: 0;
+    border: none;
+    border-left: 1px solid var(--win98-dark-gray);
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+#show-desktop-btn:hover {
+    background: var(--win98-hover);
+}
+
+/* Desktop is shown: all windows are hidden */
+#show-desktop-btn.active {
+    background: var(--win98-hover);
+    box-shadow: inset 1px 1px 0 var(--win98-dark-gray);
+}
+
 /* ---------- System Tray ---------- */
 #system-tray {
     display: flex;

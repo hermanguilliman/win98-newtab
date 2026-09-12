@@ -1052,11 +1052,49 @@
                 bringToFront(id);
             }
         });
+        // Right-click a taskbar button → per-window menu + generic panel actions
+        tbBtn.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // don't show the generic taskbar menu separately
+            const visible = state.windows.filter((w) => !w.minimized);
+            const items = [];
+            if (winData.minimized) {
+                items.push({
+                    label: "Восстановить",
+                    action: () => restoreWindow(id),
+                });
+            } else {
+                items.push({
+                    label: "Свернуть",
+                    action: () => minimizeWindow(id),
+                });
+            }
+            items.push({ label: "Закрыть", action: () => closeWindow(id) });
+            items.push({ type: "separator" });
+            items.push({
+                label: "Каскад окон",
+                disabled: visible.length === 0,
+                action: () => cascadeWindows(visible),
+            });
+            items.push({
+                label: "Стопкой",
+                disabled: visible.length === 0,
+                action: () => tileWindows(visible),
+            });
+            items.push({ type: "separator" });
+            items.push({
+                label: "Свойства панели задач",
+                action: openTaskbarProperties,
+            });
+            showContextMenu(e.clientX, e.clientY, items);
+        });
         $taskbarWindows.appendChild(tbBtn);
 
         bringToFront(id);
 
         if (opts.onCreated) opts.onCreated(el, winData);
+
+        scheduleWindowStateSave();
 
         return winData;
     }
@@ -1166,6 +1204,7 @@
             if (winData.minimized) winData.el.style.display = "none";
         });
         updateTaskbarButtons();
+        scheduleWindowStateSave();
     }
 
     function restoreWindow(id) {
@@ -1177,6 +1216,7 @@
         animateWindowFromButton(winData.el, btn);
         bringToFront(id);
         updateTaskbarButtons();
+        scheduleWindowStateSave();
     }
 
     function toggleMaximize(id) {
@@ -1203,6 +1243,7 @@
             winData.el.classList.add("maximized");
             winData.maximized = true;
         }
+        scheduleWindowStateSave();
     }
 
     function closeWindow(id) {
@@ -1231,6 +1272,8 @@
             const visible = state.windows.filter((w) => !w.minimized);
             if (visible.length) bringToFront(visible[visible.length - 1].id);
         }
+
+        scheduleWindowStateSave();
     }
 
     function updateTaskbarButtons() {
@@ -1244,6 +1287,194 @@
                 }
             }
         });
+    }
+
+    /* ============================================================
+     WINDOW STATE PERSISTENCE
+     (remember open windows so a tab reload can restore them)
+     ============================================================ */
+
+    const STORAGE_WINDOWS_KEY = "openWindows";
+
+    /** Serialize the current open windows into storage-friendly descriptors.
+        Settings windows and dialogs are transient — never persisted. */
+    function collectWindowState() {
+        return state.windows
+            .filter((w) => !w.dialog && w.title !== "Настройки")
+            .map((w) => {
+                const d = {
+                    winType: w.winType || null,
+                    title: w.title || "",
+                    bookmarkId: w.bookmarkId || null,
+                    x: parseInt(w.el.style.left) || 0,
+                    y: parseInt(w.el.style.top) || 0,
+                    w: parseInt(w.el.style.width) || w.w || 400,
+                    h: parseInt(w.el.style.height) || w.h || 300,
+                    minimized: !!w.minimized,
+                    maximized: !!w.maximized,
+                };
+                // Folder windows keep their «Назад» history across a reload
+                if (!w.winType && w.bookmarkId) {
+                    d.navStackIds = (w.navStack || [])
+                        .map((n) => (n && n.id) || null)
+                        .filter((v) => v !== null);
+                }
+                return d;
+            });
+    }
+
+    let windowStateSaveTimer = null;
+    /** Debounced write of the open-window layout to chrome.storage.local */
+    function scheduleWindowStateSave() {
+        clearTimeout(windowStateSaveTimer);
+        windowStateSaveTimer = setTimeout(() => {
+            const activeIndex = state.windows.findIndex(
+                (w) => w.id === state.activeWindowId,
+            );
+            chrome.storage.local
+                .set({
+                    [STORAGE_WINDOWS_KEY]: {
+                        windows: collectWindowState(),
+                        activeIndex,
+                    },
+                })
+                .catch(() => {});
+        }, 400);
+    }
+
+    /** The window created by the most recent open* call (used by the restore path) */
+    function lastCreatedWindow() {
+        return state.windows[state.windows.length - 1] || null;
+    }
+
+    /** Re-apply saved geometry and minimized/maximized state to a fresh window */
+    function applySavedWindowState(win, d) {
+        if (!win || !d) return;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const x = clampInt(d.x, 0, Math.max(0, vw - 40)) ?? win.x ?? 0;
+        const y = clampInt(d.y, 0, Math.max(0, vh - 60)) ?? win.y ?? 0;
+        const w = clampInt(d.w, 120, vw) ?? win.w ?? 400;
+        const h = clampInt(d.h, 80, vh - 40) ?? win.h ?? 300;
+        win.el.style.left = x + "px";
+        win.el.style.top = y + "px";
+        win.el.style.width = w + "px";
+        win.el.style.height = h + "px";
+        win.x = x;
+        win.y = y;
+        win.w = w;
+        win.h = h;
+        if (d.maximized) {
+            win.prevBounds = { x, y, w, h };
+            win.el.classList.add("maximized");
+            win.maximized = true;
+        }
+        if (d.minimized) {
+            win.minimized = true;
+            win.el.style.display = "none";
+        }
+    }
+
+    /** Resolve a persisted node id back to a live node (synthetic root included) */
+    function resolveSavedNodeId(id) {
+        if (id === ALL_ROOT_ID) return buildAllBookmarksNode(state.treeRoot);
+        return findNodeById(state.treeRoot, id) || null;
+    }
+
+    /** Restore a saved folder window; returns the window or null (folder deleted) */
+    function restoreFolderWindowFromSaved(d) {
+        let node = null;
+        if (d.bookmarkId === ALL_ROOT_ID) {
+            node = buildAllBookmarksNode(state.treeRoot);
+        } else if (d.bookmarkId) {
+            node = findNodeById(state.treeRoot, d.bookmarkId);
+        }
+        if (!node) return null;
+        if (node.id !== ALL_ROOT_ID && !isFolderNode(node)) return null;
+        openFolderWindow(node);
+        const win = lastCreatedWindow();
+        if (!win) return null;
+        applySavedWindowState(win, d);
+        // Repopulate «Назад» from the saved ids, dropping any deleted folders
+        win.navStack = (d.navStackIds || [])
+            .map(resolveSavedNodeId)
+            .filter(Boolean);
+        updateNavButtons(win);
+        return win;
+    }
+
+    /** Recreate every window that was open before the tab reloaded */
+    async function restoreSavedWindows() {
+        let stored = null;
+        try {
+            stored = await chrome.storage.local.get(STORAGE_WINDOWS_KEY);
+        } catch {
+            return;
+        }
+        const data = stored && stored[STORAGE_WINDOWS_KEY];
+        if (!data || !Array.isArray(data.windows) || data.windows.length === 0) {
+            return;
+        }
+
+        // Windows are single-instance by nature (folder id / winType / search
+        // title); drop duplicate saved entries so a skip never misapplies state.
+        const seen = new Set();
+        const list = data.windows.filter((d) => {
+            const key = d.bookmarkId
+                ? "b:" + d.bookmarkId
+                : d.winType
+                  ? "t:" + d.winType
+                  : d.title === "Поиск"
+                    ? "search"
+                    : "o:" + d.title;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+        for (const [i, d] of list.entries()) {
+            let win = null;
+            if (d.winType === "all-bookmarks") {
+                win = await openAllBookmarksWindow();
+                applySavedWindowState(win, d);
+            } else if (d.winType === "notepad") {
+                openNotepad();
+                win = lastCreatedWindow();
+                applySavedWindowState(win, d);
+            } else if (d.winType === "calculator") {
+                openCalculator();
+                win = lastCreatedWindow();
+                applySavedWindowState(win, d);
+            } else if (d.winType === "weather") {
+                openWeatherWindow();
+                win = lastCreatedWindow();
+                applySavedWindowState(win, d);
+            } else if (d.winType === "calendar") {
+                openCalendar();
+                win = lastCreatedWindow();
+                applySavedWindowState(win, d);
+            } else if (!d.winType && d.title === "Поиск") {
+                openSearchWindow();
+                win = lastCreatedWindow();
+                applySavedWindowState(win, d);
+            } else if (!d.winType && d.bookmarkId) {
+                win = restoreFolderWindowFromSaved(d);
+            }
+            if (win) win._savedIndex = i;
+        }
+
+        // Re-apply the previously active window and sync taskbar highlight
+        const target = state.windows.find(
+            (w) => w._savedIndex === data.activeIndex,
+        );
+        const visible = state.windows.filter((w) => !w.minimized);
+        if (target && !target.minimized) {
+            bringToFront(target.id);
+        } else if (visible.length) {
+            bringToFront(visible[visible.length - 1].id);
+        }
+        updateTaskbarButtons();
+        scheduleWindowStateSave();
     }
 
     /* ============================================================
@@ -1286,6 +1517,7 @@
         state.dragState = null;
         document.removeEventListener("mousemove", onDragMove);
         document.removeEventListener("mouseup", onDragEnd);
+        scheduleWindowStateSave();
     }
 
     function startResize(e, winData) {
@@ -1323,6 +1555,7 @@
         state.resizeState = null;
         document.removeEventListener("mousemove", onResizeMove);
         document.removeEventListener("mouseup", onResizeEnd);
+        scheduleWindowStateSave();
     }
 
     /* ============================================================
@@ -1705,6 +1938,7 @@
         winData.bookmarkId = target.id;
         renderFolderContent(winData, target);
         updateNavButtons(winData);
+        scheduleWindowStateSave();
     }
 
     function goBack(winData) {
@@ -3125,6 +3359,29 @@
     // Quick launch: notepad
     $launcherNotepad.addEventListener("click", () => openNotepad());
 
+    /* ---------- «Show desktop» strip: minimize all / restore all ---------- */
+    const $showDesktopBtn = document.getElementById("show-desktop-btn");
+    if ($showDesktopBtn) {
+        // Windows that were visible when the desktop was shown, to restore
+        let collapsedWindows = null;
+        $showDesktopBtn.addEventListener("click", () => {
+            const visible = state.windows.filter((w) => !w.minimized);
+            if (visible.length > 0) {
+                // First click: collapse everything
+                collapsedWindows = visible.map((w) => w.id);
+                visible.forEach((w) => minimizeWindow(w.id));
+                $showDesktopBtn.classList.add("active");
+                $showDesktopBtn.title = "Развернуть все окна";
+            } else if (collapsedWindows && collapsedWindows.length > 0) {
+                // Second click: restore what was visible before
+                collapsedWindows.forEach((id) => restoreWindow(id));
+                collapsedWindows = null;
+                $showDesktopBtn.classList.remove("active");
+                $showDesktopBtn.title = "Свернуть все окна";
+            }
+        });
+    }
+
     /* ---------- Start menu: «Программы» flyout ---------- */
     const $menuPrograms = document.getElementById("menu-programs");
     const $menuProgramsImg = document.getElementById("menu-programs-img");
@@ -3201,6 +3458,7 @@
             w.el.style.height = Math.min(320, window.innerHeight - 90) + "px";
             bringToFront(w.id);
         });
+        scheduleWindowStateSave();
     }
 
     /** Tile all visible windows across the desktop like Win98 «Стопкой» */
@@ -3221,6 +3479,7 @@
             w.el.style.height = hH + "px";
             bringToFront(w.id);
         });
+        scheduleWindowStateSave();
     }
 
     /** «Свойства панели задач» — classic Win98 checkboxes with real behavior */
@@ -3477,12 +3736,13 @@
         if (existing) {
             if (existing.minimized) restoreWindow(existing.id);
             else bringToFront(existing.id);
-            return;
+            return Promise.resolve(existing);
         }
 
-        chrome.bookmarks.getTree((tree) => {
-            state.treeRoot = tree[0];
-            state.nodeIndex = buildNodeIndex(tree[0]);
+        return new Promise((resolve) => {
+            chrome.bookmarks.getTree((tree) => {
+                state.treeRoot = tree[0];
+                state.nodeIndex = buildNodeIndex(tree[0]);
 
             const toolbarHtml = `
         <button class="win98-toolbar-btn" data-nav="back" disabled>
@@ -3499,7 +3759,7 @@
         </button>
       `;
 
-            createWindow({
+            const win = createWindow({
                 winType: "all-bookmarks",
                 title: "Все закладки",
                 icon: drawFolderIcon("#d4c044", true),
@@ -3554,6 +3814,8 @@
                             ),
                     );
                 },
+            });
+            resolve(win);
             });
         });
     }
@@ -4920,7 +5182,9 @@
         attachBookmarkListeners();
         attachNodeDragGlobals();
         updateWeather(); // reads cache + refreshes in the background right away
-        loadSettings().then(loadBookmarks);
+        loadSettings()
+            .then(loadBookmarks)
+            .then(() => restoreSavedWindows());
     }
 
     // Start
