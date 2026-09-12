@@ -34,6 +34,10 @@
     --win98-radio-edge2: #a0a0a0;
     --win98-radio-shadow: #e0e0e0;
     --win98-wp-preview: #008080;
+    /* Status message colors (settings window) — semantic, not part of the
+       3D chrome palette; themeable together with the rest via CSS vars. */
+    --win98-error: #800000;
+    --win98-success: #006000;
     /* Window content area background — separate from --win98-white so the
        High Contrast theme can use black windows while keeping bright 3D
        border highlights (border colors still read --win98-white). */
@@ -1520,11 +1524,11 @@ input[type="radio"]:disabled:checked::after {
 }
 
 .settings-error {
-    color: #800000;
+    color: var(--win98-error);
 }
 
 .settings-success {
-    color: #006000;
+    color: var(--win98-success);
 }
 
 /* ---------- О системе ---------- */
