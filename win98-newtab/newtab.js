@@ -43,6 +43,8 @@
      * @property {boolean} taskbarSmallIcons
      * @property {boolean} showClock
      * @property {WallpaperSettings} wallpaper
+     * @property {"classic"|"olive"|"high-contrast"|"custom"} theme
+     * @property {Object<string, string>} customColors
      */
 
     /**
@@ -134,6 +136,8 @@
         taskbarAutoHide: false,
         taskbarSmallIcons: false,
         showClock: true,
+        theme: "classic",
+        customColors: /** @type {Object<string, string>} */ ({}),
         wallpaper: {
             type: "color",
             color: "#008080",
@@ -756,6 +760,126 @@
         { id: "classic", label: "Классические" },
         { id: "glossy", label: "Объёмные" },
         { id: "outlined", label: "С контуром" },
+    ];
+
+    /* ---------- Appearance themes (Настройки → Вид → Тема) ----------
+       Each theme maps a set of --win98-* CSS variables to new values.
+       `classic` has no overrides — the default :root palette in win98.css
+       is used as-is. Custom colors (theme: "custom") are user-defined and
+       stored in Settings.customColors (validated against CUSTOM_THEME_KEYS). */
+
+    /**
+     * Theme radio options shown in the settings window.
+     * @type {{ id: string, label: string, desc: string }[]}
+     */
+    const THEME_OPTIONS = [
+        {
+            id: "classic",
+            label: "Классическая",
+            desc: "Стандартные серые цвета Windows 98",
+        },
+        {
+            id: "olive",
+            label: "Оливковая",
+            desc: "Тёплые зелёно-оливковые тона",
+        },
+        {
+            id: "high-contrast",
+            label: "Высокий контраст",
+            desc: "Чёрные окна, белый текст, синяя подсветка",
+        },
+        {
+            id: "dracula",
+            label: "Дракула",
+            desc: "Тёмная тема с фиолетовыми и зелёными акцентами",
+        },
+        { id: "custom", label: "Пользовательская", desc: "Свои цвета" },
+    ];
+
+    /**
+     * CSS variables overridden per theme. Keys in quotes so the object
+     * also serves as a "custom picker" definition list.
+     * @type {Object<string, Object<string, string>>}
+     */
+    const THEME_COLORS = {
+        olive: {
+            "--win98-silver": "#b5b5a1",
+            "--win98-btn-face": "#b5b5a1",
+            "--win98-hover": "#d5d5c1",
+            "--win98-inset-bg": "#d0d0b8",
+            "--win98-input-bg": "#fffff0",
+            "--win98-navy": "#404000",
+            "--win98-highlight": "#808000",
+            "--win98-shadow": "#505040",
+            "--win98-dark-gray": "#606050",
+            "--win98-radio-edge2": "#a0a090",
+            "--win98-wp-preview": "#408040",
+            "--win98-title-active": "linear-gradient(90deg, #404000, #808040)",
+            "--win98-title-inactive":
+                "linear-gradient(90deg, #808040, #a0a080)",
+        },
+        "high-contrast": {
+            "--win98-silver": "#000000",
+            "--win98-btn-face": "#000000",
+            "--win98-hover": "#000080",
+            "--win98-inset-bg": "#000000",
+            "--win98-input-bg": "#000000",
+            "--win98-content-bg": "#000000",
+            "--win98-navy": "#0000ff",
+            "--win98-highlight": "#0000ff",
+            "--win98-black": "#ffffff",
+            "--win98-shadow": "#808080",
+            "--win98-dark-gray": "#808080",
+            "--win98-radio-check": "#00ff00",
+            "--win98-radio-edge1": "#ffffff",
+            "--win98-radio-edge2": "#808080",
+            "--win98-radio-shadow": "#000000",
+            "--win98-wp-preview": "#000000",
+            "--win98-title-active": "linear-gradient(90deg, #000080, #0000ff)",
+            "--win98-title-inactive":
+                "linear-gradient(90deg, #808080, #808080)",
+        },
+        dracula: {
+            "--win98-silver": "#282a36",
+            "--win98-btn-face": "#44475a",
+            "--win98-hover": "#44475a",
+            "--win98-inset-bg": "#21222c",
+            "--win98-input-bg": "#191a21",
+            "--win98-content-bg": "#282a36",
+            "--win98-navy": "#bd93f9",
+            "--win98-highlight": "#ff79c6",
+            "--win98-black": "#f8f8f2",
+            "--win98-shadow": "#191a21",
+            "--win98-dark-gray": "#6272a4",
+            "--win98-radio-check": "#50fa7b",
+            "--win98-radio-edge1": "#f8f8f2",
+            "--win98-radio-edge2": "#6272a4",
+            "--win98-radio-shadow": "#191a21",
+            "--win98-wp-preview": "#282a36",
+            "--win98-title-active":
+                "linear-gradient(90deg, #44475a, #bd93f9)",
+            "--win98-title-inactive":
+                "linear-gradient(90deg, #282a36, #44475a)",
+        },
+    };
+
+    /**
+     * Color pickers exposed in the «Пользовательская» theme. `def` is the
+     * value the picker falls back to before the user touches anything.
+     * @type {{ css: string, label: string, def: string }[]}
+     */
+    const CUSTOM_THEME_KEYS = [
+        { css: "--win98-silver", label: "Цвет окон", def: "#c0c0c0" },
+        {
+            css: "--win98-content-bg",
+            label: "Фон содержимого окон",
+            def: "#ffffff",
+        },
+        { css: "--win98-btn-face", label: "Цвет кнопок", def: "#c0c0c0" },
+        { css: "--win98-navy", label: "Цвет выделения", def: "#000080" },
+        { css: "--win98-black", label: "Цвет текста", def: "#000000" },
+        { css: "--win98-highlight", label: "Цвет подсветки", def: "#0000aa" },
+        { css: "--win98-shadow", label: "Цвет теней", def: "#606060" },
     ];
 
     /** UI font choices (Настройки → Вид). `value` is the full CSS family stack. */
@@ -4147,6 +4271,20 @@
         if (typeof partial.showClock === "boolean") {
             base.showClock = partial.showClock;
         }
+        if (THEME_OPTIONS.some((t) => t.id === partial.theme)) {
+            base.theme = partial.theme;
+        }
+        if (partial.customColors && typeof partial.customColors === "object") {
+            /** @type {Object<string, string>} */
+            const colors = {};
+            CUSTOM_THEME_KEYS.forEach((k) => {
+                const v = partial.customColors[k.css];
+                if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) {
+                    colors[k.css] = v;
+                }
+            });
+            base.customColors = colors;
+        }
         if (partial.wallpaper) {
             const wp = partial.wallpaper;
             if (wp.type === "color" || wp.type === "image")
@@ -4177,8 +4315,50 @@
         updateClock();
     }
 
+    /**
+     * Apply the appearance theme (built-in palette or custom colors) as CSS
+     * variables on documentElement. Called from applyDesktopStyle() so live
+     * preview in the settings window updates the whole desktop in one go.
+     * @param {Settings} [src]
+     */
+    function applyTheme(src) {
+        const s = src || state.settings || DEFAULT_SETTINGS;
+        const el = document.documentElement;
+        const themeId = s.theme || DEFAULT_SETTINGS.theme;
+
+        // Reset any theme-applied variables first (classic = CSS defaults).
+        const allVars = new Set([
+            ...Object.keys(THEME_COLORS.olive),
+            ...Object.keys(THEME_COLORS["high-contrast"]),
+            ...CUSTOM_THEME_KEYS.map((k) => k.css),
+        ]);
+        allVars.forEach((name) => el.style.removeProperty(name));
+
+        let colors = null;
+        if (themeId === "custom") {
+            colors = s.customColors || {};
+            // Derive title bar gradients from the picked base colors so the
+            // whole chrome stays coherent when only the highlight changes.
+            const sel = colors["--win98-navy"] || "#000080";
+            const inactive = colors["--win98-shadow"] || "#808080";
+            colors = {
+                ...colors,
+                "--win98-title-active": `linear-gradient(90deg, ${sel}, ${shadeColor(sel, 35)})`,
+                "--win98-title-inactive": `linear-gradient(90deg, ${inactive}, ${shadeColor(inactive, 35)})`,
+            };
+        } else if (THEME_COLORS[themeId]) {
+            colors = THEME_COLORS[themeId];
+        }
+
+        if (!colors) return; // classic — defaults from win98.css :root
+        Object.entries(colors).forEach(([name, value]) => {
+            if (value) el.style.setProperty(name, value);
+        });
+    }
+
     /** Apply all desktop layout CSS variables (icon size, label size, spacing, padding) */
     function applyDesktopStyle(src) {
+        applyTheme(src);
         const s = src || state.settings || DEFAULT_SETTINGS;
         const el = document.documentElement;
         el.style.setProperty(
@@ -4431,6 +4611,78 @@
             refreshOpenFolderWindows(state.treeRoot); // restore saved view mode
             const id = getWinId();
             if (id) closeWindow(id);
+        };
+
+        /* ---------- Тема groupbox (appearance tab) ----------
+           Radio: Classic / Olive / High Contrast / Custom. Every change
+           applies live through `livePreview(settings)` (applyDesktopStyle),
+           and cancel() above reverts it via applyTheme(state.settings). */
+        const buildThemeGroup = (a, livePreview) => {
+            const box = document.createElement("div");
+            box.className = "win98-groupbox";
+            const legend = document.createElement("div");
+            legend.className = "win98-groupbox-legend";
+            legend.textContent = "Тема";
+            box.appendChild(legend);
+
+            // Custom-color pickers (visible only for theme "custom")
+            const customBox = document.createElement("div");
+            CUSTOM_THEME_KEYS.forEach((k) => {
+                const row = document.createElement("div");
+                row.className = "wp-style-row";
+                row.style.justifyContent = "space-between";
+                const cap = document.createElement("span");
+                cap.textContent = k.label;
+                const swatch = document.createElement("input");
+                swatch.type = "color";
+                swatch.className = "wp-color-picker";
+                swatch.value = a.customColors[k.css] || k.def;
+                swatch.addEventListener("input", () => {
+                    a.customColors = a.customColors || {};
+                    a.customColors[k.css] = swatch.value;
+                    livePreview(a);
+                });
+                row.append(cap, swatch);
+                customBox.appendChild(row);
+            });
+
+            const curTheme = THEME_OPTIONS.some((t) => t.id === a.theme)
+                ? a.theme
+                : DEFAULT_SETTINGS.theme;
+            customBox.style.display = curTheme === "custom" ? "block" : "none";
+
+            THEME_OPTIONS.forEach((t) => {
+                const lbl = document.createElement("label");
+                lbl.className = "win98-radio";
+                lbl.style.alignItems = "flex-start";
+                const rad = document.createElement("input");
+                rad.type = "radio";
+                rad.name = "theme";
+                rad.value = t.id;
+                rad.checked = curTheme === t.id;
+                const txt = document.createElement("span");
+                const title = document.createElement("span");
+                title.style.fontWeight = "bold";
+                title.style.display = "block";
+                title.textContent = t.label;
+                const desc = document.createElement("span");
+                desc.style.color = "var(--win98-dark-gray)";
+                desc.style.fontSize = "10px";
+                desc.textContent = t.desc;
+                txt.append(title, desc);
+                rad.addEventListener("change", () => {
+                    if (!rad.checked) return;
+                    a.theme = t.id;
+                    customBox.style.display =
+                        t.id === "custom" ? "block" : "none";
+                    livePreview(a);
+                });
+                lbl.append(rad, txt);
+                box.appendChild(lbl);
+            });
+
+            box.appendChild(customBox);
+            return box;
         };
 
         /* ---------- Обои group ---------- */
@@ -4799,6 +5051,9 @@
             makeNumRow("Отступ слева и справа, пкс", "desktopPadX", 0, 64),
         );
 
+        tabPanels.appearance.appendChild(
+            buildThemeGroup(pending, applyDesktopStyle),
+        );
         tabPanels.appearance.appendChild(vg);
 
         /* ---------- Надписи group (icon label background) ---------- */

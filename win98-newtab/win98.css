@@ -34,6 +34,10 @@
     --win98-radio-edge2: #a0a0a0;
     --win98-radio-shadow: #e0e0e0;
     --win98-wp-preview: #008080;
+    /* Window content area background — separate from --win98-white so the
+       High Contrast theme can use black windows while keeping bright 3D
+       border highlights (border colors still read --win98-white). */
+    --win98-content-bg: #ffffff;
     --win98-font:
         "Microsoft Sans Serif", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     --win98-font-size: 11px;
@@ -244,7 +248,7 @@ body {
 .win98-window-content {
     flex: 1;
     overflow: auto;
-    background: var(--win98-white);
+    background: var(--win98-content-bg, var(--win98-white));
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
@@ -295,6 +299,7 @@ body {
     padding: 2px 6px;
     font-family: var(--win98-font);
     font-size: 11px;
+    color: var(--win98-black);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -761,7 +766,7 @@ body {
 .start-menu-sidebar-text {
     writing-mode: vertical-rl;
     transform: rotate(180deg);
-    color: var(--win98-silver);
+    color: var(--win98-white);
     font-size: 16px;
     letter-spacing: 1px;
 }
@@ -802,7 +807,7 @@ body {
 }
 
 .start-menu-item:hover .start-menu-item-desc {
-    color: var(--win98-silver);
+    color: var(--win98-white);
 }
 
 .start-menu-separator {
@@ -823,6 +828,7 @@ body {
     box-shadow: inset -1px -1px 0 var(--win98-dark-gray);
     font-family: var(--win98-font);
     font-size: var(--win98-font-size);
+    color: var(--win98-black);
     cursor: pointer;
 }
 
@@ -981,7 +987,7 @@ body {
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
     box-shadow: inset 1px 1px 0 var(--win98-shadow);
-    background: var(--win98-white);
+    background: var(--win98-content-bg, var(--win98-white));
     color: var(--win98-black);
     font-family: "Lucida Console", "Courier New", monospace;
     font-size: 14px;
@@ -1778,7 +1784,7 @@ body:has(#taskbar.taskbar-autohide) #desktop {
     font-family: "Courier New", monospace;
     font-size: 22px;
     text-align: right;
-    background: var(--win98-white, #fff);
+    background: var(--win98-content-bg, var(--win98-white, #fff));
     border: 2px solid;
     border-color: var(--win98-dark-gray) var(--win98-white) var(--win98-white)
         var(--win98-dark-gray);
