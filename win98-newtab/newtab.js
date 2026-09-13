@@ -873,6 +873,14 @@
     "#9664c8",
     "#c864a0"
   ];
+  function folderColorFor(id) {
+    const s = String(id);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = h * 31 + s.charCodeAt(i) | 0;
+    }
+    return FOLDER_COLORS[Math.abs(h) % FOLDER_COLORS.length];
+  }
   var previewFolderStyle = null;
   var previewFolderViewMode = null;
   function folderIconStyleName() {
@@ -1645,8 +1653,7 @@
     state.nodeIndex = buildNodeIndex(tree);
     renderBookmarks(tree);
   }
-  function renderBookmarks(tree) {
-    $desktopIcons.innerHTML = "";
+  function renderBookmarks(tree, force) {
     const emptyMsg = document.querySelector(".empty-desktop-msg");
     if (emptyMsg) emptyMsg.remove();
     const children = tree ? tree.children || [] : [];
@@ -1654,12 +1661,14 @@
       (a, b) => (ROOT_ORDER[a.id] ?? 99) - (ROOT_ORDER[b.id] ?? 99)
     );
     if (roots.length === 0) {
+      $desktopIcons.replaceChildren();
+      desktopIconsById.clear();
       showEmptyState(
         "Нет закладок. Добавьте закладки в Chrome и они появятся здесь."
       );
       return;
     }
-    renderDesktopIcons(roots);
+    renderDesktopIcons(roots, force);
   }
   function showEmptyState(msg) {
     const el = document.createElement("div");
@@ -1672,50 +1681,76 @@
     return state.nodeIndex && state.nodeIndex.get(id) || null;
   }
   var EMPTY_FOLDER_HTML = '<div style="padding:20px;color:#808080;font-size:11px;">Папка пуста</div>';
-  var colorIdx = 0;
+  var desktopIconsById = /* @__PURE__ */ new Map();
   var nodeDragState = null;
-  function renderDesktopIcons(roots) {
-    colorIdx = 0;
+  function setIconImage(img, node) {
+    if (isFolderNode(node)) {
+      img.src = drawFolderIcon(folderColorFor(node.id));
+      return;
+    }
+    const favUrl = getFaviconUrl(node.url);
+    if (favUrl) {
+      img.onerror = () => {
+        img.src = drawPageIcon();
+      };
+      img.src = favUrl;
+      faviconDataUrl(favUrl, currentIconSize()).then((clean) => {
+        img.src = clean;
+      }).catch(() => {
+      });
+    } else {
+      img.src = drawPageIcon();
+    }
+  }
+  function setIconLabel(icon, node) {
+    const label = icon.querySelector(".desktop-icon-label");
+    if (label) label.textContent = node.title || node.url || "Без названия";
+  }
+  function renderDesktopIcons(roots, force) {
+    const next = [];
     roots.forEach((root, rootIdx) => {
       if (rootIdx > 0) {
         const sep = document.createElement("div");
         sep.className = "desktop-row-separator";
-        $desktopIcons.appendChild(sep);
+        next.push(sep);
       }
       const items = root.children || [];
       for (const item of items) {
         if (!isVisibleNode(item)) continue;
-        const icon = createDesktopIcon(item);
-        $desktopIcons.appendChild(icon);
+        const existing = desktopIconsById.get(item.id);
+        if (existing && !force) {
+          const prev = getNodeForIcon(existing);
+          setIconLabel(existing, item);
+          if (!prev || prev.url !== item.url) {
+            const img = existing.querySelector("img");
+            if (img) setIconImage(img, item);
+          }
+          setNodeForIcon(existing, item);
+          next.push(existing);
+        } else {
+          const icon = createDesktopIcon(item);
+          desktopIconsById.set(item.id, icon);
+          next.push(icon);
+        }
       }
     });
+    desktopIconsById.clear();
+    for (const el of next) {
+      if (!el.classList.contains("desktop-icon")) continue;
+      const n = getNodeForIcon(el);
+      if (n) desktopIconsById.set(n.id, el);
+    }
+    $desktopIcons.replaceChildren(...next);
+    if (state.selectedDesktopEl && !state.selectedDesktopEl.isConnected) {
+      state.selectedDesktopEl = null;
+    }
   }
   function createDesktopIcon(node) {
     const div = document.createElement("div");
     div.className = "desktop-icon";
-    const isFolder = isFolderNode(node);
     const img = document.createElement("img");
     img.draggable = false;
-    if (isFolder) {
-      img.src = drawFolderIcon(
-        FOLDER_COLORS[colorIdx % FOLDER_COLORS.length]
-      );
-      colorIdx++;
-    } else {
-      const favUrl = getFaviconUrl(node.url);
-      if (favUrl) {
-        img.onerror = () => {
-          img.src = drawPageIcon();
-        };
-        img.src = favUrl;
-        faviconDataUrl(favUrl, currentIconSize()).then((clean) => {
-          img.src = clean;
-        }).catch(() => {
-        });
-      } else {
-        img.src = drawPageIcon();
-      }
-    }
+    setIconImage(img, node);
     const label = document.createElement("div");
     label.className = "desktop-icon-label";
     label.textContent = node.title || node.url || "Без названия";
@@ -1964,7 +1999,7 @@
       return;
     }
     const folderIcon = drawFolderIcon(
-      FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
+      folderColorFor(node.id),
       true
     );
     const toolbarHtml = `
@@ -2028,10 +2063,7 @@
     const img = document.createElement("img");
     img.draggable = false;
     if (isFolder) {
-      img.src = drawFolderIcon(
-        FOLDER_COLORS[colorIdx % FOLDER_COLORS.length]
-      );
-      colorIdx++;
+      img.src = drawFolderIcon(folderColorFor(node.id));
     } else {
       const favUrl = getFaviconUrl(node.url);
       if (favUrl) {
@@ -3632,7 +3664,7 @@
       saveSettings();
       updateClock();
       updateWeather();
-      renderBookmarks(state.treeRoot);
+      renderBookmarks(state.treeRoot, true);
       refreshOpenFolderWindows(state.treeRoot);
       const id = getWinId();
       if (id) closeWindow(id);
@@ -3644,7 +3676,7 @@
       applyWallpaper(state.settings.wallpaper);
       applyDesktopStyle();
       updateClock();
-      renderBookmarks(state.treeRoot);
+      renderBookmarks(state.treeRoot, true);
       refreshOpenFolderWindows(state.treeRoot);
       const id = getWinId();
       if (id) closeWindow(id);
@@ -3927,7 +3959,7 @@
         pending.folderIconStyle = s.id;
         previewFolderStyle = s.id;
         _clearIconCache();
-        renderBookmarks(state.treeRoot);
+        renderBookmarks(state.treeRoot, true);
       });
       lbl.append(rad, prev, sp);
       fg.appendChild(lbl);

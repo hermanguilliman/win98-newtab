@@ -704,6 +704,19 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
         "#c864a0",
     ];
 
+    /** Deterministic stable folder tint — the same folder always gets the same
+        color, regardless of where it sits in the tree or how often the desktop
+        is (re)rendered. Replaces the old position-based global colorIdx so an
+        incremental refresh doesn't reshuffle every folder's color. */
+    function folderColorFor(id) {
+        const s = String(id);
+        let h = 0;
+        for (let i = 0; i < s.length; i++) {
+            h = (h * 31 + s.charCodeAt(i)) | 0;
+        }
+        return FOLDER_COLORS[Math.abs(h) % FOLDER_COLORS.length];
+    }
+
     /** Folder icon appearance styles (selectable in Настройки → Вид) — in src/lib/settings.ts */
 
     /* ---------- Appearance themes live in src/lib/theme.ts ----------
@@ -1717,9 +1730,9 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
         renderBookmarks(tree);
     }
 
-    /** Render the desktop icons from a bookmarks tree (used on init and on live refresh) */
-    function renderBookmarks(tree) {
-        $desktopIcons.innerHTML = "";
+    /** Render the desktop icons from a bookmarks tree (used on init and on live refresh).
+        Without `force` the render is incremental — existing icon elements are reused. */
+    function renderBookmarks(tree, force) {
         const emptyMsg = document.querySelector(".empty-desktop-msg");
         if (emptyMsg) emptyMsg.remove();
 
@@ -1733,13 +1746,15 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
         // A bookmark anywhere makes its root have children, so `roots` is empty
         // only when there are truly no bookmarks at all — no extra full-tree walk.
         if (roots.length === 0) {
+            $desktopIcons.replaceChildren();
+            desktopIconsById.clear();
             showEmptyState(
                 "Нет закладок. Добавьте закладки в Chrome и они появятся здесь.",
             );
             return;
         }
 
-        renderDesktopIcons(roots);
+        renderDesktopIcons(roots, force);
     }
 
     function showEmptyState(msg) {
@@ -1764,30 +1779,93 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
      DESKTOP ICONS RENDERING
      ============================================================ */
 
-    let colorIdx = 0;
+    // Built/visible desktop icons keyed by bookmark id — lets a refresh reuse
+    // the existing elements (cleaned favicons, .selected state, canvas folder
+    // icons) instead of tearing the whole desktop down.
+    const desktopIconsById = new Map();
 
     // Bookmark/folder currently being dragged between folder windows
     // ({ id, sourceEl } or null)
     let nodeDragState = null;
 
-    function renderDesktopIcons(roots) {
-        // Note: caller (`renderBookmarks`) has already cleared $desktopIcons.
-        colorIdx = 0;
+    /** Fill an icon <img> for a node: folder canvas or (cleaned) favicon. */
+    function setIconImage(img, node) {
+        if (isFolderNode(node)) {
+            img.src = drawFolderIcon(folderColorFor(node.id));
+            return;
+        }
+        // Try favicon, fallback to page icon. Show the original favicon
+        // immediately (usually cached), then swap in a background-cleaned
+        // copy once fetched — Google wraps some icons in a white PNG.
+        const favUrl = getFaviconUrl(node.url);
+        if (favUrl) {
+            img.onerror = () => {
+                img.src = drawPageIcon();
+            };
+            img.src = favUrl;
+            faviconDataUrl(favUrl, currentIconSize())
+                .then((clean) => {
+                    img.src = clean;
+                })
+                .catch(() => {});
+        } else {
+            img.src = drawPageIcon();
+        }
+    }
 
+    function setIconLabel(icon, node) {
+        const label = icon.querySelector(".desktop-icon-label");
+        if (label) label.textContent = node.title || node.url || "Без названия";
+    }
+
+    /** Render the desktop icons. Incremental by default: existing elements are
+        re-used and re-ordered via replaceChildren (no flicker, no favicon
+        re-fetch, selection survives). Pass force=true when every icon must be
+        (re)built from scratch (icon size/style changed). */
+    function renderDesktopIcons(roots, force) {
+        const next = [];
         roots.forEach((root, rootIdx) => {
             if (rootIdx > 0) {
                 // Force next group onto a new row
                 const sep = document.createElement("div");
                 sep.className = "desktop-row-separator";
-                $desktopIcons.appendChild(sep);
+                next.push(sep);
             }
             const items = root.children || [];
             for (const item of items) {
                 if (!isVisibleNode(item)) continue;
-                const icon = createDesktopIcon(item);
-                $desktopIcons.appendChild(icon);
+                const existing = desktopIconsById.get(item.id);
+                if (existing && !force) {
+                    const prev = getNodeForIcon(existing);
+                    setIconLabel(existing, item);
+                    if (!prev || prev.url !== item.url) {
+                        const img = existing.querySelector("img");
+                        if (img) setIconImage(img, item);
+                    }
+                    setNodeForIcon(existing, item);
+                    next.push(existing);
+                } else {
+                    const icon = createDesktopIcon(item);
+                    desktopIconsById.set(item.id, icon);
+                    next.push(icon);
+                }
             }
         });
+
+        // Drop mappings for nodes that are no longer on the desktop
+        desktopIconsById.clear();
+        for (const el of next) {
+            if (!el.classList.contains("desktop-icon")) continue;
+            const n = getNodeForIcon(el);
+            if (n) desktopIconsById.set(n.id, el);
+        }
+
+        $desktopIcons.replaceChildren(...next);
+
+        // The selected icon may have been a node that disappeared
+        if (state.selectedDesktopEl && !state.selectedDesktopEl.isConnected) {
+            state.selectedDesktopEl = null;
+        }
     }
 
     /** @param {BookmarkNode} node @returns {IconEl} */
@@ -1796,36 +1874,10 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
         const div = document.createElement("div");
         div.className = "desktop-icon";
 
-        const isFolder = isFolderNode(node);
-
         // Create icon image
         const img = document.createElement("img");
         img.draggable = false;
-
-        if (isFolder) {
-            img.src = drawFolderIcon(
-                FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
-            );
-            colorIdx++;
-        } else {
-            // Try favicon, fallback to page icon. Show the original favicon
-            // immediately (usually cached), then swap in a background-cleaned
-            // copy once fetched — Google wraps some icons in a white PNG.
-            const favUrl = getFaviconUrl(node.url);
-            if (favUrl) {
-                img.onerror = () => {
-                    img.src = drawPageIcon();
-                };
-                img.src = favUrl;
-                faviconDataUrl(favUrl, currentIconSize())
-                    .then((clean) => {
-                        img.src = clean;
-                    })
-                    .catch(() => {});
-            } else {
-                img.src = drawPageIcon();
-            }
-        }
+        setIconImage(img, node);
 
         const label = document.createElement("div");
         label.className = "desktop-icon-label";
@@ -2130,7 +2182,7 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
         }
 
         const folderIcon = drawFolderIcon(
-            FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
+            folderColorFor(node.id),
             true,
         );
 
@@ -2214,10 +2266,7 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
         img.draggable = false;
 
         if (isFolder) {
-            img.src = drawFolderIcon(
-                FOLDER_COLORS[colorIdx % FOLDER_COLORS.length],
-            );
-            colorIdx++;
+            img.src = drawFolderIcon(folderColorFor(node.id));
         } else {
             const favUrl = getFaviconUrl(node.url);
             if (favUrl) {
@@ -4213,7 +4262,7 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
             saveSettings();
             updateClock();
             updateWeather();
-            renderBookmarks(state.treeRoot);
+            renderBookmarks(state.treeRoot, true); // force: icon size/style may have changed
             refreshOpenFolderWindows(state.treeRoot); // apply new view mode
             const id = getWinId();
             if (id) closeWindow(id);
@@ -4226,7 +4275,7 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
             applyWallpaper(state.settings.wallpaper);
             applyDesktopStyle();
             updateClock();
-            renderBookmarks(state.treeRoot);
+            renderBookmarks(state.treeRoot, true); // restore original icon size/style
             refreshOpenFolderWindows(state.treeRoot); // restore saved view mode
             const id = getWinId();
             if (id) closeWindow(id);
@@ -4558,7 +4607,7 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
                 pending.folderIconStyle = s.id;
                 previewFolderStyle = s.id;
                 _clearIconCache(); // icons were memoized under the old style
-                renderBookmarks(state.treeRoot); // live preview on the desktop
+                renderBookmarks(state.treeRoot, true); // live preview on the desktop
             });
             lbl.append(rad, prev, sp);
             fg.appendChild(lbl);
