@@ -369,6 +369,26 @@
     return el && iconNodes.get(el) || void 0;
   }
 
+  // src/lib/windows.ts
+  var WINDOW_STACK_OFFSET = 28;
+  var WINDOW_STACK_WRAP = 6;
+  function computeWindowStackPosition(o) {
+    const vw = Math.max(0, o.viewportWidth);
+    const vh = Math.max(0, o.viewportHeight);
+    const w = Math.max(0, o.width);
+    const h = Math.max(0, o.height);
+    const freeX = Math.max(0, vw - w);
+    const freeY = Math.max(0, vh - h);
+    const nudge = o.stackIndex % WINDOW_STACK_WRAP * WINDOW_STACK_OFFSET;
+    return {
+      x: o.x ?? clamp(Math.round(vw / 2 - w / 2 + nudge), 0, freeX),
+      y: o.y ?? clamp(Math.round(vh / 2 - h / 2 + nudge), 0, freeY)
+    };
+  }
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
   // src/app.js
   function eventTargetElement(e) {
     return e.target instanceof Element ? e.target : null;
@@ -401,7 +421,6 @@
   var SEARCH_RESULT_LIMIT = 200;
   var MIN_WINDOW_W = 200;
   var MIN_WINDOW_H = 120;
-  var WINDOW_STACK_OFFSET = 28;
   var CLOCK_INTERVAL_MS = 1e4;
   var SEARCH_DEBOUNCE_MS = 150;
   var $desktop = document.getElementById("desktop");
@@ -1132,12 +1151,17 @@
     const w = opts.width || 500;
     const h = opts.height != null ? opts.height : 400;
     const isDialog = !!opts.dialog;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const freeX = Math.max(0, vw - w);
-    const freeY = Math.max(0, vh - h);
-    const x = opts.x ?? Math.max(0, Math.min(freeX, Math.round(vw / 2 - w / 2 + state.windows.length % 6 * WINDOW_STACK_OFFSET)));
-    const y = opts.y ?? Math.max(0, Math.min(freeY, Math.round(vh / 2 - h / 2 + state.windows.length % 6 * WINDOW_STACK_OFFSET)));
+    const pos = computeWindowStackPosition({
+      width: w,
+      height: h,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      stackIndex: state.windows.length,
+      x: opts.x,
+      y: opts.y
+    });
+    const x = pos.x;
+    const y = pos.y;
     const resolvedIcon = opts.icon || drawPageIcon();
     const winData = {
       id,

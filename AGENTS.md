@@ -36,6 +36,7 @@ Source layout:
 - `settings.ts` — `Settings` shape, `DEFAULT_SETTINGS`, choice lists (`ICON_SIZES`/`FOLDER_STYLES`/`UI_FONTS` — also used by the settings form) and the whitelist `mergeSettings()`.
 - `search.ts` — `SearchNode`, `buildSearchIndex(tree)`, `scoreNode`, `filterSearchNodes(nodes, filter, limit)` (ranking + trim; used by the search window's live filter).
 - `iconNodes.ts` — `setNodeForIcon(el, node)` / `getNodeForIcon(el)`; a `WeakMap<Element, BookmarkNode>` that keeps the bookmark node off the DOM element (no expandos). Desktop icons (`createDesktopIcon`) and folder items (`createFolderItem`) are registered here; delegated handlers, marquee selection and keyboard navigation read back via `getNodeForIcon`. Callers cast `closest(...)` results to `IconEl` first.
+- `windows.ts` — pure window geometry: `computeWindowStackPosition({width, height, viewportWidth, viewportHeight, stackIndex, x?, y?})` centers new windows and nudges them down-right by `WINDOW_STACK_OFFSET = 28` px, wrapping after `WINDOW_STACK_WRAP = 6` windows; honors explicit `x`/`y` and clamps to the viewport. `createWindow` in `app.js` is the only caller — keep the inline geometry there in sync with this module (don't fork the math).
 
 When moving more logic out of `app.js` into `src/lib`, keep it free of `chrome.*`/DOM and add tests in `tests/`; the strict pass (tsconfig.lib.json) will enforce it.
 

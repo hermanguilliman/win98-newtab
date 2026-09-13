@@ -19,6 +19,7 @@ import { THEME_OPTIONS, CUSTOM_THEME_KEYS, shadeColor, themeColorsFor, themeRese
 import { DEFAULT_SETTINGS, mergeSettings, ICON_SIZES, FOLDER_STYLES, UI_FONTS } from "./lib/settings";
 import { buildSearchIndex, filterSearchNodes } from "./lib/search";
 import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
+import { computeWindowStackPosition } from "./lib/windows";
 
 /* ============================================================
    Types (JSDoc — checked by `tsc --noEmit`, see tsconfig.json)
@@ -107,7 +108,6 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
     const SEARCH_RESULT_LIMIT = 200;
     const MIN_WINDOW_W = 200;
     const MIN_WINDOW_H = 120;
-    const WINDOW_STACK_OFFSET = 28;
     const CLOCK_INTERVAL_MS = 10000;
     const SEARCH_DEBOUNCE_MS = 150;
     // ALL_ROOT_ID / ROOT_ORDER come from src/lib/bookmarks.ts
@@ -1084,16 +1084,18 @@ import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
         const isDialog = !!opts.dialog;
         // Windows appear centered on the desktop; each new window is nudged
         // down-right by 28px so stacked windows stay distinguishable.
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const freeX = Math.max(0, vw - w);
-        const freeY = Math.max(0, vh - h);
-        const x =
-            opts.x ??
-            Math.max(0, Math.min(freeX, Math.round(vw / 2 - w / 2 + (state.windows.length % 6) * WINDOW_STACK_OFFSET)));
-        const y =
-            opts.y ??
-            Math.max(0, Math.min(freeY, Math.round(vh / 2 - h / 2 + (state.windows.length % 6) * WINDOW_STACK_OFFSET)));
+        // (pure geometry lives in src/lib/windows.ts — unit-tested)
+        const pos = computeWindowStackPosition({
+            width: w,
+            height: h,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+            stackIndex: state.windows.length,
+            x: opts.x,
+            y: opts.y,
+        });
+        const x = pos.x;
+        const y = pos.y;
 
         // Resolve the window icon once (falling back to a page icon) so we don't
         // re-generate the same canvas three times below.
