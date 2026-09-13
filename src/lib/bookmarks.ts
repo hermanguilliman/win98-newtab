@@ -92,3 +92,34 @@ export function buildAllBookmarksNode(tree: BookmarkNode | null | undefined): Bo
         children: ((tree && tree.children) || []).filter((n) => isVisibleNode(n)),
     };
 }
+
+/** Color palette for folder icons (shared with the search-window legend). */
+export const FOLDER_COLORS = [
+    "#d4c044",
+    "#c8a032",
+    "#a0c844",
+    "#64a0c8",
+    "#c86464",
+    "#64c864",
+    "#c89644",
+    "#9664c8",
+    "#c864a0",
+];
+
+/**
+ * Deterministic folder color by id (string-hash, no position dependence), so a
+ * folder keeps its color across incremental refreshes and moves.
+ */
+export function folderColorFor(id: string): string {
+    const s = String(id);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+        h = (h * 31 + s.charCodeAt(i)) | 0;
+    }
+    return FOLDER_COLORS[Math.abs(h) % FOLDER_COLORS.length];
+}
+
+/** Cycle through the palette by index (search-window legend rows). */
+export function folderColorAt(i: number): string {
+    return FOLDER_COLORS[Math.abs(i) % FOLDER_COLORS.length];
+}

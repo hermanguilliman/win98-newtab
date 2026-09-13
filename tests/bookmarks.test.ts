@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
     ALL_ROOT_ID,
+    FOLDER_COLORS,
     ROOT_ORDER,
     buildAllBookmarksNode,
     buildNodeIndex,
+    folderColorAt,
+    folderColorFor,
     getNodePath,
     isBookmarkNode,
     isFolderNode,
@@ -144,5 +147,39 @@ describe("buildAllBookmarksNode", () => {
         expect(buildAllBookmarksNode(null).children).toEqual([]);
         expect(buildAllBookmarksNode(undefined).children).toEqual([]);
         expect(buildAllBookmarksNode(folder("0", "root", "")).children).toEqual([]);
+    });
+});
+
+describe("folderColorFor", () => {
+    it("is deterministic — the same id always maps to the same color", () => {
+        const ids = ["1", "2", "3", "folder-42", "Папка с именем"];
+        ids.forEach((id) => {
+            expect(folderColorFor(id)).toBe(folderColorFor(id));
+        });
+    });
+
+    it("always returns a color from the palette", () => {
+        for (let i = 0; i < 50; i++) {
+            expect(FOLDER_COLORS).toContain(folderColorFor("some-id-" + i));
+        }
+    });
+
+    it("different ids can share a color (hash collisions are fine)", () => {
+        expect(folderColorFor("a")).toBe(folderColorFor("a"));
+        expect(typeof folderColorFor("anything")).toBe("string");
+    });
+});
+
+describe("folderColorAt", () => {
+    it("cycles through the palette", () => {
+        FOLDER_COLORS.forEach((color, i) => {
+            expect(folderColorAt(i)).toBe(color);
+        });
+        expect(folderColorAt(FOLDER_COLORS.length)).toBe(FOLDER_COLORS[0]);
+        expect(folderColorAt(FOLDER_COLORS.length + 2)).toBe(FOLDER_COLORS[2]);
+    });
+
+    it("handles negative indexes via abs", () => {
+        expect(folderColorAt(-1)).toBe(FOLDER_COLORS[1]);
     });
 });

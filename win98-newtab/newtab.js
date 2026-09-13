@@ -89,6 +89,28 @@
       children: (tree && tree.children || []).filter((n) => isVisibleNode(n))
     };
   }
+  var FOLDER_COLORS = [
+    "#d4c044",
+    "#c8a032",
+    "#a0c844",
+    "#64a0c8",
+    "#c86464",
+    "#64c864",
+    "#c89644",
+    "#9664c8",
+    "#c864a0"
+  ];
+  function folderColorFor(id) {
+    const s = String(id);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = h * 31 + s.charCodeAt(i) | 0;
+    }
+    return FOLDER_COLORS[Math.abs(h) % FOLDER_COLORS.length];
+  }
+  function folderColorAt(i) {
+    return FOLDER_COLORS[Math.abs(i) % FOLDER_COLORS.length];
+  }
 
   // src/lib/theme.ts
   var THEME_OPTIONS = [
@@ -1140,25 +1162,6 @@
       dh
     );
     return out.toDataURL();
-  }
-  var FOLDER_COLORS = [
-    "#d4c044",
-    "#c8a032",
-    "#a0c844",
-    "#64a0c8",
-    "#c86464",
-    "#64c864",
-    "#c89644",
-    "#9664c8",
-    "#c864a0"
-  ];
-  function folderColorFor(id) {
-    const s = String(id);
-    let h = 0;
-    for (let i = 0; i < s.length; i++) {
-      h = h * 31 + s.charCodeAt(i) | 0;
-    }
-    return FOLDER_COLORS[Math.abs(h) % FOLDER_COLORS.length];
   }
   var previewFolderStyle = null;
   var previewFolderViewMode = null;
@@ -2970,7 +2973,7 @@
         img.draggable = false;
         if (n.isFolder) {
           img.src = drawFolderIcon(
-            FOLDER_COLORS[i % FOLDER_COLORS.length],
+            folderColorAt(i),
             false,
             24
           );

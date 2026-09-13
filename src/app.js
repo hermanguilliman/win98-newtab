@@ -14,6 +14,9 @@ import {
     isRootFolder,
     getNodePath,
     buildAllBookmarksNode,
+    FOLDER_COLORS,
+    folderColorFor,
+    folderColorAt,
     ALL_ROOT_ID,
     ROOT_ORDER,
 } from "./lib/bookmarks";
@@ -697,32 +700,6 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
             dh,
         );
         return out.toDataURL();
-    }
-
-    /** Color palette for folders */
-    const FOLDER_COLORS = [
-        "#d4c044",
-        "#c8a032",
-        "#a0c844",
-        "#64a0c8",
-        "#c86464",
-        "#64c864",
-        "#c89644",
-        "#9664c8",
-        "#c864a0",
-    ];
-
-    /** Deterministic stable folder tint — the same folder always gets the same
-        color, regardless of where it sits in the tree or how often the desktop
-        is (re)rendered. Replaces the old position-based global colorIdx so an
-        incremental refresh doesn't reshuffle every folder's color. */
-    function folderColorFor(id) {
-        const s = String(id);
-        let h = 0;
-        for (let i = 0; i < s.length; i++) {
-            h = (h * 31 + s.charCodeAt(i)) | 0;
-        }
-        return FOLDER_COLORS[Math.abs(h) % FOLDER_COLORS.length];
     }
 
     /** Folder icon appearance styles (selectable in Настройки → Вид) — in src/lib/settings.ts */
@@ -3050,7 +3027,7 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
                 img.draggable = false;
                 if (n.isFolder) {
                     img.src = drawFolderIcon(
-                        FOLDER_COLORS[i % FOLDER_COLORS.length],
+                        folderColorAt(i),
                         false,
                         24,
                     );
