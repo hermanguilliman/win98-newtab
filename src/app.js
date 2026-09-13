@@ -19,7 +19,7 @@ import { THEME_OPTIONS, CUSTOM_THEME_KEYS, shadeColor, themeColorsFor, themeRese
 import { DEFAULT_SETTINGS, mergeSettings, ICON_SIZES, FOLDER_STYLES, UI_FONTS } from "./lib/settings";
 import { buildSearchIndex, filterSearchNodes } from "./lib/search";
 import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
-import { computeWindowStackPosition } from "./lib/windows";
+import { WindowManager } from "./lib/windows";
 
 /* ============================================================
    Types (JSDoc — checked by `tsc --noEmit`, see tsconfig.json)
@@ -31,27 +31,24 @@ import { computeWindowStackPosition } from "./lib/windows";
 
     /**
      * A single open window (folder windows, dialogs, apps, …).
-     * `el` lives only after createWindow() builds the DOM.
-     * @typedef {object} WinData
-     * @property {number} id
-     * @property {string} title
-     * @property {string} icon
-     * @property {number} x
-     * @property {number} y
-     * @property {number} w
-     * @property {number} h
-     * @property {HTMLDivElement} [el]
-     * @property {boolean} minimized
-     * @property {boolean} maximized
-     * @property {{x: number, y: number, w: number, h: number}|null} prevBounds
-     * @property {string|null} winType
-     * @property {string|null} bookmarkId
-     * @property {boolean} dialog
-     * @property {BookmarkNode|null} [currentNode]
-     * @property {(BookmarkNode|null)[]} [navStack]
-     * @property {() => void} [searchFilter]
-     * @property {HTMLButtonElement} [okButton]
-     * @property {number} [_savedIndex]
+     * The WindowManager owns the layout/lifecycle fields (ManagedWindow); the
+     * app extends each record with DOM/app-only fields right after open():
+     * title, icon, winType, bookmarkId, el. `el` lives only after the DOM is
+     * built, hence optional. App-only fields are optional in the type so a
+     * plain ManagedWindow (as returned by WindowManager) is assignable — every
+     * record in state.windows has them by the time app code reads it.
+     * @typedef {import("./lib/windows").ManagedWindow & {
+     *     title?: string
+     *     icon?: string
+     *     winType?: string | null
+     *     bookmarkId?: string | null
+     *     el?: HTMLDivElement | null
+     *     currentNode?: BookmarkNode | null
+     *     navStack?: (BookmarkNode | null)[]
+     *     searchFilter?: () => void
+     *     okButton?: HTMLButtonElement
+     *     _savedIndex?: number
+     * }} WinData
      */
 
     /** Desktop icon / folder item div. The bookmark node lives in the iconNodes
@@ -76,12 +73,19 @@ import { computeWindowStackPosition } from "./lib/windows";
     }
 
     /* ---------- State ---------- */
+    // The WindowManager (src/lib/windows.ts) is the single source of truth for
+    // window identity, z-order, focus and lifecycle. `state.windows` is the
+    // manager's own array — same objects, extended with app-only expandos
+    // (el, title, icon, navStack, …). Never push/splice it directly; go through
+    // state.windowManager (open/close).
+    const windowManager = new WindowManager();
     const state = {
+        windowManager,
         /** @type {WinData[]} */
-        windows: [],
-        windowIdCounter: 0,
-        zCounter: 100,
-        activeWindowId: null,
+        // The manager's array is ManagedWindow[]; by the time any window is
+        // read by app code it has been extended with title/icon/winType/
+        // bookmarkId/el by createWindow, so the WinData view is accurate.
+        windows: /** @type {WinData[]} */ (windowManager.windows),
         startMenuOpen: false,
         dragState: null,
         resizeState: null,
@@ -1078,54 +1082,44 @@ import { computeWindowStackPosition } from "./lib/windows";
 
     /** @param {CreateWindowOpts} opts @returns {WinData} */
     function createWindow(opts) {
-        const id = ++state.windowIdCounter;
         const w = opts.width || 500;
         const h = opts.height != null ? opts.height : 400;
         const isDialog = !!opts.dialog;
-        // Windows appear centered on the desktop; each new window is nudged
-        // down-right by 28px so stacked windows stay distinguishable.
-        // (pure geometry lives in src/lib/windows.ts — unit-tested)
-        const pos = computeWindowStackPosition({
-            width: w,
-            height: h,
-            viewportWidth: window.innerWidth,
-            viewportHeight: window.innerHeight,
-            stackIndex: state.windows.length,
-            x: opts.x,
-            y: opts.y,
-        });
-        const x = pos.x;
-        const y = pos.y;
+        // The WindowManager (src/lib/windows.ts, unit-tested) owns id, geometry
+        // (centered + 28px cascade), z-order and the active window. The array
+        // it pushes into IS state.windows, so no manual push/focus below.
+        /** @type {WinData} */
+        const winData = /** @type {WinData} */ (
+            state.windowManager.open({
+                width: w,
+                height: h,
+                viewportWidth: window.innerWidth,
+                viewportHeight: window.innerHeight,
+                x: opts.x,
+                y: opts.y,
+                dialog: isDialog,
+            })
+        );
+        const x = winData.x;
+        const y = winData.y;
 
         // Resolve the window icon once (falling back to a page icon) so we don't
         // re-generate the same canvas three times below.
         const resolvedIcon = opts.icon || drawPageIcon();
 
-        /** @type {WinData} */
-        const winData = {
-            id,
-            title: opts.title || "Window",
-            icon: resolvedIcon,
-            x,
-            y,
-            w,
-            h,
-            minimized: false,
-            maximized: false,
-            prevBounds: null,
-            winType: opts.winType || null,
-            bookmarkId: opts.bookmarkId || null,
-            dialog: isDialog,
-        };
+        winData.title = opts.title || "Window";
+        winData.icon = resolvedIcon;
+        winData.winType = opts.winType || null;
+        winData.bookmarkId = opts.bookmarkId || null;
 
         // Build DOM
         const el = document.createElement("div");
         el.className = "win98-window" + (isDialog ? " win98-window--dialog" : "");
-        el.id = `win-${id}`;
-        el.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;z-index:${++state.zCounter};`;
+        el.id = `win-${winData.id}`;
+        el.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;z-index:${winData.zIndex};`;
 
         el.innerHTML = `
-      <div class="win98-titlebar" data-win-id="${id}">
+      <div class="win98-titlebar" data-win-id="${winData.id}">
         <img class="win98-titlebar-icon" src="${resolvedIcon}" alt="">
         <span class="win98-titlebar-text">${escapeHtml(opts.title || "")}</span>
         <div class="win98-titlebar-buttons">
@@ -1146,78 +1140,79 @@ import { computeWindowStackPosition } from "./lib/windows";
         $windowsContainer.appendChild(el);
 
         winData.el = el;
-        state.windows.push(winData);
+        // NOTE: no push — windowManager.open() already put winData into
+        // state.windows (same array).
 
         // Title bar events
         const titlebar = el.querySelector(".win98-titlebar");
         titlebar.addEventListener("mousedown", (e) => {
             if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
-            bringToFront(id);
+            bringToFront(winData.id);
             startDrag(/** @type {MouseEvent} */ (e), winData);
         });
         titlebar.addEventListener("dblclick", (e) => {
             if (isDialog) return;
             if (eventTargetElement(e).closest(".win98-titlebar-btn")) return;
-            toggleMaximize(id);
+            toggleMaximize(winData.id);
         });
 
         // Title bar buttons
         el.querySelector('[data-action="minimize"]')?.addEventListener(
             "click",
-            () => minimizeWindow(id),
+            () => minimizeWindow(winData.id),
         );
         el.querySelector('[data-action="maximize"]')?.addEventListener(
             "click",
-            () => toggleMaximize(id),
+            () => toggleMaximize(winData.id),
         );
         el.querySelector('[data-action="close"]')?.addEventListener(
             "click",
-            () => closeWindow(id),
+            () => closeWindow(winData.id),
         );
 
         // Resize handle
         const resizeHandle = el.querySelector(".win98-resize-handle");
         resizeHandle?.addEventListener("mousedown", (e) => {
             e.stopPropagation();
-            bringToFront(id);
+            bringToFront(winData.id);
             startResize(/** @type {MouseEvent} */ (e), winData);
         });
 
         // Click to focus
-        el.addEventListener("mousedown", () => bringToFront(id));
+        el.addEventListener("mousedown", () => bringToFront(winData.id));
 
         // Taskbar button
         const tbBtn = document.createElement("button");
         tbBtn.className = "taskbar-win-btn win98-btn active";
-        tbBtn.id = `tb-${id}`;
+        tbBtn.id = `tb-${winData.id}`;
         tbBtn.innerHTML = `<img src="${resolvedIcon}" alt=""><span>${escapeHtml(opts.title || "")}</span>`;
         tbBtn.addEventListener("click", () => {
             if (winData.minimized) {
-                restoreWindow(id);
-            } else if (state.activeWindowId === id) {
-                minimizeWindow(id);
+                restoreWindow(winData.id);
+            } else if (state.windowManager.activeWindowId === winData.id) {
+                minimizeWindow(winData.id);
             } else {
-                bringToFront(id);
+                bringToFront(winData.id);
             }
         });
         // Right-click a taskbar button → per-window menu + generic panel actions
         tbBtn.addEventListener("contextmenu", (e) => {
             e.preventDefault();
             e.stopPropagation(); // don't show the generic taskbar menu separately
-            const visible = state.windows.filter((w) => !w.minimized);
+            const visible = state.windowManager.windows.filter((w) => !w.minimized);
             const items = [];
             if (winData.minimized) {
                 items.push({
                     label: "Восстановить",
-                    action: () => restoreWindow(id),
+                    action: () => restoreWindow(winData.id),
                 });
             } else {
                 items.push({
                     label: "Свернуть",
-                    action: () => minimizeWindow(id),
+                    action: () => minimizeWindow(winData.id),
                 });
             }
-            items.push({ label: "Закрыть", action: () => closeWindow(id) });
+            items.push({ label: "Закрыть", action: () => closeWindow(winData.id) });
             items.push({ type: "separator" });
             items.push({
                 label: "Каскад окон",
@@ -1238,7 +1233,9 @@ import { computeWindowStackPosition } from "./lib/windows";
         });
         $taskbarWindows.appendChild(tbBtn);
 
-        bringToFront(id);
+        // open() already made this window active in the WindowManager — the
+        // DOM just needs its titlebar/taskbar/z-order synced to the manager.
+        syncActiveWindowVisuals();
 
         if (opts.onCreated) opts.onCreated(el, winData);
 
@@ -1247,30 +1244,31 @@ import { computeWindowStackPosition } from "./lib/windows";
         return winData;
     }
 
-    function bringToFront(id) {
-        if (state.activeWindowId === id) return;
-        state.activeWindowId = id;
-        const winData = state.windows.find((w) => w.id === id);
-        if (!winData) return;
-
-        winData.el.style.zIndex = String(++state.zCounter);
-
-        // Update titlebar active state
+    /** Apply the WindowManager's z-order + active window to the DOM: every
+        window element gets its managed zIndex, titlebars get .inactive on
+        non-active windows, and the taskbar button of the active window gets
+        .active. Call after any focus/open/minimize/restore/close. */
+    function syncActiveWindowVisuals() {
+        const wm = state.windowManager;
         state.windows.forEach((w) => {
+            if (!w.el) return;
+            w.el.style.zIndex = String(w.zIndex);
             const tb = w.el.querySelector(".win98-titlebar");
-            if (w.id === id) {
-                tb.classList.remove("inactive");
-            } else {
-                tb.classList.add("inactive");
-            }
+            if (tb) tb.classList.toggle("inactive", w.id !== wm.activeWindowId);
         });
-
-        // Update taskbar active
         document
             .querySelectorAll(".taskbar-win-btn")
             .forEach((b) => b.classList.remove("active"));
-        const tbBtn = document.getElementById(`tb-${id}`);
+        const tbBtn =
+            wm.activeWindowId != null
+                ? document.getElementById(`tb-${wm.activeWindowId}`)
+                : null;
         if (tbBtn) tbBtn.classList.add("active");
+    }
+
+    function bringToFront(id) {
+        state.windowManager.focus(id);
+        syncActiveWindowVisuals();
     }
 
     /** Animate a window shrinking into its taskbar button (Win98 minimize). */
@@ -1337,69 +1335,57 @@ import { computeWindowStackPosition } from "./lib/windows";
     }
 
     function minimizeWindow(id) {
-        const winData = state.windows.find((w) => w.id === id);
+        const wm = state.windowManager;
+        const winData = /** @type {WinData | null} */ (wm.get(id));
         if (!winData || winData.minimized) return;
-        winData.minimized = true;
-        if (state.activeWindowId === id) {
-            state.activeWindowId = null;
-            // Focus next visible
-            const visible = state.windows.filter((w) => !w.minimized);
-            if (visible.length) bringToFront(visible[visible.length - 1].id);
-        }
+        wm.minimize(id); // flips the flag + falls focus to the last visible
         const btn = document.getElementById(`tb-${id}`);
         animateWindowToButton(winData.el, btn, () => {
             // Only hide if still minimized — a restore mid-animation wins
             if (winData.minimized) winData.el.style.display = "none";
         });
-        updateTaskbarButtons();
+        syncActiveWindowVisuals();
         scheduleWindowStateSave();
     }
 
     function restoreWindow(id) {
-        const winData = state.windows.find((w) => w.id === id);
+        const wm = state.windowManager;
+        const winData = /** @type {WinData | null} */ (wm.get(id));
         if (!winData) return;
-        winData.minimized = false;
+        wm.restore(id); // clears minimized + focuses
         winData.el.style.display = "";
         const btn = document.getElementById(`tb-${id}`);
         animateWindowFromButton(winData.el, btn);
-        bringToFront(id);
-        updateTaskbarButtons();
+        syncActiveWindowVisuals();
         scheduleWindowStateSave();
     }
 
     function toggleMaximize(id) {
-        const winData = state.windows.find((w) => w.id === id);
+        const wm = state.windowManager;
+        const winData = /** @type {WinData | null} */ (wm.get(id));
         if (!winData) return;
 
+        wm.toggleMaximize(id);
+
         if (winData.maximized) {
-            // Restore
-            winData.maximized = false;
-            const b = winData.prevBounds;
-            winData.el.style.left = b.x + "px";
-            winData.el.style.top = b.y + "px";
-            winData.el.style.width = b.w + "px";
-            winData.el.style.height = b.h + "px";
-            winData.el.classList.remove("maximized");
-        } else {
-            // Maximize
-            winData.prevBounds = {
-                x: parseInt(winData.el.style.left),
-                y: parseInt(winData.el.style.top),
-                w: parseInt(winData.el.style.width),
-                h: parseInt(winData.el.style.height),
-            };
+            // Just maximized — the .maximized class makes the CSS stretch the window
             winData.el.classList.add("maximized");
-            winData.maximized = true;
+        } else {
+            // Just restored — apply the pre-maximize bounds back to the DOM
+            winData.el.classList.remove("maximized");
+            winData.el.style.left = winData.x + "px";
+            winData.el.style.top = winData.y + "px";
+            winData.el.style.width = winData.w + "px";
+            winData.el.style.height = winData.h + "px";
         }
+        syncActiveWindowVisuals();
         scheduleWindowStateSave();
     }
 
     function closeWindow(id) {
-        const idx = state.windows.findIndex((w) => w.id === id);
-        if (idx === -1) return;
-        const winData = state.windows[idx];
-        winData.el.remove();
-        state.windows.splice(idx, 1);
+        const wm = state.windowManager;
+        const winData = /** @type {WinData | null} */ (wm.get(id));
+        if (!winData) return;
 
         // Flush any pending notepad autosave before the window is destroyed
         if (winData.winType === "notepad") {
@@ -1418,20 +1404,21 @@ import { computeWindowStackPosition } from "./lib/windows";
         const tbBtn = document.getElementById(`tb-${id}`);
         if (tbBtn) tbBtn.remove();
 
-        if (state.activeWindowId === id) {
-            state.activeWindowId = null;
-            const visible = state.windows.filter((w) => !w.minimized);
-            if (visible.length) bringToFront(visible[visible.length - 1].id);
-        }
+        wm.close(id); // removes from state + falls focus to the last visible
+        winData.el.remove();
 
         scheduleWindowStateSave();
+        syncActiveWindowVisuals();
     }
 
     function updateTaskbarButtons() {
-        state.windows.forEach((w) => {
+        state.windowManager.windows.forEach((w) => {
             const tbBtn = document.getElementById(`tb-${w.id}`);
             if (tbBtn) {
-                if (w.id === state.activeWindowId && !w.minimized) {
+                if (
+                    w.id === state.windowManager.activeWindowId &&
+                    !w.minimized
+                ) {
                     tbBtn.classList.add("active");
                 } else {
                     tbBtn.classList.remove("active");
@@ -1479,8 +1466,8 @@ import { computeWindowStackPosition } from "./lib/windows";
     function scheduleWindowStateSave() {
         clearTimeout(windowStateSaveTimer);
         windowStateSaveTimer = setTimeout(() => {
-            const activeIndex = state.windows.findIndex(
-                (w) => w.id === state.activeWindowId,
+            const activeIndex = state.windowManager.windows.findIndex(
+                (w) => w.id === state.windowManager.activeWindowId,
             );
             chrome.storage.local
                 .set({
@@ -1666,6 +1653,14 @@ import { computeWindowStackPosition } from "./lib/windows";
     }
 
     function onDragEnd() {
+        const d = state.dragState;
+        // Sync the final position back into the WindowManager record so a
+        // subsequent maximize/restore uses the dragged position (layout px,
+        // matching el.style.left/top).
+        if (d && d.winData) {
+            d.winData.x = parseInt(d.winData.el.style.left) || d.winData.x;
+            d.winData.y = parseInt(d.winData.el.style.top) || d.winData.y;
+        }
         state.dragState = null;
         document.removeEventListener("mousemove", onDragMove);
         document.removeEventListener("mouseup", onDragEnd);
@@ -1705,6 +1700,12 @@ import { computeWindowStackPosition } from "./lib/windows";
     }
 
     function onResizeEnd() {
+        const r = state.resizeState;
+        // Sync the final size back into the WindowManager record.
+        if (r && r.winData) {
+            r.winData.w = parseInt(r.winData.el.style.width) || r.winData.w;
+            r.winData.h = parseInt(r.winData.el.style.height) || r.winData.h;
+        }
         state.resizeState = null;
         document.removeEventListener("mousemove", onResizeMove);
         document.removeEventListener("mouseup", onResizeEnd);
@@ -2838,7 +2839,7 @@ import { computeWindowStackPosition } from "./lib/windows";
     /** Enter = default button, Esc = close, for whichever dialog is active */
     document.addEventListener("keydown", (e) => {
         const winData = state.windows.find(
-            (w) => w.dialog && !w.minimized && w.id === state.activeWindowId,
+            (w) => w.dialog && !w.minimized && w.id === state.windowManager.activeWindowId,
         );
         if (!winData) return;
         if (
@@ -3613,40 +3614,36 @@ import { computeWindowStackPosition } from "./lib/windows";
         ]);
     });
 
-    /** Cascade all visible windows like Win98 «Каскад окон» */
+    /** Cascade all visible windows like Win98 «Каскад окон» (layout math lives
+        in src/lib/windows.ts WindowManager.cascade — unit-tested) */
     function cascadeWindows(wins) {
         if (!wins.length) return;
-        wins.forEach((w, i) => {
-            w.el.classList.remove("maximized");
-            w.maximized = false;
-            w.el.style.left = 28 + i * 24 + "px";
-            w.el.style.top = 28 + i * 24 + "px";
-            w.el.style.width = Math.min(420, window.innerWidth - 60) + "px";
-            w.el.style.height = Math.min(320, window.innerHeight - 90) + "px";
-            bringToFront(w.id);
-        });
+        state.windowManager.cascade(window.innerWidth, window.innerHeight);
+        applyWindowManagerLayout();
         scheduleWindowStateSave();
     }
 
     /** Tile all visible windows across the desktop like Win98 «Стопкой» */
     function tileWindows(wins) {
         if (!wins.length) return;
-        const cols = Math.ceil(Math.sqrt(wins.length));
-        const rows = Math.ceil(wins.length / cols);
-        const areaW = window.innerWidth;
-        const areaH = Math.max(1, window.innerHeight - 28);
-        const wW = Math.floor(areaW / cols);
-        const hH = Math.floor(areaH / rows);
-        wins.forEach((w, i) => {
-            w.el.classList.remove("maximized");
-            w.maximized = false;
-            w.el.style.left = (i % cols) * wW + "px";
-            w.el.style.top = Math.floor(i / cols) * hH + "px";
-            w.el.style.width = wW + "px";
-            w.el.style.height = hH + "px";
-            bringToFront(w.id);
-        });
+        state.windowManager.tile(window.innerWidth, window.innerHeight);
+        applyWindowManagerLayout();
         scheduleWindowStateSave();
+    }
+
+    /** Push the geometry the WindowManager just computed (cascade/tile) onto
+        every window element, and un-maximize the ones it touched. */
+    function applyWindowManagerLayout() {
+        // state.windows IS windowManager.windows — the WinData view has el.
+        state.windows.forEach((w) => {
+            if (!w.el) return;
+            w.el.classList.remove("maximized");
+            w.el.style.left = w.x + "px";
+            w.el.style.top = w.y + "px";
+            w.el.style.width = w.w + "px";
+            w.el.style.height = w.h + "px";
+        });
+        syncActiveWindowVisuals();
     }
 
     /** «Свойства панели задач» — classic Win98 checkboxes with real behavior */
@@ -5273,7 +5270,7 @@ import { computeWindowStackPosition } from "./lib/windows";
 
         // Keyboard support — only while this window is the active one
         const onKey = (e) => {
-            if (state.activeWindowId !== winData.id) return;
+            if (state.windowManager.activeWindowId !== winData.id) return;
             const map = { Escape: "C", Backspace: "Back", Enter: "=" };
             const k = map[e.key] || e.key;
             if (
