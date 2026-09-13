@@ -20,6 +20,8 @@ import { DEFAULT_SETTINGS, mergeSettings, ICON_SIZES, FOLDER_STYLES, UI_FONTS } 
 import { buildSearchIndex, filterSearchNodes } from "./lib/search";
 import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
 import { WindowManager } from "./lib/windows";
+import { weatherIcon, windDirName, buildGeocodingUrl, buildForecastUrl, parseWeatherCurrent, firstGeocodeHit, formatUpdatedTime } from "./lib/weather";
+import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar";
 
 /* ============================================================
    Types (JSDoc — checked by `tsc --noEmit`, see tsconfig.json)
@@ -769,23 +771,8 @@ import { WindowManager } from "./lib/windows";
     }
 
     /* ============================================================
-     WEATHER (Open-Meteo, no API key)
+     WEATHER (Open-Meteo, no API key; helpers live in lib/weather)
      ============================================================ */
-
-    /** Map WMO weather code → emoji icon */
-    function weatherIcon(code) {
-        if (code === 0) return "☀️";
-        if (code === 1) return "🌤️";
-        if (code === 2) return "⛅";
-        if (code === 3) return "☁️";
-        if (code === 45 || code === 48) return "🌫️";
-        if (code >= 51 && code <= 67) return "🌧️";
-        if (code >= 71 && code <= 77) return "❄️";
-        if (code >= 80 && code <= 82) return "🌦️";
-        if (code === 85 || code === 86) return "🌨️";
-        if (code >= 95) return "⛈️";
-        return "🌡️";
-    }
 
     function hideWeather() {
         $weather.classList.remove("visible");
@@ -801,12 +788,6 @@ import { WindowManager } from "./lib/windows";
         tempEl.textContent = `${Math.round(temp)}°`;
         $weather.replaceChildren(icon, tempEl);
         $weather.classList.add("visible");
-    }
-
-    /** Map wind bearing (deg) → Russian compass direction */
-    function windDirName(deg) {
-        const dirs = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"];
-        return dirs[Math.round(((deg % 360) / 45)) % 8];
     }
 
     function weatherCityName() {
@@ -845,40 +826,32 @@ import { WindowManager } from "./lib/windows";
             DEFAULT_SETTINGS.weatherCity;
         try {
             // Resolve city → coordinates
-            const geoResp = await fetch(
-                `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(currentCity)}&count=1&language=ru&format=json`,
-                { mode: "cors" },
-            );
+            const geoResp = await fetch(buildGeocodingUrl(currentCity), {
+                mode: "cors",
+            });
             const geo = await geoResp.json();
-            const hit = geo && geo.results && geo.results[0];
+            const hit = firstGeocodeHit(geo);
             if (!hit) {
                 hideWeather();
                 return;
             }
             // Current weather (full set of fields for the details window)
             const wxResp = await fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&current=temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,cloud_cover`,
+                buildForecastUrl(hit.latitude, hit.longitude),
                 { mode: "cors" },
             );
             const wx = await wxResp.json();
-            if (!wx || !wx.current) {
+            const parsed = parseWeatherCurrent(
+                wx && wx.current,
+                currentCity,
+                formatUpdatedTime(new Date()),
+            );
+            if (!parsed) {
                 hideWeather();
                 return;
             }
-            const cur = wx.current;
-            state.weatherData = {
-                city: currentCity,
-                temp: cur.temperature_2m,
-                code: cur.weather_code,
-                feelsLike: cur.apparent_temperature,
-                humidity: cur.relative_humidity_2m,
-                precipitation: cur.precipitation,
-                windSpeed: cur.wind_speed_10m,
-                windDirection: cur.wind_direction_10m,
-                cloudCover: cur.cloud_cover,
-                updated: new Date().toLocaleTimeString("ru-RU"),
-            };
-            renderWeather(cur.temperature_2m, cur.weather_code);
+            state.weatherData = parsed;
+            renderWeather(parsed.temp, parsed.code);
             saveWeatherCache(currentCity, state.weatherData);
             renderOpenWeatherWindow();
         } catch {
@@ -3322,31 +3295,22 @@ import { WindowManager } from "./lib/windows";
         prev.className = "win98-btn cal-nav";
         prev.textContent = "◀";
         prev.addEventListener("click", () => {
-            calendarMonth--;
-            if (calendarMonth < 0) {
-                calendarMonth = 11;
-                calendarYear--;
-            }
+            const p = addMonths(calendarYear, calendarMonth, -1);
+            calendarYear = p.year;
+            calendarMonth = p.month;
             renderCalendar(winData);
         });
         const title = document.createElement("div");
         title.className = "cal-title";
-        const now = new Date();
-        title.textContent =
-            new Date(calendarYear, calendarMonth, 1).toLocaleString("ru-RU", {
-                month: "long",
-                year: "numeric",
-            });
+        title.textContent = monthTitle(calendarYear, calendarMonth);
         const next = document.createElement("button");
         next.type = "button";
         next.className = "win98-btn cal-nav";
         next.textContent = "▶";
         next.addEventListener("click", () => {
-            calendarMonth++;
-            if (calendarMonth > 11) {
-                calendarMonth = 0;
-                calendarYear++;
-            }
+            const p = addMonths(calendarYear, calendarMonth, 1);
+            calendarYear = p.year;
+            calendarMonth = p.month;
             renderCalendar(winData);
         });
         header.append(prev, title, next);
@@ -3363,25 +3327,19 @@ import { WindowManager } from "./lib/windows";
             grid.appendChild(cell);
         }
 
-        const firstDow = new Date(calendarYear, calendarMonth, 1).getDay(); // 0=Sun
-        let offset = (firstDow + 6) % 7; // Monday-first
-        const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-        for (let i = 0; i < offset; i++) {
-            const cell = document.createElement("div");
-            cell.className = "cal-cell cal-empty";
-            grid.appendChild(cell);
-        }
-        const today = new Date();
-        for (let d = 1; d <= daysInMonth; d++) {
-            const cell = document.createElement("div");
-            cell.className = "cal-cell" +
-                (d === today.getDate() &&
-                calendarMonth === today.getMonth() &&
-                calendarYear === today.getFullYear()
-                    ? " cal-today"
-                    : "");
-            cell.textContent = String(d);
-            grid.appendChild(cell);
+        const cells = monthCells(calendarYear, calendarMonth);
+        const todayDay = todayInMonth(calendarYear, calendarMonth);
+        for (const cell of cells) {
+            const el = document.createElement("div");
+            el.className =
+                "cal-cell" +
+                (cell === null
+                    ? " cal-empty"
+                    : cell === todayDay
+                      ? " cal-today"
+                      : "");
+            el.textContent = cell === null ? "" : String(cell);
+            grid.appendChild(el);
         }
         ce.appendChild(grid);
 
