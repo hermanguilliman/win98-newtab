@@ -169,8 +169,12 @@ export function mergeSettings(
         });
         base.customColors = colors;
     }
-    if (partial.wallpaper) {
-        const wp = partial.wallpaper;
+    if (
+        partial.wallpaper &&
+        typeof partial.wallpaper === "object" &&
+        !Array.isArray(partial.wallpaper)
+    ) {
+        const wp: Partial<WallpaperSettings> = partial.wallpaper;
         if (wp.type === "color" || wp.type === "image") {
             base.wallpaper.type = wp.type;
         }
@@ -179,9 +183,11 @@ export function mergeSettings(
         if (wp.imageStyle === "stretch" || wp.imageStyle === "tile" || wp.imageStyle === "center") {
             base.wallpaper.imageStyle = wp.imageStyle;
         }
-        const scale = clampInt(Math.round(wp.scale as number), 10, 500);
-        if (typeof wp.scale === "number" && scale !== null) {
-            base.wallpaper.scale = scale;
+        if (typeof wp.scale === "number") {
+            const scale = clampInt(Math.round(wp.scale), 10, 500);
+            if (scale !== null) {
+                base.wallpaper.scale = scale;
+            }
         }
         if (wp.uiType === "color" || wp.uiType === "file" || wp.uiType === "url") {
             base.wallpaper.uiType = wp.uiType;

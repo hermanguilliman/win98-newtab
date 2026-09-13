@@ -146,4 +146,34 @@ describe("mergeSettings", () => {
         expect(s.theme).toBe("olive");
         expect((s as unknown as Record<string, unknown>)["newerOfSomething"]).toBeUndefined();
     });
+
+    it("rejects malformed wallpaper shapes (string/array/null) without touching defaults", () => {
+        expect(
+            mergeSettings({ wallpaper: "teal" as unknown as Settings["wallpaper"] }).wallpaper,
+        ).toEqual(DEFAULT_SETTINGS.wallpaper);
+        expect(
+            mergeSettings({ wallpaper: [] as unknown as Settings["wallpaper"] }).wallpaper,
+        ).toEqual(DEFAULT_SETTINGS.wallpaper);
+        expect(
+            mergeSettings({ wallpaper: null as unknown as Settings["wallpaper"] }).wallpaper,
+        ).toEqual(DEFAULT_SETTINGS.wallpaper);
+    });
+
+    it("wallpaper.scale guards type before rounding (no NaN leaks)", () => {
+        expect(
+            mergeSettings({
+                wallpaper: { scale: "150" } as unknown as Settings["wallpaper"],
+            }).wallpaper.scale,
+        ).toBe(DEFAULT_SETTINGS.wallpaper.scale);
+        expect(
+            mergeSettings({
+                wallpaper: { scale: NaN } as unknown as Settings["wallpaper"],
+            }).wallpaper.scale,
+        ).toBe(DEFAULT_SETTINGS.wallpaper.scale);
+        expect(
+            mergeSettings({
+                wallpaper: { scale: 150 } as unknown as Settings["wallpaper"],
+            }).wallpaper.scale,
+        ).toBe(150);
+    });
 });
