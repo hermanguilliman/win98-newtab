@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     ALL_ROOT_ID,
     ROOT_ORDER,
+    buildAllBookmarksNode,
     buildNodeIndex,
     getNodePath,
     isBookmarkNode,
@@ -103,5 +104,45 @@ describe("constants", () => {
 
     it("all-bookmarks id is a string constant", () => {
         expect(ALL_ROOT_ID).toBe("__root__");
+    });
+});
+
+describe("buildAllBookmarksNode", () => {
+    it("builds the synthetic root with only visible children", () => {
+        const tree = folder("0", "root", "", [
+            folder("1", "Bar", "0", [bookmark("11", "g", "https://g", "1")]),
+            bookmark("2", "b", "https://b", "0"),
+            { id: "3", title: "sep", parentId: "0" }, // separator: no url, no children
+        ]);
+        const node = buildAllBookmarksNode(tree);
+        expect(node.id).toBe(ALL_ROOT_ID);
+        expect(node.title).toBe("Все закладки");
+        expect((node.children || []).map((n) => n.id)).toEqual(["1", "2"]);
+    });
+
+    it("filters out invisible nodes from deeper folders", () => {
+        const tree = folder("0", "root", "", [
+            folder("1", "Bar", "0", [
+                bookmark("11", "g", "https://g", "1"),
+                { id: "12", title: "sep2", parentId: "1" },
+            ]),
+        ]);
+        const node = buildAllBookmarksNode(tree);
+        expect((node.children || []).map((n) => n.id)).toEqual(["1"]);
+    });
+
+    it("never caches — returns a fresh node on every call", () => {
+        const tree = folder("0", "root", "", [
+            bookmark("2", "b", "https://b", "0"),
+        ]);
+        const first = buildAllBookmarksNode(tree);
+        expect(first).not.toBe(buildAllBookmarksNode(tree));
+        expect(first.children).not.toBe(buildAllBookmarksNode(tree).children);
+    });
+
+    it("tolerates null/undefined tree and missing children", () => {
+        expect(buildAllBookmarksNode(null).children).toEqual([]);
+        expect(buildAllBookmarksNode(undefined).children).toEqual([]);
+        expect(buildAllBookmarksNode(folder("0", "root", "")).children).toEqual([]);
     });
 });

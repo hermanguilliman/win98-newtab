@@ -54,6 +54,13 @@
     }
     return parts.join(" > ") || "/";
   }
+  function buildAllBookmarksNode(tree) {
+    return {
+      id: ALL_ROOT_ID,
+      title: "Все закладки",
+      children: (tree && tree.children || []).filter((n) => isVisibleNode(n))
+    };
+  }
 
   // src/lib/theme.ts
   var THEME_OPTIONS = [
@@ -2059,13 +2066,6 @@
   }
   function isSingleClickMode() {
     return state.settings && state.settings.clickMode === "single";
-  }
-  function buildAllBookmarksNode(tree) {
-    return {
-      id: ALL_ROOT_ID,
-      title: "Все закладки",
-      children: (tree && tree.children || []).filter((n) => isVisibleNode(n))
-    };
   }
   function resolveNavNode(node, tree) {
     const t = tree || state.treeRoot;

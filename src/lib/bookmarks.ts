@@ -80,3 +80,15 @@ export function getNodePath(
     }
     return parts.join(" > ") || "/";
 }
+
+/**
+ * The synthetic «Все закладки» top-level node: a root that lists the Chrome
+ * root folders and is rebuilt fresh on every navigation (never cached).
+ */
+export function buildAllBookmarksNode(tree: BookmarkNode | null | undefined): BookmarkNode {
+    return {
+        id: ALL_ROOT_ID,
+        title: "Все закладки",
+        children: ((tree && tree.children) || []).filter((n) => isVisibleNode(n)),
+    };
+}

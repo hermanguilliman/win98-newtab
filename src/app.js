@@ -12,6 +12,7 @@ import {
     buildNodeIndex,
     isRootFolder,
     getNodePath,
+    buildAllBookmarksNode,
     ALL_ROOT_ID,
     ROOT_ORDER,
 } from "./lib/bookmarks";
@@ -1960,16 +1961,6 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
     /* ============================================================
      FOLDER WINDOW
      ============================================================ */
-
-    /** Build the synthetic top-level node that lists the Chrome root folders */
-    /** @param {BookmarkNode} tree @returns {BookmarkNode} */
-    function buildAllBookmarksNode(tree) {
-        return {
-            id: ALL_ROOT_ID,
-            title: "Все закладки",
-            children: ((tree && tree.children) || []).filter((n) => isVisibleNode(n)),
-        };
-    }
 
     /** Re-resolve a nav target against the live tree (synthetic root is always rebuilt fresh) */
     function resolveNavNode(node, tree) {
