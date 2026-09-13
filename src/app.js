@@ -4,7 +4,8 @@
    src/app.js + src/lib/*.ts. Do NOT edit it by hand.
    ============================================================ */
 
-import { escapeHtml, clampInt } from "./lib/format";
+import { escapeHtml, clampInt, formatDateTime } from "./lib/format";
+import { evalOp } from "./lib/calc";
 import {
     isFolderNode,
     isBookmarkNode,
@@ -2678,20 +2679,6 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
         });
     }
 
-    function formatDateTime(ts) {
-        try {
-            return new Date(ts).toLocaleString("ru-RU", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-            });
-        } catch {
-            return String(ts);
-        }
-    }
-
     function renameNode(node) {
         openPromptDialog(
             "Переименовать",
@@ -5354,23 +5341,10 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
         }
     }
 
-    function evalOp(a, b, op) {
-        switch (op) {
-            case "+":
-                return a + b;
-            case "-":
-                return a - b;
-            case "*":
-                return a * b;
-            case "/":
-                return b === 0 ? null : a / b;
-        }
-        return null;
-    }
-
     /* ============================================================
      UTILITIES
-     escapeHtml / clampInt live in src/lib/format.ts (imported above).
+     escapeHtml / clampInt / formatDateTime live in src/lib/format.ts,
+     evalOp lives in src/lib/calc.ts (imported above).
      ============================================================ */
 
     /* ============================================================

@@ -16,6 +16,34 @@
     if (!Number.isFinite(n)) return null;
     return Math.min(max, Math.max(min, Math.round(n)));
   }
+  function formatDateTime(ts) {
+    try {
+      return new Date(ts).toLocaleString("ru-RU", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch {
+      return String(ts);
+    }
+  }
+
+  // src/lib/calc.ts
+  function evalOp(a, b, op) {
+    switch (op) {
+      case "+":
+        return a + b;
+      case "-":
+        return a - b;
+      case "*":
+        return a * b;
+      case "/":
+        return b === 0 ? null : a / b;
+    }
+    return null;
+  }
 
   // src/lib/bookmarks.ts
   var ALL_ROOT_ID = "__root__";
@@ -2632,19 +2660,6 @@
       buttons: [{ label: "OK" }]
     });
   }
-  function formatDateTime(ts) {
-    try {
-      return new Date(ts).toLocaleString("ru-RU", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    } catch {
-      return String(ts);
-    }
-  }
   function renameNode(node) {
     openPromptDialog(
       "Переименовать",
@@ -4844,19 +4859,6 @@
     } else if (key === "M+") {
       calc.mem += num();
     }
-  }
-  function evalOp(a, b, op) {
-    switch (op) {
-      case "+":
-        return a + b;
-      case "-":
-        return a - b;
-      case "*":
-        return a * b;
-      case "/":
-        return b === 0 ? null : a / b;
-    }
-    return null;
   }
   function init() {
     updateClock({});

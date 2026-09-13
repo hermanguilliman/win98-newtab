@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampInt, escapeHtml } from "../src/lib/format";
+import { clampInt, escapeHtml, formatDateTime } from "../src/lib/format";
 
 describe("escapeHtml", () => {
     it("escapes all five special characters", () => {
@@ -35,5 +35,23 @@ describe("clampInt", () => {
         expect(clampInt(undefined, 0, 10)).toBeNull();
         expect(clampInt(NaN, 0, 10)).toBeNull();
         expect(clampInt(Infinity, 0, 10)).toBeNull();
+    });
+});
+
+describe("formatDateTime", () => {
+    it("formats ru-RU with date and time", () => {
+        const out = formatDateTime(new Date(2026, 8, 13, 14, 5)); // 13.09.2026 14:05
+        expect(out).toMatch(/сентября/);
+        expect(out).toMatch(/2026/);
+        expect(out).toMatch(/14:05/);
+    });
+
+    it("accepts numeric timestamps", () => {
+        const out = formatDateTime(new Date(2026, 8, 13, 9, 0).getTime());
+        expect(out).toMatch(/09:00/);
+    });
+
+    it("renders Invalid Date for unparseable input (matches previous in-app behavior)", () => {
+        expect(formatDateTime("not-a-date")).toBe("Invalid Date");
     });
 });

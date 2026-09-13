@@ -26,3 +26,18 @@ export function clampInt(v: unknown, min: number, max: number): number | null {
     if (!Number.isFinite(n)) return null;
     return Math.min(max, Math.max(min, Math.round(n)));
 }
+
+/** ru-RU «год, месяц, день, часы:минуты»; falls back to String(ts) on invalid input. */
+export function formatDateTime(ts: unknown): string {
+    try {
+        return new Date(ts as string | number | Date).toLocaleString("ru-RU", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    } catch {
+        return String(ts);
+    }
+}
