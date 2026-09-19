@@ -702,6 +702,118 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
         return out.toDataURL();
     }
 
+    /* ---------- Persistent favicon cache (chrome.storage.local "faviconCache") ----------
+       Cleaned favicon data URLs survive page loads, so most new tabs render icons
+       instantly from storage without touching the network. The cache is keyed by the
+       full favicon URL (domain + size), so an icon-size change naturally misses and
+       re-fetches. A page reload (F5 / Ctrl+F5 — Chrome exposes no API to tell the
+       two apart) drops the cache, force-refreshing every icon from the network. */
+
+    const FAVICON_CACHE_KEY = "faviconCache";
+    const FAVICON_CACHE_MAX = 800; // FIFO eviction keeps storage bounded
+    const faviconCacheMem = new Map(); // favUrl -> cleaned data URL
+    const faviconPending = new Map(); // favUrl -> in-flight Promise (dedupe)
+    let faviconSaveTimer = 0;
+
+    /** True when the new-tab page was (re)loaded rather than newly opened. */
+    function isPageReload() {
+        try {
+            const entries = performance.getEntriesByType("navigation");
+            if (entries.length === 0) return false;
+            const nav = /** @type {PerformanceNavigationTiming} */ (entries[0]);
+            return nav.type === "reload";
+        } catch {
+            return false;
+        }
+    }
+
+    /** Load the stored favicon cache into memory; on a page reload, drop it so
+     *  this load re-fetches every icon from the network (force refresh). */
+    async function prepareFaviconCache() {
+        if (isPageReload()) {
+            try {
+                await chrome.storage.local.remove(FAVICON_CACHE_KEY);
+            } catch {
+                // storage unavailable — just start empty
+            }
+            return;
+        }
+        try {
+            const stored = await chrome.storage.local.get(FAVICON_CACHE_KEY);
+            const entries = stored[FAVICON_CACHE_KEY];
+            if (entries && typeof entries === "object") {
+                for (const [k, v] of Object.entries(entries)) {
+                    if (typeof v === "string" && v.startsWith("data:image/")) {
+                        faviconCacheMem.set(k, v);
+                    }
+                }
+            }
+        } catch {
+            // cache starts empty on failure
+        }
+    }
+
+    /** Debounced persist of the in-memory cache. */
+    function scheduleFaviconSave() {
+        clearTimeout(faviconSaveTimer);
+        faviconSaveTimer = setTimeout(() => {
+            chrome.storage.local
+                .set({ [FAVICON_CACHE_KEY]: Object.fromEntries(faviconCacheMem) })
+                .catch(() => {});
+        }, 400);
+    }
+
+    /** Cleaned data URL for a favicon URL, or null when not cached yet. */
+    function cachedFavicon(favUrl) {
+        return faviconCacheMem.get(favUrl) || null;
+    }
+
+    /** Fetch + clean a favicon, memoizing the result and deduping in-flight
+     *  requests (desktop + folder window + search may ask for the same one). */
+    function ensureFavicon(favUrl, size) {
+        const inflight = faviconPending.get(favUrl);
+        if (inflight) return inflight;
+        const p = faviconDataUrl(favUrl, size)
+            .then((clean) => {
+                faviconCacheMem.set(favUrl, clean);
+                if (faviconCacheMem.size > FAVICON_CACHE_MAX) {
+                    const oldest = faviconCacheMem.keys().next().value;
+                    if (oldest !== undefined) faviconCacheMem.delete(oldest);
+                }
+                scheduleFaviconSave();
+                return clean;
+            })
+            .finally(() => {
+                faviconPending.delete(favUrl);
+            });
+        faviconPending.set(favUrl, p);
+        return p;
+    }
+
+    /** Point an <img> at a bookmark's favicon: cached clean copy when available,
+     *  otherwise the raw favicon now + cleaned swap-in once fetched. */
+    function setFaviconImage(img, url, size, fallbackSize) {
+        const favUrl = getFaviconUrl(url);
+        if (!favUrl) {
+            img.src = drawPageIcon(fallbackSize || size);
+            return;
+        }
+        const cached = cachedFavicon(favUrl);
+        if (cached) {
+            img.src = cached;
+            return;
+        }
+        img.onerror = () => {
+            img.src = drawPageIcon(fallbackSize || size);
+        };
+        img.src = favUrl;
+        ensureFavicon(favUrl, size)
+            .then((clean) => {
+                img.src = clean;
+            })
+            .catch(() => {});
+    }
+
     /** Folder icon appearance styles (selectable in Настройки → Вид) — in src/lib/settings.ts */
 
     /* ---------- Appearance themes live in src/lib/theme.ts ----------
@@ -1749,23 +1861,9 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
             img.src = drawFolderIcon(folderColorFor(node.id));
             return;
         }
-        // Try favicon, fallback to page icon. Show the original favicon
-        // immediately (usually cached), then swap in a background-cleaned
-        // copy once fetched — Google wraps some icons in a white PNG.
-        const favUrl = getFaviconUrl(node.url);
-        if (favUrl) {
-            img.onerror = () => {
-                img.src = drawPageIcon();
-            };
-            img.src = favUrl;
-            faviconDataUrl(favUrl, currentIconSize())
-                .then((clean) => {
-                    img.src = clean;
-                })
-                .catch(() => {});
-        } else {
-            img.src = drawPageIcon();
-        }
+        // Favicon from the persistent cache (or the raw one now, swapping in the
+        // background-cleaned copy once fetched); generic page icon as fallback.
+        setFaviconImage(img, node.url, currentIconSize());
     }
 
     function setIconLabel(icon, node) {
@@ -2213,20 +2311,7 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
         if (isFolder) {
             img.src = drawFolderIcon(folderColorFor(node.id));
         } else {
-            const favUrl = getFaviconUrl(node.url);
-            if (favUrl) {
-                img.onerror = () => {
-                    img.src = drawPageIcon();
-                };
-                img.src = favUrl;
-                faviconDataUrl(favUrl, currentIconSize())
-                    .then((clean) => {
-                        img.src = clean;
-                    })
-                    .catch(() => {});
-            } else {
-                img.src = drawPageIcon();
-            }
+            setFaviconImage(img, node.url, currentIconSize());
         }
 
         const label = document.createElement("div");
@@ -3032,20 +3117,7 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
                         24,
                     );
                 } else {
-                    const fav = getFaviconUrl(n.url);
-                    img.onerror = () => {
-                        img.src = drawPageIcon(24);
-                    };
-                    if (fav) {
-                        img.src = fav;
-                        faviconDataUrl(fav, 24)
-                            .then((clean) => {
-                                img.src = clean;
-                            })
-                            .catch(() => {});
-                    } else {
-                        img.src = drawPageIcon(24);
-                    }
+                    setFaviconImage(img, n.url, 24, 24);
                 }
                 const text = document.createElement("div");
                 text.className = "search-result-text";
@@ -5343,6 +5415,7 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
         attachNodeDragGlobals();
         updateWeather(); // reads cache + refreshes in the background right away
         loadSettings()
+            .then(prepareFaviconCache) // cache must be in memory before icons render
             .then(loadBookmarks)
             .then(() => restoreSavedWindows());
     }

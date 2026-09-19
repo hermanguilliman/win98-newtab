@@ -1163,6 +1163,92 @@
     );
     return out.toDataURL();
   }
+  var FAVICON_CACHE_KEY = "faviconCache";
+  var FAVICON_CACHE_MAX = 800;
+  var faviconCacheMem = /* @__PURE__ */ new Map();
+  var faviconPending = /* @__PURE__ */ new Map();
+  var faviconSaveTimer = 0;
+  function isPageReload() {
+    try {
+      const entries = performance.getEntriesByType("navigation");
+      if (entries.length === 0) return false;
+      const nav = (
+        /** @type {PerformanceNavigationTiming} */
+        entries[0]
+      );
+      return nav.type === "reload";
+    } catch {
+      return false;
+    }
+  }
+  async function prepareFaviconCache() {
+    if (isPageReload()) {
+      try {
+        await chrome.storage.local.remove(FAVICON_CACHE_KEY);
+      } catch {
+      }
+      return;
+    }
+    try {
+      const stored = await chrome.storage.local.get(FAVICON_CACHE_KEY);
+      const entries = stored[FAVICON_CACHE_KEY];
+      if (entries && typeof entries === "object") {
+        for (const [k, v] of Object.entries(entries)) {
+          if (typeof v === "string" && v.startsWith("data:image/")) {
+            faviconCacheMem.set(k, v);
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  function scheduleFaviconSave() {
+    clearTimeout(faviconSaveTimer);
+    faviconSaveTimer = setTimeout(() => {
+      chrome.storage.local.set({ [FAVICON_CACHE_KEY]: Object.fromEntries(faviconCacheMem) }).catch(() => {
+      });
+    }, 400);
+  }
+  function cachedFavicon(favUrl) {
+    return faviconCacheMem.get(favUrl) || null;
+  }
+  function ensureFavicon(favUrl, size) {
+    const inflight = faviconPending.get(favUrl);
+    if (inflight) return inflight;
+    const p = faviconDataUrl(favUrl, size).then((clean) => {
+      faviconCacheMem.set(favUrl, clean);
+      if (faviconCacheMem.size > FAVICON_CACHE_MAX) {
+        const oldest = faviconCacheMem.keys().next().value;
+        if (oldest !== void 0) faviconCacheMem.delete(oldest);
+      }
+      scheduleFaviconSave();
+      return clean;
+    }).finally(() => {
+      faviconPending.delete(favUrl);
+    });
+    faviconPending.set(favUrl, p);
+    return p;
+  }
+  function setFaviconImage(img, url, size, fallbackSize) {
+    const favUrl = getFaviconUrl(url);
+    if (!favUrl) {
+      img.src = drawPageIcon(fallbackSize || size);
+      return;
+    }
+    const cached = cachedFavicon(favUrl);
+    if (cached) {
+      img.src = cached;
+      return;
+    }
+    img.onerror = () => {
+      img.src = drawPageIcon(fallbackSize || size);
+    };
+    img.src = favUrl;
+    ensureFavicon(favUrl, size).then((clean) => {
+      img.src = clean;
+    }).catch(() => {
+    });
+  }
   var previewFolderStyle = null;
   var previewFolderViewMode = null;
   function folderIconStyleName() {
@@ -1946,19 +2032,7 @@
       img.src = drawFolderIcon(folderColorFor(node.id));
       return;
     }
-    const favUrl = getFaviconUrl(node.url);
-    if (favUrl) {
-      img.onerror = () => {
-        img.src = drawPageIcon();
-      };
-      img.src = favUrl;
-      faviconDataUrl(favUrl, currentIconSize()).then((clean) => {
-        img.src = clean;
-      }).catch(() => {
-      });
-    } else {
-      img.src = drawPageIcon();
-    }
+    setFaviconImage(img, node.url, currentIconSize());
   }
   function setIconLabel(icon, node) {
     const label = icon.querySelector(".desktop-icon-label");
@@ -2316,19 +2390,7 @@
     if (isFolder) {
       img.src = drawFolderIcon(folderColorFor(node.id));
     } else {
-      const favUrl = getFaviconUrl(node.url);
-      if (favUrl) {
-        img.onerror = () => {
-          img.src = drawPageIcon();
-        };
-        img.src = favUrl;
-        faviconDataUrl(favUrl, currentIconSize()).then((clean) => {
-          img.src = clean;
-        }).catch(() => {
-        });
-      } else {
-        img.src = drawPageIcon();
-      }
+      setFaviconImage(img, node.url, currentIconSize());
     }
     const label = document.createElement("div");
     label.className = "folder-item-label";
@@ -2978,19 +3040,7 @@
             24
           );
         } else {
-          const fav = getFaviconUrl(n.url);
-          img.onerror = () => {
-            img.src = drawPageIcon(24);
-          };
-          if (fav) {
-            img.src = fav;
-            faviconDataUrl(fav, 24).then((clean) => {
-              img.src = clean;
-            }).catch(() => {
-            });
-          } else {
-            img.src = drawPageIcon(24);
-          }
+          setFaviconImage(img, n.url, 24, 24);
         }
         const text = document.createElement("div");
         text.className = "search-result-text";
@@ -4873,7 +4923,7 @@
     attachBookmarkListeners();
     attachNodeDragGlobals();
     updateWeather();
-    loadSettings().then(loadBookmarks).then(() => restoreSavedWindows());
+    loadSettings().then(prepareFaviconCache).then(loadBookmarks).then(() => restoreSavedWindows());
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
