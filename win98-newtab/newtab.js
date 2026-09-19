@@ -3581,7 +3581,7 @@
     const gap = state.settings && state.settings.iconGap || DEFAULT_SETTINGS.iconGap;
     return Math.max(
       1,
-      Math.floor($desktopIcons.clientWidth / (size + gap + 12))
+      Math.floor($desktopIcons.clientWidth / (size + gap + 28))
     );
   }
   document.addEventListener("keydown", (e) => {

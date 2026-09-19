@@ -3787,9 +3787,11 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
         const gap =
             (state.settings && state.settings.iconGap) ||
             DEFAULT_SETTINGS.iconGap;
+        // Cell width = icon size + 28px (matches .desktop-icon in win98.css),
+        // plus the gap between cells.
         return Math.max(
             1,
-            Math.floor($desktopIcons.clientWidth / (size + gap + 12)),
+            Math.floor($desktopIcons.clientWidth / (size + gap + 28)),
         );
     }
 

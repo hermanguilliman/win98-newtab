@@ -111,7 +111,7 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    width: calc(var(--win98-icon-size, 32px) + 8px);
+    width: calc(var(--win98-icon-size, 32px) + 28px);
     padding: 4px 2px;
     cursor: pointer;
     border: 1px solid transparent;
@@ -142,7 +142,7 @@ body {
     text-shadow: var(--win98-label-shadow, 1px 1px 1px rgba(0, 0, 0, 0.7));
     word-break: break-word;
     line-height: 1.2;
-    max-width: calc(var(--win98-icon-size, 32px) + 4px);
+    max-width: calc(var(--win98-icon-size, 32px) + 24px);
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -376,7 +376,7 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: calc(var(--win98-icon-size, 32px) + 8px);
+    width: calc(var(--win98-icon-size, 32px) + 28px);
     padding: 4px 2px;
     cursor: pointer;
     text-align: center;
@@ -404,7 +404,7 @@ body {
     font-size: var(--win98-label-size, 11px);
     word-break: break-word;
     line-height: 1.2;
-    max-width: calc(var(--win98-icon-size, 32px) + 4px);
+    max-width: calc(var(--win98-icon-size, 32px) + 24px);
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 3;
