@@ -1104,7 +1104,7 @@
   function getFaviconUrl(url) {
     try {
       const u = new URL(url);
-      return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=${currentIconSize()}`;
+      return "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=" + encodeURIComponent(u.origin) + "&size=128";
     } catch {
       return null;
     }

@@ -607,11 +607,21 @@ import { addMonths, monthCells, monthTitle, todayInMonth } from "./lib/calendar"
         return c.toDataURL();
     }
 
-    /** Generate a favicon URL from bookmark URL */
+    /** Generate a favicon URL from bookmark URL.
+     *  Google's undocumented faviconV2 endpoint rasterizes the site's best
+     *  favicon (including SVG and apple-touch-icon variants, via
+     *  fallback_opts=TYPE,SIZE,URL) into a PNG; 128px is requested so even SVG
+     *  originals downscale crisply. The URL is size-independent — the canvas
+     *  re-render in faviconDataUrl does the final downscale. */
     function getFaviconUrl(url) {
         try {
             const u = new URL(url);
-            return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=${currentIconSize()}`;
+            return (
+                "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON" +
+                "&fallback_opts=TYPE,SIZE,URL&url=" +
+                encodeURIComponent(u.origin) +
+                "&size=128"
+            );
         } catch {
             return null;
         }

@@ -10,7 +10,7 @@
     "host_permissions": [
         "https://api.open-meteo.com/*",
         "https://geocoding-api.open-meteo.com/*",
-        "https://www.google.com/*"
+        "https://*.gstatic.com/*"
     ],
     "icons": {
         "16": "icons/icon16.png",
