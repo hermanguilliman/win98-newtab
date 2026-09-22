@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     addMonths,
+    formatDayTitle,
     monthCells,
     monthTitle,
     todayInMonth,
@@ -28,6 +29,18 @@ describe("monthTitle", () => {
     it("renders the Russian long month + year", () => {
         expect(monthTitle(2026, 8)).toBe("сентябрь 2026 г.");
         expect(monthTitle(2026, 0)).toBe("январь 2026 г.");
+    });
+});
+
+describe("formatDayTitle", () => {
+    it("renders weekday, day, month and year in Russian", () => {
+        // 2026-09-13 is a Sunday.
+        expect(formatDayTitle(2026, 8, 13)).toBe(
+            "воскресенье, 13 сентября 2026 г.",
+        );
+        expect(formatDayTitle(2026, 8, 22)).toBe(
+            "вторник, 22 сентября 2026 г.",
+        );
     });
 });
 

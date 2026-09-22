@@ -1612,6 +1612,7 @@ input[type="radio"]:disabled:checked::after {
     justify-content: space-between;
     gap: 4px;
     padding: 6px 8px 2px;
+    flex-shrink: 0;
 }
 
 .cal-nav {
@@ -1623,6 +1624,7 @@ input[type="radio"]:disabled:checked::after {
     font-size: 12px;
     text-align: center;
     text-transform: capitalize;
+    font-weight: bold;
 }
 
 .cal-grid {
@@ -1630,6 +1632,7 @@ input[type="radio"]:disabled:checked::after {
     grid-template-columns: repeat(7, 1fr);
     gap: 1px;
     padding: 4px 10px;
+    flex-shrink: 0;
 }
 
 .cal-cell {
@@ -1637,16 +1640,205 @@ input[type="radio"]:disabled:checked::after {
     font-size: 11px;
     padding: 2px 0;
     border: 1px solid transparent;
+    min-height: 22px;
 }
 
 .cal-dow {
     font-weight: bold;
     color: var(--win98-dark-gray);
+    padding-bottom: 3px;
 }
 
-.cal-today {
-    border-color: var(--win98-dark-gray);
+.cal-dow.cal-weekend {
+    color: var(--win98-navy);
+}
+
+.cal-day {
+    cursor: default;
     background: var(--win98-white);
+    border-color: var(--win98-hover);
+    vertical-align: top;
+    text-align: left;
+    padding: 2px 3px;
+}
+
+.cal-day:hover {
+    background: var(--win98-hover);
+}
+
+.cal-day.cal-off,
+.cal-day.cal-holiday {
+    color: var(--win98-navy);
+}
+
+.cal-day.cal-holiday .cal-daynum {
+    font-weight: bold;
+    color: #a00000;
+}
+
+.cal-day.cal-today {
+    border-color: var(--win98-dark-gray);
+}
+
+.cal-day.cal-selected {
+    background: var(--win98-navy);
+    color: var(--win98-white);
+}
+
+.cal-day.cal-selected .cal-daynum,
+.cal-day.cal-selected .cal-chip-more {
+    color: var(--win98-white);
+}
+
+.cal-daynum {
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.cal-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 1px;
+}
+
+.cal-chip {
+    font-size: 9px;
+    line-height: 1.25;
+    color: var(--win98-white);
+    border-radius: 2px;
+    padding: 0 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}
+
+.cal-chip-more {
+    font-size: 9px;
+    color: var(--win98-dark-gray);
+    text-align: center;
+}
+
+/* Day panel (below the grid) */
+.cal-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 4px 10px 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--win98-dark-gray);
+    background: var(--win98-inset-bg);
+    overflow: hidden;
+}
+
+.cal-panel-title {
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: capitalize;
+    flex-shrink: 0;
+}
+
+.cal-panel-holiday {
+    font-size: 11px;
+    color: #a00000;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.cal-panel-events {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cal-panel-empty {
+    font-size: 11px;
+    color: var(--win98-dark-gray);
+    padding: 4px 2px;
+}
+
+.cal-ev-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 3px 5px;
+    font-size: 11px;
+}
+
+.cal-ev-time {
+    flex-shrink: 0;
+    color: var(--win98-dark-gray);
+}
+
+.cal-ev-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cal-panel-buttons {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+/* ---------- Event editor dialog ---------- */
+.ev-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+.ev-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ev-label {
+    flex-shrink: 0;
+    font-size: 11px;
+}
+
+.ev-input {
+    font-size: 11px;
+    min-width: 0;
+}
+
+.ev-date {
+    flex: 1.2;
+}
+
+.ev-time {
+    flex: 0.6;
+    min-width: 0;
+}
+
+.ev-note {
+    resize: vertical;
+}
+
+.ev-inline {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+}
+
+.ev-error {
+    font-size: 11px;
+    color: #a00000;
 }
 
 /* ---------- Dialog container (buttons always visible) ---------- */

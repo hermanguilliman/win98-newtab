@@ -651,6 +651,14 @@
       year: "numeric"
     });
   }
+  function formatDayTitle(year, month, day) {
+    return new Date(year, month, day).toLocaleString("ru-RU", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+  }
   function monthCells(year, month) {
     const firstDow = new Date(year, month, 1).getDay();
     const offset = (firstDow + 6) % 7;
@@ -662,6 +670,273 @@
   }
   function todayInMonth(year, month, now = /* @__PURE__ */ new Date()) {
     return now.getFullYear() === year && now.getMonth() === month ? now.getDate() : null;
+  }
+
+  // src/lib/holidays.ts
+  var RU_FIXED_HOLIDAYS = [
+    { date: "01-01", name: "Новогодние каникулы" },
+    { date: "01-02", name: "Новогодние каникулы" },
+    { date: "01-03", name: "Новогодние каникулы" },
+    { date: "01-04", name: "Новогодние каникулы" },
+    { date: "01-05", name: "Новогодние каникулы" },
+    { date: "01-06", name: "Новогодние каникулы" },
+    { date: "01-07", name: "Рождество Христово" },
+    { date: "01-08", name: "Новогодние каникулы" },
+    { date: "02-23", name: "День защитника Отечества" },
+    { date: "03-08", name: "Международный женский день" },
+    { date: "05-01", name: "Праздник Весны и Труда" },
+    { date: "05-09", name: "День Победы" },
+    { date: "06-12", name: "День России" },
+    { date: "11-04", name: "День народного единства" }
+  ];
+  var RU_FIXED_HOLIDAY_MAP = new Map(
+    RU_FIXED_HOLIDAYS.map((h) => [h.date, h.name])
+  );
+  var RU_YEAR_TRANSFERS = {
+    2024: {
+      extraOff: [
+        "01-01",
+        "01-02",
+        "01-03",
+        "01-04",
+        "01-05",
+        "01-08",
+        "02-23",
+        "03-08",
+        "04-29",
+        "04-30",
+        "05-01",
+        "05-09",
+        "05-10",
+        "06-12",
+        "11-04",
+        "12-30",
+        "12-31"
+      ],
+      forcedWork: ["04-27", "11-02", "12-28"]
+    },
+    2025: {
+      extraOff: [
+        "01-01",
+        "01-02",
+        "01-03",
+        "01-06",
+        "01-07",
+        "01-08",
+        "05-01",
+        "05-02",
+        "05-08",
+        "05-09",
+        "06-12",
+        "06-13",
+        "11-03",
+        "11-04",
+        "12-31"
+      ],
+      forcedWork: ["11-01"]
+    },
+    2026: {
+      extraOff: [
+        "01-01",
+        "01-02",
+        "01-05",
+        "01-06",
+        "01-07",
+        "01-08",
+        "01-09",
+        "02-23",
+        "03-09",
+        "05-01",
+        "05-11",
+        "06-12",
+        "11-04",
+        "12-31"
+      ],
+      forcedWork: []
+    }
+  };
+  function monthDayStr(month, day) {
+    return String(month + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+  }
+  function isWeekend(year, month, day) {
+    const dow = new Date(year, month, day).getDay();
+    return dow === 0 || dow === 6;
+  }
+  function nextWorkingDayAfter(date) {
+    const d = new Date(date);
+    do {
+      d.setDate(d.getDate() + 1);
+    } while (d.getDay() === 0 || d.getDay() === 6 || RU_FIXED_HOLIDAY_MAP.has(monthDayStr(d.getMonth(), d.getDate())));
+    return d;
+  }
+  function transferredFromWeekendHoliday(year, month, day) {
+    const target = new Date(year, month, day);
+    for (let i = 1; i <= 14; i++) {
+      const cand = new Date(year, month, day - i);
+      const candDow = cand.getDay();
+      if (candDow !== 0 && candDow !== 6) continue;
+      const key = monthDayStr(cand.getMonth(), cand.getDate());
+      if (!RU_FIXED_HOLIDAY_MAP.has(key)) continue;
+      const moved = nextWorkingDayAfter(cand);
+      if (moved.getFullYear() === target.getFullYear() && moved.getMonth() === target.getMonth() && moved.getDate() === target.getDate()) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function ruDayInfo(year, month, day, transfers) {
+    const key = monthDayStr(month, day);
+    const table = transfers ?? RU_YEAR_TRANSFERS[year];
+    const holidayName = RU_FIXED_HOLIDAY_MAP.get(key);
+    const isHoliday = holidayName !== void 0;
+    if (table && table.forcedWork.includes(key)) {
+      return { isDayOff: false, status: "work" };
+    }
+    if (table && table.extraOff.includes(key)) {
+      return {
+        isDayOff: true,
+        status: isHoliday ? "holiday" : "off",
+        holidayName,
+        transferred: !isHoliday
+      };
+    }
+    if (isHoliday) {
+      return { isDayOff: true, status: "holiday", holidayName };
+    }
+    if (isWeekend(year, month, day)) {
+      return { isDayOff: true, status: "off" };
+    }
+    if (!table && transferredFromWeekendHoliday(year, month, day)) {
+      return { isDayOff: true, status: "off", transferred: true };
+    }
+    return { isDayOff: false, status: "work" };
+  }
+  function parseIsdayoffStatus(status, year) {
+    const length = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 366 : 365;
+    const extraOff = [];
+    const forcedWork = [];
+    let sawDayOff = false;
+    for (let i = 0; i < Math.min(status.length, length); i++) {
+      const ch = status.charCodeAt(i);
+      const isOff = ch === 49 || ch === 50;
+      if (isOff) sawDayOff = true;
+      const d = new Date(year, 0, i + 1);
+      const week = d.getDay() === 0 || d.getDay() === 6;
+      const key = monthDayStr(d.getMonth(), d.getDate());
+      if (isOff && !week) extraOff.push(key);
+      else if (!isOff && week) forcedWork.push(key);
+    }
+    if (!sawDayOff) return null;
+    return { extraOff, forcedWork };
+  }
+
+  // src/lib/calendarEvents.ts
+  function parseDateStr(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const probe = new Date(y, mo - 1, d);
+    if (probe.getFullYear() !== y || probe.getMonth() !== mo - 1 || probe.getDate() !== d) {
+      return null;
+    }
+    return { y, m: mo - 1, d };
+  }
+  function toDateStr(y, m, d) {
+    const mm = String(m + 1).padStart(2, "0");
+    const dd = String(d).padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  }
+  var TIME_RE = /^(\d{1,2}):(\d{2})$/;
+  function normalizeTime(s) {
+    const m = TIME_RE.exec(s ?? "");
+    if (!m) return "";
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h > 23 || min > 59) return "";
+    return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  }
+  function normalizeEvent(raw) {
+    const title = String(raw.title ?? "").trim();
+    const start = parseDateStr(String(raw.startDate ?? ""));
+    if (!title || !start || raw.id === void 0) return null;
+    let end = parseDateStr(String(raw.endDate ?? ""));
+    const allDay = raw.allDay === true;
+    let startTime = allDay ? "" : normalizeTime(raw.startTime ?? "");
+    let endTime = allDay ? "" : normalizeTime(raw.endTime ?? "");
+    if (!end) {
+      end = { ...start };
+    } else {
+      const startTs = new Date(start.y, start.m, start.d).getTime();
+      const endTs = new Date(end.y, end.m, end.d).getTime();
+      if (endTs < startTs) end = { ...start };
+    }
+    return {
+      id: String(raw.id),
+      title,
+      startDate: toDateStr(start.y, start.m, start.d),
+      endDate: toDateStr(end.y, end.m, end.d),
+      allDay,
+      startTime,
+      endTime,
+      note: String(raw.note ?? "")
+    };
+  }
+  function parseTs(s) {
+    const p = parseDateStr(s);
+    return p ? new Date(p.y, p.m, p.d).getTime() : NaN;
+  }
+  function eventCoversDay(ev, y, m, d) {
+    const ts = new Date(y, m, d).getTime();
+    return ts >= parseTs(ev.startDate) && ts <= parseTs(ev.endDate);
+  }
+  function eventsInMonth(events, y, m) {
+    const monthStart = new Date(y, m, 1).getTime();
+    const monthEnd = new Date(y, m + 1, 0).getTime();
+    return events.filter((ev) => {
+      const s = parseTs(ev.startDate);
+      const e = parseTs(ev.endDate);
+      return s <= monthEnd && e >= monthStart;
+    });
+  }
+  function eventsOnDay(events, y, m, d) {
+    return events.filter((ev) => eventCoversDay(ev, y, m, d)).sort(compareEvents);
+  }
+  var EMPTY_TIME = -1;
+  var TIME_MS = (t) => {
+    const m = TIME_RE.exec(t);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : EMPTY_TIME;
+  };
+  function compareEvents(a, b) {
+    if (a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+    if (a.endDate !== b.endDate) return a.endDate < b.endDate ? -1 : 1;
+    const at = a.allDay ? EMPTY_TIME : TIME_MS(a.startTime);
+    const bt = b.allDay ? EMPTY_TIME : TIME_MS(b.startTime);
+    if (at !== bt) return at - bt;
+    return a.title.localeCompare(b.title, "ru");
+  }
+  function sortEvents(events) {
+    return [...events].sort(compareEvents);
+  }
+  function formatEventTime(ev) {
+    if (ev.allDay) return "весь день";
+    if (!ev.startTime) return "—";
+    return ev.endTime ? `${ev.startTime}–${ev.endTime}` : ev.startTime;
+  }
+  function eventColorIndex(ev, paletteLen) {
+    let h = 0;
+    for (let i = 0; i < ev.id.length; i++) {
+      h = h * 31 + ev.id.charCodeAt(i) >>> 0;
+    }
+    return h % Math.max(1, paletteLen);
+  }
+  function formatInputDate(d) {
+    return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  function makeEventId() {
+    return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
 
   // src/app.js
@@ -694,7 +969,9 @@
     /** @type {IconEl | null} */
     selectedDesktopEl: null,
     weatherData: null,
-    clipUrl: null
+    clipUrl: null,
+    /** @type {import("./lib/calendarEvents").CalendarEvent[]} */
+    calendarEvents: []
   };
   var CLICK_DEBOUNCE_MS = 350;
   var BOOKMARK_REFRESH_DEBOUNCE_MS = 250;
@@ -3166,8 +3443,75 @@
       $taskbar.classList.remove("taskbar-force-show");
     }
   }
+  var CALENDAR_EVENTS_KEY = "calendarEvents";
+  var ISDAYOFF_URL = "https://isdayoff.ru/api/getdata";
+  var ISDAYOFF_CACHE_KEY = "isdayoffRaw";
+  var EVENT_CHIP_COLORS = [
+    "#0f5c8c",
+    "#8a3324",
+    "#6a5acd",
+    "#5c7a1f",
+    "#b07200",
+    "#7a3b7a"
+  ];
   var calendarYear = (/* @__PURE__ */ new Date()).getFullYear();
   var calendarMonth = (/* @__PURE__ */ new Date()).getMonth();
+  var calendarSelected = null;
+  var calendarEventsLoaded = false;
+  var isdayoffMemory = /* @__PURE__ */ new Map();
+  async function loadCalendarEvents() {
+    try {
+      const stored = await chrome.storage.local.get(CALENDAR_EVENTS_KEY);
+      const arr = stored[CALENDAR_EVENTS_KEY];
+      if (Array.isArray(arr)) {
+        state.calendarEvents = sortEvents(
+          arr.map((raw) => normalizeEvent(raw)).filter((e) => e !== null)
+        );
+      }
+    } catch {
+      state.calendarEvents = [];
+    }
+    calendarEventsLoaded = true;
+  }
+  function saveCalendarEvents() {
+    chrome.storage.local.set({ [CALENDAR_EVENTS_KEY]: state.calendarEvents }).catch(() => {
+    });
+  }
+  function ruDayInfoFor(y, m, d) {
+    return ruDayInfo(y, m, d, isdayoffMemory.get(y) ?? null);
+  }
+  async function ensureRuYearTransfers(year) {
+    if (isdayoffMemory.has(year)) return isdayoffMemory.get(year);
+    try {
+      const stored = await chrome.storage.local.get(ISDAYOFF_CACHE_KEY);
+      const raw = stored[ISDAYOFF_CACHE_KEY] && stored[ISDAYOFF_CACHE_KEY][year];
+      if (typeof raw === "string" && raw.length > 0) {
+        const parsed2 = parseIsdayoffStatus(raw, year);
+        isdayoffMemory.set(year, parsed2);
+        return parsed2;
+      }
+    } catch {
+    }
+    let parsed = null;
+    let rawText = "";
+    try {
+      const res = await fetch(`${ISDAYOFF_URL}?year=${year}&country=ru`);
+      if (res.ok) rawText = await res.text();
+    } catch {
+    }
+    if (rawText) parsed = parseIsdayoffStatus(rawText, year);
+    isdayoffMemory.set(year, parsed);
+    if (parsed) {
+      try {
+        const stored = await chrome.storage.local.get(ISDAYOFF_CACHE_KEY);
+        const map = stored[ISDAYOFF_CACHE_KEY] || {};
+        map[year] = rawText;
+        await chrome.storage.local.set({ [ISDAYOFF_CACHE_KEY]: map });
+      } catch {
+      }
+    }
+    return parsed;
+  }
   function openCalendar() {
     const existing = state.windows.find((w) => w.winType === "calendar");
     if (existing) {
@@ -3176,19 +3520,32 @@
       else bringToFront(existing.id);
       return;
     }
+    if (!calendarEventsLoaded) {
+      loadCalendarEvents().catch(() => {
+      });
+    }
     createWindow({
       winType: "calendar",
       title: "Календарь",
       icon: drawComputerIcon(16),
-      width: 250,
-      height: 262,
+      width: 360,
+      height: 470,
       content: "",
       statusbar: false,
       onCreated: (el, winData) => {
         el.querySelector(".win98-window-content").style.background = "var(--win98-silver)";
         renderCalendar(winData);
+        ensureRuYearTransfers(calendarYear).then((transfers) => {
+          if (transfers !== (isdayoffMemory.get(calendarYear) ?? null)) {
+            renderCalendar(winData);
+          }
+        });
       }
     });
+  }
+  function refreshCalendarWindow() {
+    const cal = state.windows.find((w) => w.winType === "calendar");
+    if (cal) renderCalendar(cal);
   }
   function renderCalendar(winData) {
     const el = winData.el;
@@ -3196,6 +3553,10 @@
     const ce = el.querySelector(".win98-window-content");
     if (!ce) return;
     ce.innerHTML = "";
+    if (!calendarSelected) {
+      const n = /* @__PURE__ */ new Date();
+      calendarSelected = { y: n.getFullYear(), m: n.getMonth(), d: n.getDate() };
+    }
     const header = document.createElement("div");
     header.className = "cal-header";
     const prev = document.createElement("button");
@@ -3207,6 +3568,11 @@
       calendarYear = p.year;
       calendarMonth = p.month;
       renderCalendar(winData);
+      ensureRuYearTransfers(calendarYear).then((transfers) => {
+        if (transfers !== (isdayoffMemory.get(calendarYear) ?? null)) {
+          renderCalendar(winData);
+        }
+      });
     });
     const title = document.createElement("div");
     title.className = "cal-title";
@@ -3220,6 +3586,11 @@
       calendarYear = p.year;
       calendarMonth = p.month;
       renderCalendar(winData);
+      ensureRuYearTransfers(calendarYear).then((transfers) => {
+        if (transfers !== (isdayoffMemory.get(calendarYear) ?? null)) {
+          renderCalendar(winData);
+        }
+      });
     });
     header.append(prev, title, next);
     ce.appendChild(header);
@@ -3228,21 +3599,126 @@
     const dayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
     for (const d of dayNames) {
       const cell = document.createElement("div");
-      cell.className = "cal-cell cal-dow";
+      cell.className = "cal-cell cal-dow" + (d === "Сб" || d === "Вс" ? " cal-weekend" : "");
       cell.textContent = d;
       grid.appendChild(cell);
     }
     const cells = monthCells(calendarYear, calendarMonth);
     const todayDay = todayInMonth(calendarYear, calendarMonth);
+    const monthEvents = eventsInMonth(state.calendarEvents, calendarYear, calendarMonth);
     for (const cell of cells) {
-      const el2 = document.createElement("div");
-      el2.className = "cal-cell" + (cell === null ? " cal-empty" : cell === todayDay ? " cal-today" : "");
-      el2.textContent = cell === null ? "" : String(cell);
-      grid.appendChild(el2);
+      if (cell === null) {
+        const empty = document.createElement("div");
+        empty.className = "cal-cell cal-empty";
+        grid.appendChild(empty);
+        continue;
+      }
+      const day = cell;
+      const info = ruDayInfoFor(calendarYear, calendarMonth, day);
+      const isToday = calendarYear === (/* @__PURE__ */ new Date()).getFullYear() && calendarMonth === (/* @__PURE__ */ new Date()).getMonth() && day === todayDay;
+      const isSelected = calendarSelected && calendarSelected.y === calendarYear && calendarSelected.m === calendarMonth && calendarSelected.d === day;
+      const dayEl = document.createElement("div");
+      dayEl.className = "cal-cell cal-day" + (info.isDayOff ? " cal-off" : "") + (info.status === "holiday" ? " cal-holiday" : "") + (isToday ? " cal-today" : "") + (isSelected ? " cal-selected" : "");
+      dayEl.dataset.y = String(calendarYear);
+      dayEl.dataset.m = String(calendarMonth);
+      dayEl.dataset.d = String(day);
+      if (info.holidayName) dayEl.title = info.holidayName;
+      const num = document.createElement("div");
+      num.className = "cal-daynum";
+      num.textContent = String(day);
+      dayEl.appendChild(num);
+      const dayEvents2 = monthEvents.filter(
+        (ev) => eventCoversDay(ev, calendarYear, calendarMonth, day)
+      );
+      const chips = document.createElement("div");
+      chips.className = "cal-chips";
+      dayEvents2.slice(0, 2).forEach((ev) => {
+        const chip = document.createElement("div");
+        chip.className = "cal-chip";
+        chip.textContent = ev.allDay ? ev.title : `${ev.startTime || ""} ${ev.title}`.trim();
+        chip.style.background = EVENT_CHIP_COLORS[eventColorIndex(ev, EVENT_CHIP_COLORS.length)];
+        chip.dataset.eventId = ev.id;
+        chip.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const target = state.calendarEvents.find((x) => x.id === ev.id);
+          if (target) openEventDialog(winData, target);
+        });
+        chips.appendChild(chip);
+      });
+      if (dayEvents2.length > 2) {
+        const more = document.createElement("div");
+        more.className = "cal-chip-more";
+        more.textContent = `+${dayEvents2.length - 2}`;
+        chips.appendChild(more);
+      }
+      if (chips.children.length > 0) dayEl.appendChild(chips);
+      dayEl.addEventListener("click", () => {
+        calendarSelected = { y: calendarYear, m: calendarMonth, d: day };
+        renderCalendar(winData);
+      });
+      grid.appendChild(dayEl);
     }
     ce.appendChild(grid);
+    const panel = document.createElement("div");
+    panel.className = "cal-panel";
+    const pTitle = document.createElement("div");
+    pTitle.className = "cal-panel-title";
+    pTitle.textContent = formatDayTitle(
+      calendarSelected.y,
+      calendarSelected.m,
+      calendarSelected.d
+    );
+    panel.appendChild(pTitle);
+    const selInfo = ruDayInfoFor(
+      calendarSelected.y,
+      calendarSelected.m,
+      calendarSelected.d
+    );
+    if (selInfo.holidayName) {
+      const hol = document.createElement("div");
+      hol.className = "cal-panel-holiday";
+      hol.textContent = selInfo.holidayName;
+      panel.appendChild(hol);
+    }
+    const list = document.createElement("div");
+    list.className = "cal-panel-events";
+    const dayEvents = eventsOnDay(
+      state.calendarEvents,
+      calendarSelected.y,
+      calendarSelected.m,
+      calendarSelected.d
+    );
+    if (dayEvents.length === 0) {
+      const none = document.createElement("div");
+      none.className = "cal-panel-empty";
+      none.textContent = "Нет событий";
+      list.appendChild(none);
+    } else {
+      dayEvents.forEach((ev) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "win98-btn cal-ev-item";
+        const time = document.createElement("span");
+        time.className = "cal-ev-time";
+        time.textContent = formatEventTime(ev);
+        const name = document.createElement("span");
+        name.className = "cal-ev-name";
+        name.textContent = ev.title;
+        item.append(time, name);
+        item.addEventListener("click", () => openEventDialog(winData, ev));
+        list.appendChild(item);
+      });
+    }
+    panel.appendChild(list);
     const btns = document.createElement("div");
-    btns.className = "win98-dialog-buttons";
+    btns.className = "cal-panel-buttons";
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "win98-btn";
+    addBtn.textContent = "Добавить событие";
+    addBtn.addEventListener("click", () => {
+      openEventDialog(winData, null, calendarSelected);
+    });
     const todayBtn = document.createElement("button");
     todayBtn.type = "button";
     todayBtn.className = "win98-btn";
@@ -3251,10 +3727,167 @@
       const n = /* @__PURE__ */ new Date();
       calendarYear = n.getFullYear();
       calendarMonth = n.getMonth();
+      calendarSelected = { y: n.getFullYear(), m: n.getMonth(), d: n.getDate() };
       renderCalendar(winData);
+      ensureRuYearTransfers(calendarYear).then((transfers) => {
+        if (transfers !== (isdayoffMemory.get(calendarYear) ?? null)) {
+          renderCalendar(winData);
+        }
+      });
     });
-    btns.appendChild(todayBtn);
-    ce.appendChild(btns);
+    btns.append(addBtn, todayBtn);
+    panel.appendChild(btns);
+    ce.appendChild(panel);
+  }
+  function openEventDialog(winData, event, defaultDay) {
+    const body = document.createElement("div");
+    body.className = "win98-dialog ev-dialog";
+    const mkField = (label) => {
+      const row = document.createElement("label");
+      row.className = "ev-field";
+      const lab = document.createElement("span");
+      lab.className = "ev-label";
+      lab.textContent = label;
+      row.appendChild(lab);
+      return { row, lab };
+    };
+    const titleRow = mkField("Название:");
+    const titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.className = "win98-addressbar-input ev-input";
+    titleInput.value = event ? event.title : "";
+    titleRow.row.appendChild(titleInput);
+    const allDayRow = document.createElement("label");
+    allDayRow.className = "ev-inline";
+    const allDayChk = document.createElement("input");
+    allDayChk.type = "checkbox";
+    allDayChk.className = "win98-checkbox";
+    allDayChk.checked = event ? event.allDay : true;
+    const allDayLabel = document.createElement("span");
+    allDayLabel.textContent = "Весь день";
+    allDayRow.append(allDayChk, allDayLabel);
+    const startRow = mkField("Начало:");
+    const startDate = document.createElement("input");
+    startDate.type = "date";
+    startDate.className = "ev-input ev-date";
+    const startParsed = event ? parseDateStr(event.startDate) : null;
+    startDate.value = event ? startParsed ? formatInputDate(new Date(startParsed.y, startParsed.m, startParsed.d)) : "" : defaultDay ? formatInputDate(new Date(defaultDay.y, defaultDay.m, defaultDay.d)) : formatInputDate(/* @__PURE__ */ new Date());
+    const startTime = document.createElement("input");
+    startTime.type = "time";
+    startTime.className = "ev-input ev-time";
+    startTime.value = event ? event.startTime : "";
+    const endRow = mkField("Окончание:");
+    const endDate = document.createElement("input");
+    endDate.type = "date";
+    endDate.className = "ev-input ev-date";
+    const endParsed = event ? parseDateStr(event.endDate) : null;
+    endDate.value = event ? endParsed ? formatInputDate(new Date(endParsed.y, endParsed.m, endParsed.d)) : "" : startDate.value;
+    const endTime = document.createElement("input");
+    endTime.type = "time";
+    endTime.className = "ev-input ev-time";
+    endTime.value = event && !event.allDay ? event.endTime : "";
+    const noteRow = mkField("Заметка:");
+    const noteInput = document.createElement("textarea");
+    noteInput.className = "ev-input ev-note";
+    noteInput.rows = 3;
+    noteInput.value = event ? event.note : "";
+    body.append(
+      titleRow.row,
+      allDayRow,
+      startRow.row,
+      endRow.row,
+      noteRow.row
+    );
+    startRow.row.append(startDate, startTime);
+    endRow.row.append(endDate, endTime);
+    const err = document.createElement("div");
+    err.className = "ev-error";
+    err.style.display = "none";
+    body.appendChild(err);
+    const setError = (msg) => {
+      err.textContent = msg;
+      err.style.display = msg ? "" : "none";
+    };
+    const syncAllDay = () => {
+      startTime.disabled = allDayChk.checked;
+      endTime.disabled = allDayChk.checked;
+      startDate.disabled = false;
+      endDate.disabled = false;
+    };
+    allDayChk.addEventListener("change", syncAllDay);
+    syncAllDay();
+    endDate.addEventListener("input", () => {
+      if (endDate.value < startDate.value) endDate.value = startDate.value;
+    });
+    startDate.addEventListener("input", () => {
+      if (!endDate.value || endDate.value === startDate.value) {
+        endDate.value = startDate.value;
+      } else if (endDate.value < startDate.value) {
+        endDate.value = startDate.value;
+      }
+    });
+    const doSave = () => {
+      const norm = normalizeEvent({
+        id: event ? event.id : makeEventId(),
+        title: titleInput.value,
+        startDate: startDate.value,
+        endDate: endDate.value,
+        allDay: allDayChk.checked,
+        startTime: allDayChk.checked ? "" : startTime.value,
+        endTime: allDayChk.checked ? "" : endTime.value,
+        note: noteInput.value
+      });
+      if (!norm || !norm.title) {
+        setError("Введите название события.");
+        return false;
+      }
+      if (event) {
+        const i = state.calendarEvents.findIndex((x) => x.id === event.id);
+        if (i >= 0) state.calendarEvents[i] = norm;
+        else state.calendarEvents.push(norm);
+      } else {
+        state.calendarEvents.push(norm);
+      }
+      state.calendarEvents = sortEvents(state.calendarEvents);
+      saveCalendarEvents();
+      refreshCalendarWindow();
+      return true;
+    };
+    const buttons = [
+      { label: "OK", onClick: doSave },
+      { label: "Отмена", onClick: () => {
+      } }
+    ];
+    if (event) {
+      buttons.push({
+        label: "Удалить",
+        onClick: () => {
+          openConfirmDialog(
+            "Удалить событие",
+            `Удалить «${event.title}»?`,
+            () => {
+              state.calendarEvents = state.calendarEvents.filter(
+                (x) => x.id !== event.id
+              );
+              saveCalendarEvents();
+              refreshCalendarWindow();
+            }
+          );
+        }
+      });
+    }
+    const evDialog = openDialog({
+      title: event ? "Изменить событие" : "Новое событие",
+      body,
+      width: 380,
+      buttons
+    });
+    body.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && eventTargetElement(e) !== noteInput) {
+        e.preventDefault();
+        if (doSave()) closeWindow(evDialog.id);
+      }
+    });
   }
   $desktop.addEventListener("click", (e) => {
     if (e.target === $desktop || e.target === $desktopIcons) {

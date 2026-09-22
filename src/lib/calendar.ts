@@ -30,6 +30,16 @@ export function monthTitle(year: number, month: number): string {
     });
 }
 
+/** Long Russian day title, e.g. "воскресенье, 13 сентября 2026 г.". */
+export function formatDayTitle(year: number, month: number, day: number): string {
+    return new Date(year, month, day).toLocaleString("ru-RU", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+    });
+}
+
 /**
  * Monday-first calendar grid for a month: leading `null`s for the empty
  * cells before the 1st, then 1…daysInMonth. Month is 0-based.
