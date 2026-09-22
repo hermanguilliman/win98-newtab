@@ -1,7 +1,7 @@
 /**
  * User calendar events: pure model, normalization, date-range maths and
  * month/day filtering. No DOM, no chrome.* — the app renders the results and
- * persists the array under `chrome.storage.local` ("calendarEvents").
+ * persists the array under `chrome.storage.sync` ("calendarEvents").
  *
  * Dates are stored as "YYYY-MM-DD" strings; times as "HH:MM". An event spans
  * an inclusive [startDate, endDate] range (endDate defaults to startDate).

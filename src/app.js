@@ -727,6 +727,45 @@ import {
         return out.toDataURL();
     }
 
+    /* ---------- User-data storage (chrome.storage.sync first) ----------
+       Settings and calendar events are user data that should follow the user
+       across devices → they live in chrome.storage.sync. Bulk caches that are
+       rebuildable or too large for the sync quota (faviconCache, isdayoffRaw,
+       weather) stay in chrome.storage.local — see their own sections. */
+
+    /**
+     * Read a user-data key preferring chrome.storage.sync; falls back to a
+     * legacy copy still sitting in chrome.storage.local (one-way migration —
+     * the local value is lifted up to sync on first hit). Returns undefined
+     * when neither store has the key.
+     * @param {string} key
+     */
+    async function syncStoredGet(key) {
+        try {
+            const fromSync = await chrome.storage.sync.get(key);
+            if (fromSync && fromSync[key] !== undefined) return fromSync[key];
+        } catch {}
+        try {
+            const fromLocal = await chrome.storage.local.get(key);
+            if (fromLocal && fromLocal[key] !== undefined) {
+                chrome.storage.sync.set({ [key]: fromLocal[key] }).catch(() => {});
+                return fromLocal[key];
+            }
+        } catch {}
+        return undefined;
+    }
+
+    /** Write a user-data key to chrome.storage.sync. If the payload exceeds
+     *  the sync quota (8 KB per item) or the rate limit, the data is kept in
+     *  chrome.storage.local instead so it is never lost — syncStoredGet()
+     *  still finds it there on the next load. */
+    function syncStoredSet(key, value) {
+        const payload = { [key]: value };
+        return chrome.storage.sync.set(payload).catch(() =>
+            chrome.storage.local.set(payload).catch(() => {}),
+        );
+    }
+
     /* ---------- Persistent favicon cache (chrome.storage.local "faviconCache") ----------
        Cleaned favicon data URLs survive page loads, so most new tabs render icons
        instantly from storage without touching the network. The cache is keyed by the
@@ -984,11 +1023,11 @@ import {
         let cache = {};
         try {
             const [settings, stored] = await Promise.all([
-                chrome.storage.local.get("settings"),
+                syncStoredGet("settings"),
                 chrome.storage.local.get("weather"),
             ]);
-            if (settings.settings && settings.settings.weatherCity) {
-                city = settings.settings.weatherCity;
+            if (settings && settings.weatherCity) {
+                city = settings.weatherCity;
             }
             cache = stored || {};
         } catch {
@@ -3303,7 +3342,7 @@ import {
     /* ============================================================
      CALENDAR (tray clock → month calendar)
      Russian state holidays via isdayoff.ru (cached), user events
-     with start/end dates + times (chrome.storage.local).
+     with start/end dates + times (chrome.storage.sync).
      ============================================================ */
 
     const CALENDAR_EVENTS_KEY = "calendarEvents";
@@ -3331,8 +3370,7 @@ import {
 
     async function loadCalendarEvents() {
         try {
-            const stored = await chrome.storage.local.get(CALENDAR_EVENTS_KEY);
-            const arr = stored[CALENDAR_EVENTS_KEY];
+            const arr = await syncStoredGet(CALENDAR_EVENTS_KEY);
             if (Array.isArray(arr)) {
                 state.calendarEvents = sortEvents(
                     arr.map((raw) => normalizeEvent(raw)).filter((e) => e !== null),
@@ -3349,9 +3387,7 @@ import {
     }
 
     function saveCalendarEvents() {
-        chrome.storage.local
-            .set({ [CALENDAR_EVENTS_KEY]: state.calendarEvents })
-            .catch(() => {});
+        syncStoredSet(CALENDAR_EVENTS_KEY, state.calendarEvents);
     }
 
     /**
@@ -4429,8 +4465,8 @@ import {
 
     async function loadSettings() {
         try {
-            const stored = await chrome.storage.local.get("settings");
-            state.settings = mergeSettings(stored.settings);
+            const stored = await syncStoredGet("settings");
+            state.settings = mergeSettings(stored);
         } catch (err) {
             state.settings = mergeSettings(null);
         }
@@ -4500,9 +4536,7 @@ import {
     }
 
     function saveSettings() {
-        return chrome.storage.local
-            .set({ settings: state.settings })
-            .catch(() => {});
+        return syncStoredSet("settings", state.settings);
     }
 
     /** Apply taskbar-related settings (auto-hide, small icons, clock visibility) */

@@ -1440,6 +1440,30 @@
     );
     return out.toDataURL();
   }
+  async function syncStoredGet(key) {
+    try {
+      const fromSync = await chrome.storage.sync.get(key);
+      if (fromSync && fromSync[key] !== void 0) return fromSync[key];
+    } catch {
+    }
+    try {
+      const fromLocal = await chrome.storage.local.get(key);
+      if (fromLocal && fromLocal[key] !== void 0) {
+        chrome.storage.sync.set({ [key]: fromLocal[key] }).catch(() => {
+        });
+        return fromLocal[key];
+      }
+    } catch {
+    }
+    return void 0;
+  }
+  function syncStoredSet(key, value) {
+    const payload = { [key]: value };
+    return chrome.storage.sync.set(payload).catch(
+      () => chrome.storage.local.set(payload).catch(() => {
+      })
+    );
+  }
   var FAVICON_CACHE_KEY = "faviconCache";
   var FAVICON_CACHE_MAX = 800;
   var faviconCacheMem = /* @__PURE__ */ new Map();
@@ -1624,11 +1648,11 @@
     let cache = {};
     try {
       const [settings, stored] = await Promise.all([
-        chrome.storage.local.get("settings"),
+        syncStoredGet("settings"),
         chrome.storage.local.get("weather")
       ]);
-      if (settings.settings && settings.settings.weatherCity) {
-        city = settings.settings.weatherCity;
+      if (settings && settings.weatherCity) {
+        city = settings.weatherCity;
       }
       cache = stored || {};
     } catch {
@@ -3461,8 +3485,7 @@
   var isdayoffMemory = /* @__PURE__ */ new Map();
   async function loadCalendarEvents() {
     try {
-      const stored = await chrome.storage.local.get(CALENDAR_EVENTS_KEY);
-      const arr = stored[CALENDAR_EVENTS_KEY];
+      const arr = await syncStoredGet(CALENDAR_EVENTS_KEY);
       if (Array.isArray(arr)) {
         state.calendarEvents = sortEvents(
           arr.map((raw) => normalizeEvent(raw)).filter((e) => e !== null)
@@ -3475,8 +3498,7 @@
     refreshCalendarWindow();
   }
   function saveCalendarEvents() {
-    chrome.storage.local.set({ [CALENDAR_EVENTS_KEY]: state.calendarEvents }).catch(() => {
-    });
+    syncStoredSet(CALENDAR_EVENTS_KEY, state.calendarEvents);
   }
   function ruDayInfoFor(y, m, d) {
     return ruDayInfo(y, m, d, isdayoffMemory.get(y) ?? null);
@@ -4343,8 +4365,8 @@
   }
   async function loadSettings() {
     try {
-      const stored = await chrome.storage.local.get("settings");
-      state.settings = mergeSettings(stored.settings);
+      const stored = await syncStoredGet("settings");
+      state.settings = mergeSettings(stored);
     } catch (err) {
       state.settings = mergeSettings(null);
     }
@@ -4398,8 +4420,7 @@
     );
   }
   function saveSettings() {
-    return chrome.storage.local.set({ settings: state.settings }).catch(() => {
-    });
+    return syncStoredSet("settings", state.settings);
   }
   function applyTaskbarSettings() {
     const s = state.settings || DEFAULT_SETTINGS;
