@@ -1754,7 +1754,7 @@ input[type="radio"]:disabled:checked::after {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
 }
 
 .cal-panel-empty {
@@ -1763,6 +1763,8 @@ input[type="radio"]:disabled:checked::after {
     padding: 4px 2px;
 }
 
+/* Day-panel event rows: list rows, not buttons — a colored left bar, the
+   time, then the title. Hover gives a soft selection like Win98 list items. */
 .cal-ev-item {
     display: flex;
     align-items: center;
@@ -1772,11 +1774,22 @@ input[type="radio"]:disabled:checked::after {
     text-align: left;
     padding: 3px 5px;
     font-size: 11px;
+    font-family: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid transparent;
+    border-left: 4px solid var(--win98-dark-gray);
+    cursor: default;
+}
+
+.cal-ev-item:hover {
+    background: var(--win98-hover);
 }
 
 .cal-ev-time {
     flex-shrink: 0;
     color: var(--win98-dark-gray);
+    white-space: nowrap;
 }
 
 .cal-ev-name {
@@ -1784,6 +1797,7 @@ input[type="radio"]:disabled:checked::after {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: bold;
 }
 
 .cal-panel-buttons {

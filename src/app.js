@@ -36,6 +36,7 @@ import {
     eventsInMonth,
     formatEventTime,
     formatInputDate,
+    eventColorIndex,
     makeEventId,
     parseDateStr,
 } from "./lib/calendarEvents";
@@ -3308,6 +3309,15 @@ import {
     const CALENDAR_EVENTS_KEY = "calendarEvents";
     const ISDAYOFF_URL = "https://isdayoff.ru/api/getdata";
     const ISDAYOFF_CACHE_KEY = "isdayoffRaw";
+    /** Left marker colors for day-panel event rows (indexed via eventColorIndex). */
+    const EVENT_COLORS = [
+        "#0f5c8c",
+        "#8a3324",
+        "#6a5acd",
+        "#5c7a1f",
+        "#b07200",
+        "#7a3b7a",
+    ];
 
     let calendarYear = new Date().getFullYear();
     let calendarMonth = new Date().getMonth(); // 0-based
@@ -3596,7 +3606,7 @@ import {
             dayEvents.forEach((ev) => {
                 const item = document.createElement("button");
                 item.type = "button";
-                item.className = "win98-btn cal-ev-item";
+                item.className = "cal-ev-item";
                 const time = document.createElement("span");
                 time.className = "cal-ev-time";
                 time.textContent = formatEventTime(ev);
@@ -3604,6 +3614,8 @@ import {
                 name.className = "cal-ev-name";
                 name.textContent = ev.title;
                 item.append(time, name);
+                item.style.borderLeftColor =
+                    EVENT_COLORS[eventColorIndex(ev, EVENT_COLORS.length)];
                 item.addEventListener("click", () => openEventDialog(winData, ev));
                 list.appendChild(item);
             });

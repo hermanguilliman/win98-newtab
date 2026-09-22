@@ -925,6 +925,13 @@
     if (!ev.startTime) return "—";
     return ev.endTime ? `${ev.startTime}–${ev.endTime}` : ev.startTime;
   }
+  function eventColorIndex(ev, paletteLen) {
+    let h = 0;
+    for (let i = 0; i < ev.id.length; i++) {
+      h = h * 31 + ev.id.charCodeAt(i) >>> 0;
+    }
+    return h % Math.max(1, paletteLen);
+  }
   function formatInputDate(d) {
     return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
   }
@@ -3439,6 +3446,14 @@
   var CALENDAR_EVENTS_KEY = "calendarEvents";
   var ISDAYOFF_URL = "https://isdayoff.ru/api/getdata";
   var ISDAYOFF_CACHE_KEY = "isdayoffRaw";
+  var EVENT_COLORS = [
+    "#0f5c8c",
+    "#8a3324",
+    "#6a5acd",
+    "#5c7a1f",
+    "#b07200",
+    "#7a3b7a"
+  ];
   var calendarYear = (/* @__PURE__ */ new Date()).getFullYear();
   var calendarMonth = (/* @__PURE__ */ new Date()).getMonth();
   var calendarSelected = null;
@@ -3670,7 +3685,7 @@
       dayEvents.forEach((ev) => {
         const item = document.createElement("button");
         item.type = "button";
-        item.className = "win98-btn cal-ev-item";
+        item.className = "cal-ev-item";
         const time = document.createElement("span");
         time.className = "cal-ev-time";
         time.textContent = formatEventTime(ev);
@@ -3678,6 +3693,7 @@
         name.className = "cal-ev-name";
         name.textContent = ev.title;
         item.append(time, name);
+        item.style.borderLeftColor = EVENT_COLORS[eventColorIndex(ev, EVENT_COLORS.length)];
         item.addEventListener("click", () => openEventDialog(winData, ev));
         list.appendChild(item);
       });
