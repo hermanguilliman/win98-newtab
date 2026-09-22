@@ -3472,6 +3472,7 @@
       state.calendarEvents = [];
     }
     calendarEventsLoaded = true;
+    refreshCalendarWindow();
   }
   function saveCalendarEvents() {
     chrome.storage.local.set({ [CALENDAR_EVENTS_KEY]: state.calendarEvents }).catch(() => {

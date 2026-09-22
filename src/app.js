@@ -3342,6 +3342,10 @@ import {
             state.calendarEvents = [];
         }
         calendarEventsLoaded = true;
+        // The window may already be open and rendered before storage answered
+        // (openCalendar fires loadCalendarEvents without awaiting); re-render
+        // so loaded events appear without waiting for a click/navigation.
+        refreshCalendarWindow();
     }
 
     function saveCalendarEvents() {
