@@ -1806,6 +1806,12 @@ input[type="radio"]:disabled:checked::after {
     flex-shrink: 0;
 }
 
+.cal-panel-buttons .win98-btn {
+    padding: 5px 18px;
+    min-height: 30px;
+    font-size: 12px;
+}
+
 /* ---------- Event editor dialog ---------- */
 .ev-dialog {
     display: flex;
