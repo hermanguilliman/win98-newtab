@@ -36,7 +36,6 @@ import {
     eventsInMonth,
     formatEventTime,
     formatInputDate,
-    eventColorIndex,
     makeEventId,
     parseDateStr,
 } from "./lib/calendarEvents";
@@ -3309,15 +3308,6 @@ import {
     const CALENDAR_EVENTS_KEY = "calendarEvents";
     const ISDAYOFF_URL = "https://isdayoff.ru/api/getdata";
     const ISDAYOFF_CACHE_KEY = "isdayoffRaw";
-    /** Chip palette for day-grid event markers (indexed via eventColorIndex). */
-    const EVENT_CHIP_COLORS = [
-        "#0f5c8c",
-        "#8a3324",
-        "#6a5acd",
-        "#5c7a1f",
-        "#b07200",
-        "#7a3b7a",
-    ];
 
     let calendarYear = new Date().getFullYear();
     let calendarMonth = new Date().getMonth(); // 0-based
@@ -3543,29 +3533,19 @@ import {
             const dayEvents = monthEvents.filter((ev) =>
                 eventCoversDay(ev, calendarYear, calendarMonth, day),
             );
-            const chips = document.createElement("div");
-            chips.className = "cal-chips";
-            dayEvents.slice(0, 2).forEach((ev) => {
-                const chip = document.createElement("div");
-                chip.className = "cal-chip";
-                chip.textContent = ev.allDay ? ev.title : `${ev.startTime || ""} ${ev.title}`.trim();
-                chip.style.background = EVENT_CHIP_COLORS[eventColorIndex(ev, EVENT_CHIP_COLORS.length)];
-                chip.dataset.eventId = ev.id;
-                // Opening the editor must not also select the day.
-                chip.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    const target = state.calendarEvents.find((x) => x.id === ev.id);
-                    if (target) openEventDialog(winData, target);
-                });
-                chips.appendChild(chip);
-            });
-            if (dayEvents.length > 2) {
-                const more = document.createElement("div");
-                more.className = "cal-chip-more";
-                more.textContent = `+${dayEvents.length - 2}`;
-                chips.appendChild(more);
+            // Show a compact event-count badge instead of chip rows so the
+            // grid cells keep a uniform height; details live in the day panel.
+            if (dayEvents.length > 0) {
+                const badge = document.createElement("div");
+                badge.className = "cal-evt-count";
+                badge.textContent = String(dayEvents.length);
+                const peek = dayEvents
+                    .slice(0, 3)
+                    .map((ev) => (ev.allDay ? ev.title : `${ev.startTime || ""} ${ev.title}`.trim()))
+                    .join("\n");
+                badge.title = peek + (dayEvents.length > 3 ? `\n+${dayEvents.length - 3} ещё` : "");
+                dayEl.appendChild(badge);
             }
-            if (chips.children.length > 0) dayEl.appendChild(chips);
 
             dayEl.addEventListener("click", () => {
                 calendarSelected = { y: calendarYear, m: calendarMonth, d: day };

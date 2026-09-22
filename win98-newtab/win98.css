@@ -1660,6 +1660,7 @@ input[type="radio"]:disabled:checked::after {
     vertical-align: top;
     text-align: left;
     padding: 2px 3px;
+    position: relative;
 }
 
 .cal-day:hover {
@@ -1685,8 +1686,7 @@ input[type="radio"]:disabled:checked::after {
     color: var(--win98-white);
 }
 
-.cal-day.cal-selected .cal-daynum,
-.cal-day.cal-selected .cal-chip-more {
+.cal-day.cal-selected .cal-daynum {
     color: var(--win98-white);
 }
 
@@ -1695,29 +1695,29 @@ input[type="radio"]:disabled:checked::after {
     line-height: 1.2;
 }
 
-.cal-chips {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    margin-top: 1px;
-}
-
-.cal-chip {
-    font-size: 9px;
-    line-height: 1.25;
-    color: var(--win98-white);
-    border-radius: 2px;
+/* Event-count badge: absolutely positioned so it never affects the uniform
+   height of the day cells. The day panel below the grid has the details. */
+.cal-evt-count {
+    position: absolute;
+    top: 1px;
+    right: 2px;
+    min-width: 13px;
+    height: 12px;
     padding: 0 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: default;
+    box-sizing: border-box;
+    font-size: 9px;
+    font-weight: bold;
+    line-height: 12px;
+    text-align: center;
+    color: var(--win98-white);
+    background: var(--win98-navy);
+    border-radius: 2px;
+    pointer-events: none;
 }
 
-.cal-chip-more {
-    font-size: 9px;
-    color: var(--win98-dark-gray);
-    text-align: center;
+.cal-day.cal-selected .cal-evt-count {
+    background: var(--win98-silver);
+    color: var(--win98-black);
 }
 
 /* Day panel (below the grid) */

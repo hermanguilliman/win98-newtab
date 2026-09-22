@@ -925,13 +925,6 @@
     if (!ev.startTime) return "—";
     return ev.endTime ? `${ev.startTime}–${ev.endTime}` : ev.startTime;
   }
-  function eventColorIndex(ev, paletteLen) {
-    let h = 0;
-    for (let i = 0; i < ev.id.length; i++) {
-      h = h * 31 + ev.id.charCodeAt(i) >>> 0;
-    }
-    return h % Math.max(1, paletteLen);
-  }
   function formatInputDate(d) {
     return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
   }
@@ -3446,14 +3439,6 @@
   var CALENDAR_EVENTS_KEY = "calendarEvents";
   var ISDAYOFF_URL = "https://isdayoff.ru/api/getdata";
   var ISDAYOFF_CACHE_KEY = "isdayoffRaw";
-  var EVENT_CHIP_COLORS = [
-    "#0f5c8c",
-    "#8a3324",
-    "#6a5acd",
-    "#5c7a1f",
-    "#b07200",
-    "#7a3b7a"
-  ];
   var calendarYear = (/* @__PURE__ */ new Date()).getFullYear();
   var calendarMonth = (/* @__PURE__ */ new Date()).getMonth();
   var calendarSelected = null;
@@ -3631,28 +3616,15 @@
       const dayEvents2 = monthEvents.filter(
         (ev) => eventCoversDay(ev, calendarYear, calendarMonth, day)
       );
-      const chips = document.createElement("div");
-      chips.className = "cal-chips";
-      dayEvents2.slice(0, 2).forEach((ev) => {
-        const chip = document.createElement("div");
-        chip.className = "cal-chip";
-        chip.textContent = ev.allDay ? ev.title : `${ev.startTime || ""} ${ev.title}`.trim();
-        chip.style.background = EVENT_CHIP_COLORS[eventColorIndex(ev, EVENT_CHIP_COLORS.length)];
-        chip.dataset.eventId = ev.id;
-        chip.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const target = state.calendarEvents.find((x) => x.id === ev.id);
-          if (target) openEventDialog(winData, target);
-        });
-        chips.appendChild(chip);
-      });
-      if (dayEvents2.length > 2) {
-        const more = document.createElement("div");
-        more.className = "cal-chip-more";
-        more.textContent = `+${dayEvents2.length - 2}`;
-        chips.appendChild(more);
+      if (dayEvents2.length > 0) {
+        const badge = document.createElement("div");
+        badge.className = "cal-evt-count";
+        badge.textContent = String(dayEvents2.length);
+        const peek = dayEvents2.slice(0, 3).map((ev) => ev.allDay ? ev.title : `${ev.startTime || ""} ${ev.title}`.trim()).join("\n");
+        badge.title = peek + (dayEvents2.length > 3 ? `
++${dayEvents2.length - 3} ещё` : "");
+        dayEl.appendChild(badge);
       }
-      if (chips.children.length > 0) dayEl.appendChild(chips);
       dayEl.addEventListener("click", () => {
         calendarSelected = { y: calendarYear, m: calendarMonth, d: day };
         renderCalendar(winData);
