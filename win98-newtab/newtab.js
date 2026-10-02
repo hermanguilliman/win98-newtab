@@ -130,9 +130,9 @@
       desc: "Спокойные сине-морские тона в духе Windows Plus!"
     },
     {
-      id: "midnight",
-      label: "Полночь",
-      desc: "Тёмная сине-стальная тема со спокойными акцентами"
+      id: "lavender",
+      label: "Лаванда",
+      desc: "Мягкие светлые сиренево-серые тона"
     },
     { id: "custom", label: "Пользовательская", desc: "Свои цвета" }
   ];
@@ -172,25 +172,25 @@
       "--win98-title-active": "linear-gradient(90deg, #005060, #0090a8)",
       "--win98-title-inactive": "linear-gradient(90deg, #609088, #80a8a0)"
     },
-    midnight: {
-      "--win98-silver": "#2a2e38",
-      "--win98-btn-face": "#33384a",
-      "--win98-hover": "#41485c",
-      "--win98-inset-bg": "#232733",
-      "--win98-input-bg": "#e8ebf2",
-      "--win98-content-bg": "#2a2e38",
-      "--win98-navy": "#3a5a7a",
-      "--win98-highlight": "#7ea6d6",
-      "--win98-black": "#dde3ee",
-      "--win98-shadow": "#1a1e28",
-      "--win98-dark-gray": "#9aa3b5",
-      "--win98-radio-check": "#dde3ee",
-      "--win98-radio-edge1": "#dde3ee",
-      "--win98-radio-edge2": "#9aa3b5",
-      "--win98-radio-shadow": "#1a1e28",
-      "--win98-wp-preview": "#2a2e38",
-      "--win98-title-active": "linear-gradient(90deg, #3a4055, #5a6a8a)",
-      "--win98-title-inactive": "linear-gradient(90deg, #2a2e38, #3a4055)"
+    lavender: {
+      "--win98-silver": "#ccc4dc",
+      "--win98-btn-face": "#ccc4dc",
+      "--win98-hover": "#e2dcf0",
+      "--win98-inset-bg": "#ddd6ea",
+      "--win98-input-bg": "#ffffff",
+      "--win98-content-bg": "#ffffff",
+      "--win98-navy": "#4a3a6a",
+      "--win98-highlight": "#a88fd8",
+      "--win98-black": "#1a1424",
+      "--win98-shadow": "#6a5f80",
+      "--win98-dark-gray": "#5a5070",
+      "--win98-radio-check": "#1a1424",
+      "--win98-radio-edge1": "#1a1424",
+      "--win98-radio-edge2": "#8a7fa8",
+      "--win98-radio-shadow": "#f0ecf8",
+      "--win98-wp-preview": "#7a5fb0",
+      "--win98-title-active": "linear-gradient(90deg, #3a2a5a, #7a5fb0)",
+      "--win98-title-inactive": "linear-gradient(90deg, #8a7fa8, #a89fc0)"
     }
   };
   var CUSTOM_THEME_KEYS = [

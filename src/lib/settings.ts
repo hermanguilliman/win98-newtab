@@ -9,7 +9,7 @@ import { CUSTOM_THEME_KEYS, THEME_OPTIONS } from "./theme";
 export type ClickMode = "single" | "double";
 export type FolderIconStyle = "classic" | "glossy" | "outlined";
 export type FolderViewMode = "icons" | "list";
-export type ThemeId = "classic" | "olive" | "ocean" | "midnight" | "custom";
+export type ThemeId = "classic" | "olive" | "ocean" | "lavender" | "custom";
 
 /** Allowed icon sizes */
 export const ICON_SIZES: number[] = [24, 32, 48];

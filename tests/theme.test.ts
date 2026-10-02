@@ -27,7 +27,7 @@ describe("themeColorsFor", () => {
     it("built-in palettes are returned verbatim", () => {
         expect(themeColorsFor("olive", {})).toBe(THEME_COLORS.olive);
         expect(themeColorsFor("ocean", {})).toBe(THEME_COLORS.ocean);
-        expect(themeColorsFor("midnight", {})).toBe(THEME_COLORS.midnight);
+        expect(themeColorsFor("lavender", {})).toBe(THEME_COLORS.lavender);
     });
 
     it("unknown ids → null", () => {
