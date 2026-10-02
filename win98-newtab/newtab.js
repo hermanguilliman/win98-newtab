@@ -125,14 +125,14 @@
       desc: "Тёплые зелёно-оливковые тона"
     },
     {
-      id: "high-contrast",
-      label: "Высокий контраст",
-      desc: "Чёрные окна, белый текст, синяя подсветка"
+      id: "ocean",
+      label: "Океан",
+      desc: "Спокойные сине-морские тона в духе Windows Plus!"
     },
     {
-      id: "dracula",
-      label: "Дракула",
-      desc: "Тёмная тема с фиолетовыми и зелёными акцентами"
+      id: "midnight",
+      label: "Полночь",
+      desc: "Тёмная сине-стальная тема со спокойными акцентами"
     },
     { id: "custom", label: "Пользовательская", desc: "Свои цвета" }
   ];
@@ -152,45 +152,45 @@
       "--win98-title-active": "linear-gradient(90deg, #404000, #808040)",
       "--win98-title-inactive": "linear-gradient(90deg, #808040, #a0a080)"
     },
-    "high-contrast": {
-      "--win98-silver": "#000000",
-      "--win98-btn-face": "#000000",
-      "--win98-hover": "#000080",
-      "--win98-inset-bg": "#000000",
-      "--win98-input-bg": "#000000",
-      "--win98-content-bg": "#000000",
-      "--win98-navy": "#0000ff",
-      "--win98-highlight": "#0000ff",
-      "--win98-black": "#ffffff",
-      "--win98-shadow": "#808080",
-      "--win98-dark-gray": "#808080",
-      "--win98-radio-check": "#00ff00",
-      "--win98-radio-edge1": "#ffffff",
-      "--win98-radio-edge2": "#808080",
-      "--win98-radio-shadow": "#000000",
-      "--win98-wp-preview": "#000000",
-      "--win98-title-active": "linear-gradient(90deg, #000080, #0000ff)",
-      "--win98-title-inactive": "linear-gradient(90deg, #808080, #808080)"
+    ocean: {
+      "--win98-silver": "#b8ccc8",
+      "--win98-btn-face": "#b8ccc8",
+      "--win98-hover": "#d8e8e4",
+      "--win98-inset-bg": "#cfe0dc",
+      "--win98-input-bg": "#ffffff",
+      "--win98-content-bg": "#ffffff",
+      "--win98-navy": "#006080",
+      "--win98-highlight": "#0088a0",
+      "--win98-black": "#002030",
+      "--win98-shadow": "#50706a",
+      "--win98-dark-gray": "#40605a",
+      "--win98-radio-check": "#002030",
+      "--win98-radio-edge1": "#002030",
+      "--win98-radio-edge2": "#7aa09a",
+      "--win98-radio-shadow": "#e8f4f0",
+      "--win98-wp-preview": "#0088a0",
+      "--win98-title-active": "linear-gradient(90deg, #005060, #0090a8)",
+      "--win98-title-inactive": "linear-gradient(90deg, #609088, #80a8a0)"
     },
-    dracula: {
-      "--win98-silver": "#282a36",
-      "--win98-btn-face": "#44475a",
-      "--win98-hover": "#44475a",
-      "--win98-inset-bg": "#21222c",
-      "--win98-input-bg": "#191a21",
-      "--win98-content-bg": "#282a36",
-      "--win98-navy": "#bd93f9",
-      "--win98-highlight": "#ff79c6",
-      "--win98-black": "#f8f8f2",
-      "--win98-shadow": "#191a21",
-      "--win98-dark-gray": "#6272a4",
-      "--win98-radio-check": "#50fa7b",
-      "--win98-radio-edge1": "#f8f8f2",
-      "--win98-radio-edge2": "#6272a4",
-      "--win98-radio-shadow": "#191a21",
-      "--win98-wp-preview": "#282a36",
-      "--win98-title-active": "linear-gradient(90deg, #44475a, #bd93f9)",
-      "--win98-title-inactive": "linear-gradient(90deg, #282a36, #44475a)"
+    midnight: {
+      "--win98-silver": "#2a2e38",
+      "--win98-btn-face": "#33384a",
+      "--win98-hover": "#41485c",
+      "--win98-inset-bg": "#232733",
+      "--win98-input-bg": "#e8ebf2",
+      "--win98-content-bg": "#2a2e38",
+      "--win98-navy": "#3a5a7a",
+      "--win98-highlight": "#7ea6d6",
+      "--win98-black": "#dde3ee",
+      "--win98-shadow": "#1a1e28",
+      "--win98-dark-gray": "#9aa3b5",
+      "--win98-radio-check": "#dde3ee",
+      "--win98-radio-edge1": "#dde3ee",
+      "--win98-radio-edge2": "#9aa3b5",
+      "--win98-radio-shadow": "#1a1e28",
+      "--win98-wp-preview": "#2a2e38",
+      "--win98-title-active": "linear-gradient(90deg, #3a4055, #5a6a8a)",
+      "--win98-title-inactive": "linear-gradient(90deg, #2a2e38, #3a4055)"
     }
   };
   var CUSTOM_THEME_KEYS = [

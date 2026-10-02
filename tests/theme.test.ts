@@ -26,8 +26,8 @@ describe("themeColorsFor", () => {
 
     it("built-in palettes are returned verbatim", () => {
         expect(themeColorsFor("olive", {})).toBe(THEME_COLORS.olive);
-        expect(themeColorsFor("dracula", {})).toBe(THEME_COLORS.dracula);
-        expect(themeColorsFor("high-contrast", {})).toBe(THEME_COLORS["high-contrast"]);
+        expect(themeColorsFor("ocean", {})).toBe(THEME_COLORS.ocean);
+        expect(themeColorsFor("midnight", {})).toBe(THEME_COLORS.midnight);
     });
 
     it("unknown ids → null", () => {

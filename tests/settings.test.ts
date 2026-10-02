@@ -26,7 +26,7 @@ describe("mergeSettings", () => {
             desktopPadY: 40,
             folderIconStyle: "glossy",
             folderViewMode: "list",
-            theme: "dracula",
+            theme: "midnight",
             weatherCity: "  Санкт-Петербург  ",
             showClock: false,
             showClockDate: false,
@@ -43,7 +43,7 @@ describe("mergeSettings", () => {
         expect(s.desktopPadY).toBe(40);
         expect(s.folderIconStyle).toBe("glossy");
         expect(s.folderViewMode).toBe("list");
-        expect(s.theme).toBe("dracula");
+        expect(s.theme).toBe("midnight");
         expect(s.weatherCity).toBe("Санкт-Петербург"); // trimmed
         expect(s.showClock).toBe(false);
         expect(s.showClockDate).toBe(false);
