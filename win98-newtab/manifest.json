@@ -10,6 +10,7 @@
     "host_permissions": [
         "https://api.open-meteo.com/*",
         "https://geocoding-api.open-meteo.com/*",
+        "https://api.met.no/*",
         "https://*.gstatic.com/*",
         "https://isdayoff.ru/*"
     ],

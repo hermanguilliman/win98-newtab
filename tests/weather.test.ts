@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+    apparentTemperature,
     buildForecastUrl,
     buildGeocodingUrl,
+    buildYrForecastUrl,
     firstGeocodeHit,
     formatUpdatedTime,
     parseWeatherCurrent,
+    parseYrCurrent,
+    weatherCodeFromConditions,
     weatherIcon,
     windDirName,
 } from "../src/lib/weather";
@@ -143,5 +147,126 @@ describe("formatUpdatedTime", () => {
     it("formats a local time label", () => {
         const s = formatUpdatedTime(new Date(2026, 8, 13, 9, 5, 3));
         expect(s).toBe("09:05:03");
+    });
+});
+
+describe("buildYrForecastUrl", () => {
+    it("points at met.no with rounded coordinates", () => {
+        expect(buildYrForecastUrl(55.7558, 37.6173)).toBe(
+            "https://api.met.no/weatherapi/locationforecast/2.0/compact" +
+                "?lat=55.7558&lon=37.6173",
+        );
+    });
+});
+
+describe("weatherCodeFromConditions", () => {
+    it("maps cloud cover to clear/partly/overcast codes", () => {
+        expect(weatherCodeFromConditions(0, 0, 10)).toBe(0);
+        expect(weatherCodeFromConditions(25, 0, 10)).toBe(1);
+        expect(weatherCodeFromConditions(60, 0, 10)).toBe(2);
+        expect(weatherCodeFromConditions(95, 0, 10)).toBe(3);
+    });
+
+    it("maps precipitation intensity to drizzle/rain/showers", () => {
+        expect(weatherCodeFromConditions(80, 0.1, 5)).toBe(51);
+        expect(weatherCodeFromConditions(80, 0.5, 5)).toBe(61);
+        expect(weatherCodeFromConditions(80, 2.5, 5)).toBe(82);
+    });
+
+    it("maps freezing precipitation to snow codes", () => {
+        expect(weatherCodeFromConditions(80, 0.4, -2)).toBe(71);
+        expect(weatherCodeFromConditions(80, 3, -2)).toBe(86);
+    });
+
+    it("returns -1 when nothing is known", () => {
+        expect(weatherCodeFromConditions(undefined, undefined, 5)).toBe(-1);
+        expect(weatherCodeFromConditions(Number.NaN, 0, 5)).toBe(-1);
+    });
+});
+
+describe("apparentTemperature", () => {
+    it("stays at the air temperature in the comfortable range", () => {
+        expect(apparentTemperature(18, 60, 0)).toBeCloseTo(18, 5);
+        expect(apparentTemperature(5, 60, 3)).toBeCloseTo(5, 5);
+    });
+
+    it("applies wind chill when cold and windy", () => {
+        // NWS metric wind chill, -10 °C at 10 km/h ≈ -15.3 °C
+        expect(apparentTemperature(-10, 50, 10)).toBeCloseTo(-15.3, 0);
+        // ...but not without wind
+        expect(apparentTemperature(-10, 50, 0)).toBeCloseTo(-10, 5);
+    });
+
+    it("applies the heat index when hot", () => {
+        // Rothfusz reference: 30 °C / 60 % ≈ 32.7 °C
+        expect(apparentTemperature(30, 60, 0)).toBeCloseTo(32.7, 0);
+    });
+});
+
+describe("parseYrCurrent", () => {
+    const payload = (details: Record<string, unknown>, updatedAt?: string) => ({
+        properties: {
+            meta: updatedAt === undefined ? undefined : { updated_at: updatedAt },
+            timeseries: [{ data: { instant: { details } } }],
+        },
+    });
+
+    it("normalizes the instant block into WeatherData", () => {
+        const d = parseYrCurrent(
+            payload(
+                {
+                    air_temperature: 12.8,
+                    cloud_area_fraction: 89.8,
+                    precipitation_amount: 0.6,
+                    relative_humidity: 71,
+                    wind_speed: 4.2,
+                    wind_from_direction: 230,
+                },
+                "2026-10-06T13:18:03Z",
+            ),
+            "Москва",
+            "fallback",
+        );
+        expect(d).toEqual({
+            city: "Москва",
+            temp: 12.8,
+            code: 61,
+            feelsLike: expect.any(Number),
+            humidity: 71,
+            precipitation: 0.6,
+            windSpeed: expect.closeTo(15.12, 2),
+            windDirection: 230,
+            cloudCover: 90,
+            updated: formatUpdatedTime(new Date("2026-10-06T13:18:03Z")),
+        });
+    });
+
+    it("falls back to the passed label when meta has no timestamp", () => {
+        const d = parseYrCurrent(payload({ air_temperature: 7 }), "Москва", "t");
+        expect(d?.updated).toBe("t");
+        expect(d?.code).toBe(-1);
+        expect(d?.feelsLike).toBeUndefined();
+    });
+
+    it("rejects payloads without instant data", () => {
+        expect(parseYrCurrent(null, "Москва", "t")).toBeNull();
+        expect(parseYrCurrent({}, "Москва", "t")).toBeNull();
+        expect(
+            parseYrCurrent({ properties: { timeseries: [] } }, "Москва", "t"),
+        ).toBeNull();
+        expect(
+            parseYrCurrent(
+                { properties: { timeseries: [{ data: {} }] } },
+                "Москва",
+                "t",
+            ),
+        ).toBeNull();
+        expect(
+            parseYrCurrent(
+                payload({ air_temperature: "cold" }),
+                "Москва",
+                "t",
+            ),
+        ).toBeNull();
     });
 });

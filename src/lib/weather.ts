@@ -1,8 +1,29 @@
 /**
- * Weather (Open-Meteo, no API key): URL construction, WMO code mapping and
- * response normalization. Pure logic — no DOM, no chrome.*, no fetch here;
- * app.js owns the actual network calls and the UI.
+ * Weather (no API key): URL construction, WMO code mapping and response
+ * normalization for every supported forecast provider. Pure logic — no DOM,
+ * no chrome.*, no fetch here; app.js owns the actual network calls, the
+ * provider fallback chain and the UI.
+ *
+ * Why more than one provider: `api.open-meteo.com` is unreachable from Russia
+ * (the TCP connection is blackholed, it never times out on its own), while
+ * `api.met.no` (Yr) answers there — and vice versa. app.js walks
+ * `WEATHER_PROVIDERS` in order with a per-attempt timeout and remembers the
+ * last provider that worked, so nobody pays the timeout twice.
  */
+
+/** Forecast provider ids, in default try-order (first = Open-Meteo). */
+export type WeatherProviderId = "open-meteo" | "yr";
+
+export const WEATHER_PROVIDERS: readonly WeatherProviderId[] = [
+    "open-meteo",
+    "yr",
+];
+
+/** Normalize a coordinate so a provider gets a stable decimal representation. */
+function coord(value: number): string {
+    return Number(value.toFixed(4)).toString();
+}
+
 
 /** Normalized current-weather record as the app renders it. */
 export interface WeatherData {
@@ -86,6 +107,131 @@ export function parseWeatherCurrent(
         cloudCover: numOrUndef(c.cloud_cover),
         updated,
     };
+}
+
+/** Yr/met.no compact forecast URL for the given coordinates (fallback provider). */
+export function buildYrForecastUrl(latitude: number, longitude: number): string {
+    return (
+        "https://api.met.no/weatherapi/locationforecast/2.0/compact" +
+        `?lat=${coord(latitude)}&lon=${coord(longitude)}`
+    );
+}
+
+/**
+ * Derive a WMO weather code from plain conditions — met.no's "instant" block
+ * has cloud cover and precipitation but no weather code of its own, so map it
+ * into the same WMO space `weatherIcon()` understands.
+ */
+export function weatherCodeFromConditions(
+    cloudCover: number | undefined,
+    precipitation: number | undefined,
+    tempC: number | undefined,
+): number {
+    const precip = precipitation ?? 0;
+    if (precip > 0) {
+        const freezing = tempC != null && tempC <= 0;
+        if (freezing) return precip >= 1 ? 86 : 71;
+        if (precip >= 2) return 82;
+        if (precip >= 0.5) return 61;
+        return 51;
+    }
+    if (cloudCover == null || !Number.isFinite(cloudCover)) return -1;
+    if (cloudCover < 10) return 0;
+    if (cloudCover < 40) return 1;
+    if (cloudCover < 85) return 2;
+    return 3;
+}
+
+/**
+ * Feels-like temperature in °C: NWS wind chill when cold and windy, Rothfusz
+ * heat index when hot, otherwise the air temperature itself.
+ */
+export function apparentTemperature(
+    tempC: number,
+    humidity: number,
+    windKmh: number,
+): number {
+    if (tempC <= 10 && windKmh >= 4.8) {
+        const v = Math.pow(windKmh, 0.16);
+        return 13.12 + 0.6215 * tempC - 11.37 * v + 0.3965 * tempC * v;
+    }
+    if (tempC >= 26.7) {
+        const rh = Math.min(100, Math.max(0, humidity));
+        const hi =
+            -8.784695 +
+            1.61139411 * tempC +
+            2.338549 * rh -
+            0.14611605 * tempC * rh -
+            0.012308094 * tempC * tempC -
+            0.016424828 * rh * rh +
+            0.002211732 * tempC * tempC * rh +
+            0.00072546 * tempC * rh * rh -
+            0.000003582 * tempC * tempC * rh * rh;
+        return hi;
+    }
+    return tempC;
+}
+
+/**
+ * Normalize a met.no / Yr `locationforecast/2.0/compact` payload into
+ * WeatherData. Returns null when there is no usable instant data.
+ *
+ * Wind is converted m/s → km/h (the app renders `км/ч`), cloud cover is
+ * rounded to a whole percent and the "updated" label prefers the model time
+ * from `properties.meta.updated_at` over the passed-in fallback.
+ */
+export function parseYrCurrent(
+    payload: unknown,
+    city: string,
+    updated: string,
+): WeatherData | null {
+    if (!payload || typeof payload !== "object") return null;
+    const root = payload as {
+        properties?: {
+            meta?: { updated_at?: unknown };
+            timeseries?: unknown;
+        };
+    };
+    const props = root.properties;
+    if (!props || !Array.isArray(props.timeseries) || props.timeseries.length === 0) {
+        return null;
+    }
+    const head = props.timeseries[0] as {
+        data?: { instant?: { details?: Record<string, unknown> } };
+    };
+    const details = head && head.data && head.data.instant
+        ? head.data.instant.details
+        : undefined;
+    if (!details || typeof details.air_temperature !== "number") return null;
+
+    const temp = details.air_temperature;
+    const cloudCover = numOrUndef(details.cloud_area_fraction);
+    const precipitation = numOrUndef(details.precipitation_amount);
+    const humidity = numOrUndef(details.relative_humidity);
+    const windMs = numOrUndef(details.wind_speed);
+    const updatedAt = props.meta ? props.meta.updated_at : undefined;
+
+    return {
+        city,
+        temp,
+        code: weatherCodeFromConditions(cloudCover, precipitation, temp),
+        feelsLike:
+            humidity != null && windMs != null
+                ? apparentTemperature(temp, humidity, windMs * 3.6)
+                : undefined,
+        humidity,
+        precipitation,
+        windSpeed: windMs != null ? windMs * 3.6 : undefined,
+        windDirection: numOrUndef(details.wind_from_direction),
+        cloudCover: cloudCover != null ? Math.round(cloudCover) : undefined,
+        updated: labelFromIso(updatedAt) ?? updated,
+    };
+}
+
+function labelFromIso(iso: unknown): string | undefined {
+    if (typeof iso !== "string") return undefined;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? undefined : formatUpdatedTime(d);
 }
 
 /** Extract the first geocoding hit (lat/lon) from an Open-Meteo search response. */

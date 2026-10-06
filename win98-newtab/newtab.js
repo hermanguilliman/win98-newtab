@@ -580,6 +580,13 @@
   };
 
   // src/lib/weather.ts
+  var WEATHER_PROVIDERS = [
+    "open-meteo",
+    "yr"
+  ];
+  function coord(value) {
+    return Number(value.toFixed(4)).toString();
+  }
   function weatherIcon(code) {
     if (code == null) return "🌡️";
     if (code === 0) return "☀️";
@@ -621,6 +628,70 @@
       cloudCover: numOrUndef(c.cloud_cover),
       updated
     };
+  }
+  function buildYrForecastUrl(latitude, longitude) {
+    return `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${coord(latitude)}&lon=${coord(longitude)}`;
+  }
+  function weatherCodeFromConditions(cloudCover, precipitation, tempC) {
+    const precip = precipitation ?? 0;
+    if (precip > 0) {
+      const freezing = tempC != null && tempC <= 0;
+      if (freezing) return precip >= 1 ? 86 : 71;
+      if (precip >= 2) return 82;
+      if (precip >= 0.5) return 61;
+      return 51;
+    }
+    if (cloudCover == null || !Number.isFinite(cloudCover)) return -1;
+    if (cloudCover < 10) return 0;
+    if (cloudCover < 40) return 1;
+    if (cloudCover < 85) return 2;
+    return 3;
+  }
+  function apparentTemperature(tempC, humidity, windKmh) {
+    if (tempC <= 10 && windKmh >= 4.8) {
+      const v = Math.pow(windKmh, 0.16);
+      return 13.12 + 0.6215 * tempC - 11.37 * v + 0.3965 * tempC * v;
+    }
+    if (tempC >= 26.7) {
+      const rh = Math.min(100, Math.max(0, humidity));
+      const hi = -8.784695 + 1.61139411 * tempC + 2.338549 * rh - 0.14611605 * tempC * rh - 0.012308094 * tempC * tempC - 0.016424828 * rh * rh + 2211732e-9 * tempC * tempC * rh + 72546e-8 * tempC * rh * rh - 3582e-9 * tempC * tempC * rh * rh;
+      return hi;
+    }
+    return tempC;
+  }
+  function parseYrCurrent(payload, city, updated) {
+    if (!payload || typeof payload !== "object") return null;
+    const root = payload;
+    const props = root.properties;
+    if (!props || !Array.isArray(props.timeseries) || props.timeseries.length === 0) {
+      return null;
+    }
+    const head = props.timeseries[0];
+    const details = head && head.data && head.data.instant ? head.data.instant.details : void 0;
+    if (!details || typeof details.air_temperature !== "number") return null;
+    const temp = details.air_temperature;
+    const cloudCover = numOrUndef(details.cloud_area_fraction);
+    const precipitation = numOrUndef(details.precipitation_amount);
+    const humidity = numOrUndef(details.relative_humidity);
+    const windMs = numOrUndef(details.wind_speed);
+    const updatedAt = props.meta ? props.meta.updated_at : void 0;
+    return {
+      city,
+      temp,
+      code: weatherCodeFromConditions(cloudCover, precipitation, temp),
+      feelsLike: humidity != null && windMs != null ? apparentTemperature(temp, humidity, windMs * 3.6) : void 0,
+      humidity,
+      precipitation,
+      windSpeed: windMs != null ? windMs * 3.6 : void 0,
+      windDirection: numOrUndef(details.wind_from_direction),
+      cloudCover: cloudCover != null ? Math.round(cloudCover) : void 0,
+      updated: labelFromIso(updatedAt) ?? updated
+    };
+  }
+  function labelFromIso(iso) {
+    if (typeof iso !== "string") return void 0;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? void 0 : formatUpdatedTime(d);
   }
   function firstGeocodeHit(geo) {
     if (!geo || typeof geo !== "object") return null;
@@ -1610,6 +1681,69 @@
     return chrome.storage.local.set({ weather: payload }).catch(() => {
     });
   }
+  var WEATHER_FETCH_TIMEOUT_MS = 4e3;
+  var WEATHER_PROVIDER_KEY = "weatherProvider";
+  async function fetchJsonWithTimeout(url, timeoutMs) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, {
+        mode: "cors",
+        signal: ctrl.signal
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      return await resp.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async function weatherProviderOrder() {
+    let lastGood = null;
+    try {
+      const stored = await chrome.storage.local.get(
+        WEATHER_PROVIDER_KEY
+      );
+      lastGood = stored ? stored[WEATHER_PROVIDER_KEY] : null;
+    } catch {
+    }
+    if (!lastGood || WEATHER_PROVIDERS.indexOf(lastGood) < 0) {
+      return WEATHER_PROVIDERS.slice();
+    }
+    return [lastGood, ...WEATHER_PROVIDERS.filter((p) => p !== lastGood)];
+  }
+  function rememberWeatherProvider(provider) {
+    chrome.storage.local.set({ [WEATHER_PROVIDER_KEY]: provider }).catch(() => {
+    });
+  }
+  async function fetchForecastParsed(latitude, longitude, city) {
+    const order = await weatherProviderOrder();
+    const label = formatUpdatedTime(/* @__PURE__ */ new Date());
+    for (const provider of order) {
+      try {
+        const parsed = provider === "yr" ? parseYrCurrent(
+          await fetchJsonWithTimeout(
+            buildYrForecastUrl(latitude, longitude),
+            WEATHER_FETCH_TIMEOUT_MS
+          ),
+          city,
+          label
+        ) : parseWeatherCurrent(
+          (await fetchJsonWithTimeout(
+            buildForecastUrl(latitude, longitude),
+            WEATHER_FETCH_TIMEOUT_MS
+          )).current,
+          city,
+          label
+        );
+        if (parsed) {
+          rememberWeatherProvider(provider);
+          return parsed;
+        }
+      } catch {
+      }
+    }
+    return null;
+  }
   async function refreshWeather(city) {
     const currentCity = city || state.settings && state.settings.weatherCity || DEFAULT_SETTINGS.weatherCity;
     try {
@@ -1622,20 +1756,12 @@
         hideWeather();
         return;
       }
-      const wxResp = await fetch(
-        buildForecastUrl(hit.latitude, hit.longitude),
-        { mode: "cors" }
+      const parsed = await fetchForecastParsed(
+        hit.latitude,
+        hit.longitude,
+        currentCity
       );
-      const wx = await wxResp.json();
-      const parsed = parseWeatherCurrent(
-        wx && wx.current,
-        currentCity,
-        formatUpdatedTime(/* @__PURE__ */ new Date())
-      );
-      if (!parsed) {
-        hideWeather();
-        return;
-      }
+      if (!parsed) return;
       state.weatherData = parsed;
       renderWeather(parsed.temp, parsed.code);
       saveWeatherCache(currentCity, state.weatherData);

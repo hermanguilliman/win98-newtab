@@ -25,7 +25,18 @@ import { DEFAULT_SETTINGS, mergeSettings, ICON_SIZES, FOLDER_STYLES, UI_FONTS } 
 import { buildSearchIndex, filterSearchNodes } from "./lib/search";
 import { setNodeForIcon, getNodeForIcon } from "./lib/iconNodes";
 import { WindowManager } from "./lib/windows";
-import { weatherIcon, windDirName, buildGeocodingUrl, buildForecastUrl, parseWeatherCurrent, firstGeocodeHit, formatUpdatedTime } from "./lib/weather";
+import {
+    weatherIcon,
+    windDirName,
+    buildGeocodingUrl,
+    buildForecastUrl,
+    buildYrForecastUrl,
+    parseWeatherCurrent,
+    parseYrCurrent,
+    firstGeocodeHit,
+    formatUpdatedTime,
+    WEATHER_PROVIDERS,
+} from "./lib/weather";
 import { addMonths, monthCells, monthTitle, formatDayTitle, todayInMonth } from "./lib/calendar";
 import { ruDayInfo, parseIsdayoffStatus } from "./lib/holidays";
 import {
@@ -926,7 +937,8 @@ import {
     }
 
     /* ============================================================
-     WEATHER (Open-Meteo, no API key; helpers live in lib/weather)
+     WEATHER (no API key; Open-Meteo primary + met.no/Yr fallback,
+     helpers live in lib/weather — see fetchForecastParsed below)
      ============================================================ */
 
     function hideWeather() {
@@ -974,6 +986,87 @@ import {
         return chrome.storage.local.set({ weather: payload }).catch(() => {});
     }
 
+    /** Hard cap for one provider attempt. `api.open-meteo.com` is blackholed
+        from Russia (the TCP connect just hangs), so without this the fallback
+        would never get its turn. */
+    const WEATHER_FETCH_TIMEOUT_MS = 4000;
+    const WEATHER_PROVIDER_KEY = "weatherProvider";
+
+    /** fetch() → JSON with a per-attempt abort timeout. */
+    async function fetchJsonWithTimeout(url, timeoutMs) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            const resp = await fetch(url, {
+                mode: "cors",
+                signal: ctrl.signal,
+            });
+            if (!resp.ok) throw new Error("HTTP " + resp.status);
+            return await resp.json();
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /** Provider order with the last one that actually worked moved to the
+        front, so a blocked provider is only waited out once per session. */
+    async function weatherProviderOrder() {
+        let lastGood = null;
+        try {
+            const stored = await chrome.storage.local.get(
+                WEATHER_PROVIDER_KEY,
+            );
+            lastGood = stored ? stored[WEATHER_PROVIDER_KEY] : null;
+        } catch {
+            // keep the default order
+        }
+        if (!lastGood || WEATHER_PROVIDERS.indexOf(lastGood) < 0) {
+            return WEATHER_PROVIDERS.slice();
+        }
+        return [lastGood, ...WEATHER_PROVIDERS.filter((p) => p !== lastGood)];
+    }
+
+    function rememberWeatherProvider(provider) {
+        chrome.storage.local
+            .set({ [WEATHER_PROVIDER_KEY]: provider })
+            .catch(() => {});
+    }
+
+    /** Walk the provider chain until one yields usable data (null if none do). */
+    async function fetchForecastParsed(latitude, longitude, city) {
+        const order = await weatherProviderOrder();
+        const label = formatUpdatedTime(new Date());
+        for (const provider of order) {
+            try {
+                const parsed =
+                    provider === "yr"
+                        ? parseYrCurrent(
+                              await fetchJsonWithTimeout(
+                                  buildYrForecastUrl(latitude, longitude),
+                                  WEATHER_FETCH_TIMEOUT_MS,
+                              ),
+                              city,
+                              label,
+                          )
+                        : parseWeatherCurrent(
+                              (await fetchJsonWithTimeout(
+                                  buildForecastUrl(latitude, longitude),
+                                  WEATHER_FETCH_TIMEOUT_MS,
+                              )).current,
+                              city,
+                              label,
+                          );
+                if (parsed) {
+                    rememberWeatherProvider(provider);
+                    return parsed;
+                }
+            } catch {
+                // This provider is unreachable/blocked — try the next one.
+            }
+        }
+        return null;
+    }
+
     async function refreshWeather(city) {
         const currentCity =
             city ||
@@ -990,21 +1083,16 @@ import {
                 hideWeather();
                 return;
             }
-            // Current weather (full set of fields for the details window)
-            const wxResp = await fetch(
-                buildForecastUrl(hit.latitude, hit.longitude),
-                { mode: "cors" },
-            );
-            const wx = await wxResp.json();
-            const parsed = parseWeatherCurrent(
-                wx && wx.current,
+            // Current weather (full set of fields for the details window),
+            // falling back to the next provider when this one is unreachable.
+            const parsed = await fetchForecastParsed(
+                hit.latitude,
+                hit.longitude,
                 currentCity,
-                formatUpdatedTime(new Date()),
             );
-            if (!parsed) {
-                hideWeather();
-                return;
-            }
+            // Nothing worked — keep whatever the tray already shows (the cached
+            // value) rather than clearing it on a transient network failure.
+            if (!parsed) return;
             state.weatherData = parsed;
             renderWeather(parsed.temp, parsed.code);
             saveWeatherCache(currentCity, state.weatherData);
