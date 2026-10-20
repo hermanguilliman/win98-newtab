@@ -4149,6 +4149,12 @@
   }
 
   // src/ui/settingsWindow.js
+  function formatBytes(bytes) {
+    if (!bytes || bytes < 0) return "0 Б";
+    if (bytes < 1024) return bytes + " Б";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1).replace(".", ",") + " КБ";
+    return (bytes / (1024 * 1024)).toFixed(1).replace(".", ",") + " МБ";
+  }
   function openSettingsWindow() {
     const existing = state.windows.find((w) => w.title === "Настройки");
     if (existing) {
@@ -4685,31 +4691,86 @@
     abgLegend.className = "win98-groupbox-legend";
     abgLegend.textContent = "О системе";
     abg.appendChild(abgLegend);
+    const aboutHead = document.createElement("div");
+    aboutHead.className = "about-head";
+    const aboutIcon = document.createElement("img");
+    aboutIcon.className = "about-icon";
+    aboutIcon.alt = "";
+    aboutIcon.draggable = false;
+    aboutIcon.width = 32;
+    aboutIcon.height = 32;
+    aboutIcon.src = "icons/pc_icon.png";
+    const aboutHeadText = document.createElement("div");
+    aboutHeadText.className = "about-head-text";
     const aboutTitle = document.createElement("div");
     aboutTitle.className = "about-title";
     aboutTitle.textContent = "Win98 Bookmarks Desktop";
+    const aboutVersion = document.createElement("div");
+    aboutVersion.className = "about-version";
+    const manifest = chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest() : null;
+    aboutVersion.textContent = "Версия " + (manifest && manifest.version ? manifest.version : "1.0") + " · Manifest V3 · " + (/* @__PURE__ */ new Date()).getFullYear();
+    aboutHeadText.append(aboutTitle, aboutVersion);
+    aboutHead.append(aboutIcon, aboutHeadText);
     const aboutDesc = document.createElement("div");
     aboutDesc.className = "about-desc";
-    aboutDesc.textContent = "Дополнение для Chrome, превращающее новую вкладку в рабочий стол Windows 98: закладки и папки отображаются значками на рабочем столе, двойной клик открывает окна, поиск и настройки — в меню «Пуск».";
+    aboutDesc.textContent = "Новая вкладка Chrome, переодетая в рабочий стол Windows 98. Закладки ложатся на стол значками, папки открываются окнами с историей переходов, а погода, календарь, блокнот и калькулятор живут в трее и в меню «Пуск». Никакой аналитики и аккаунтов — расширение только читает ваши закладки и работает локально.";
     const aboutRows = document.createElement("div");
     aboutRows.className = "about-rows";
-    [
-      ["Автор", "Herman Guilliman"],
-      ["Год", "2026"],
-      ["Поддержка", "hermanguilliman@proton.me"]
-    ].forEach(([k, v]) => {
+    const addRow = (label) => {
       const row = document.createElement("div");
       row.className = "about-row";
       const kEl = document.createElement("span");
       kEl.className = "about-row-key";
-      kEl.textContent = k + ":";
+      kEl.textContent = label + ":";
       const vEl = document.createElement("span");
       vEl.className = "about-row-value";
-      vEl.textContent = v;
+      vEl.textContent = "—";
       row.append(kEl, vEl);
       aboutRows.appendChild(row);
-    });
-    abg.append(aboutTitle, aboutDesc, aboutRows);
+      return vEl;
+    };
+    const extRow = addRow("Расширение");
+    const browserRow = addRow("Браузер");
+    const bookmarksRow = addRow("Закладок в дереве");
+    const foldersRow = addRow("Папок в дереве");
+    const storageRow = addRow("Занято в хранилище");
+    const authorRow = addRow("Автор");
+    const supportRow = addRow("Поддержка");
+    extRow.textContent = "Win98 Bookmarks Desktop " + (manifest && manifest.version ? manifest.version : "1.0");
+    const chromeMatch = /Chrome\/(\d+(?:\.\d+)*)/.exec(navigator.userAgent);
+    browserRow.textContent = chromeMatch ? "Chrome " + chromeMatch[1] : "Chrome";
+    authorRow.textContent = "Herman Guilliman";
+    supportRow.textContent = "hermanguilliman@proton.me";
+    let bookmarkCount = 0;
+    let folderCount = 0;
+    const countNodes = (node) => {
+      if (!node) return;
+      if (node.url) {
+        bookmarkCount++;
+        return;
+      }
+      if (Array.isArray(node.children)) {
+        folderCount++;
+        node.children.forEach(countNodes);
+      }
+    };
+    const rootChildren = state.treeRoot && state.treeRoot.children || [];
+    rootChildren.forEach(countNodes);
+    bookmarksRow.textContent = String(bookmarkCount);
+    foldersRow.textContent = String(folderCount);
+    if (chrome.storage && chrome.storage.local && typeof chrome.storage.local.getBytesInUse === "function") {
+      chrome.storage.local.getBytesInUse().then((bytes) => {
+        storageRow.textContent = formatBytes(bytes);
+      }).catch(() => {
+        storageRow.textContent = "недоступно";
+      });
+    } else {
+      storageRow.textContent = "недоступно";
+    }
+    const aboutFoot = document.createElement("div");
+    aboutFoot.className = "about-foot";
+    aboutFoot.textContent = "© " + (/* @__PURE__ */ new Date()).getFullYear() + " Herman Guilliman · Сделано с любовью к Windows 98";
+    abg.append(aboutHead, aboutDesc, aboutRows, aboutFoot);
     tabPanels.about.appendChild(abg);
     const btnRow = document.createElement("div");
     btnRow.className = "win98-dialog-buttons";

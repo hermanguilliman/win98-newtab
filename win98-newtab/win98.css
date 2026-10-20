@@ -1532,9 +1532,30 @@ input[type="radio"]:disabled:checked::after {
 }
 
 /* ---------- О системе ---------- */
+.about-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.about-icon {
+    flex-shrink: 0;
+    image-rendering: pixelated;
+}
+
+.about-head-text {
+    min-width: 0;
+}
+
 .about-title {
     font-weight: bold;
-    margin: 2px 0 6px;
+}
+
+.about-version {
+    font-size: 11px;
+    color: var(--win98-dark-gray);
+    margin-top: 2px;
 }
 
 .about-desc {
@@ -1554,6 +1575,14 @@ input[type="radio"]:disabled:checked::after {
 
 .about-row-value {
     margin-left: 6px;
+}
+
+.about-foot {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px solid var(--win98-shadow);
+    font-size: 11px;
+    color: var(--win98-dark-gray);
 }
 
 /* ---------- Dialog buttons ---------- */
