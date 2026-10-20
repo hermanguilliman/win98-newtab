@@ -1,7 +1,8 @@
 /**
- * Node drag & drop: moving bookmarks/folders between folder windows and onto
- * desktop icons. Pure insertion/midpoint math lives in this module; the actual
- * chrome.bookmarks.move calls go through moveBookmarkTo.
+ * Node drag & drop: moving bookmarks/folders inside a folder window (into
+ * another folder or between neighbouring items). Pure insertion/midpoint math
+ * lives in this module; the actual chrome.bookmarks.move calls go through
+ * moveBookmarkTo.
  */
 
 /* ============================================================
