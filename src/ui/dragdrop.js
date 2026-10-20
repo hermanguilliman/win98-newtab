@@ -11,7 +11,7 @@
 /** Clear drop-target highlights only (keeps the dragged source faded) */
 /** @typedef {import("../types").WinData} WinData */
 import { ALL_ROOT_ID, isFolderNode, isRootFolder } from "../lib/bookmarks";
-import { scheduleBookmarksRefresh } from "../app";
+import { scheduleBookmarksRefresh } from "./liveSync";
 import { findNodeById, state } from "../state";
 import { openMessageBox } from "./dialogs";
 
