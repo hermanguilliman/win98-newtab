@@ -4713,7 +4713,7 @@
     aboutHead.append(aboutIcon, aboutHeadText);
     const aboutDesc = document.createElement("div");
     aboutDesc.className = "about-desc";
-    aboutDesc.textContent = "Новая вкладка Chrome, переодетая в рабочий стол Windows 98. Закладки ложатся на стол значками, папки открываются окнами с историей переходов, а погода, календарь, блокнот и калькулятор живут в трее и в меню «Пуск». Никакой аналитики и аккаунтов — расширение только читает ваши закладки и работает локально.";
+    aboutDesc.textContent = "Новая вкладка Chrome и Firefox, переодетая в рабочий стол Windows 98. Закладки ложатся на стол значками, папки открываются окнами с историей переходов, а погода, календарь, блокнот и калькулятор живут в трее и в меню «Пуск». Никакой аналитики и аккаунтов — расширение только читает ваши закладки и работает локально.";
     const aboutRows = document.createElement("div");
     aboutRows.className = "about-rows";
     const addRow = (label) => {
@@ -4731,6 +4731,7 @@
     };
     const extRow = addRow("Расширение");
     const browserRow = addRow("Браузер");
+    const repoRow = addRow("Репозиторий");
     const bookmarksRow = addRow("Закладок в дереве");
     const foldersRow = addRow("Папок в дереве");
     const storageRow = addRow("Занято в хранилище");
@@ -4738,8 +4739,16 @@
     const supportRow = addRow("Поддержка");
     extRow.textContent = "Win98 Bookmarks Desktop " + (manifest && manifest.version ? manifest.version : "1.0");
     const chromeMatch = /Chrome\/(\d+(?:\.\d+)*)/.exec(navigator.userAgent);
-    browserRow.textContent = chromeMatch ? "Chrome " + chromeMatch[1] : "Chrome";
+    const firefoxMatch = /Firefox\/(\d+(?:\.\d+)*)/.exec(navigator.userAgent);
+    if (firefoxMatch) {
+      browserRow.textContent = "Firefox " + firefoxMatch[1];
+    } else if (chromeMatch) {
+      browserRow.textContent = "Chrome " + chromeMatch[1];
+    } else {
+      browserRow.textContent = "Неизвестно";
+    }
     authorRow.textContent = "Herman Guilliman";
+    repoRow.textContent = "https://github.com/hermanguilliman/win98-newtab";
     supportRow.textContent = "hermanguilliman@proton.me";
     let bookmarkCount = 0;
     let folderCount = 0;
